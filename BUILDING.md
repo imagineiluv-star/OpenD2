@@ -1,17 +1,19 @@
-# C# / Godot M0 개발
+# C# / Godot M1 개발
 
-브랜치: `feat/m0-foundation`. 이 앱은 오프라인 기반 검증용이며 게임 플레이·MPQ 로더는 아직 없다. 기존 C++ 빌드와 별도로 운영한다.
+브랜치: `feat/m1-legacy-assets`. M1 1차 MPQ 읽기·인벤토리를 구현했으며 게임 플레이와 리소스 디코더는 아직 없다. 기존 C++ 빌드와 별도로 운영한다.
 
 ## 개발자 설치
 
 - .NET SDK **10.0.401** (`global.json`, 정확한 버전 필요)
 - Python **3.12+**, Git
+- CMake **3.25+**, C++17 컴파일러 (Windows: Visual Studio C++ Build Tools, macOS: Xcode Command Line Tools, Linux: GCC/Clang)
 - Godot **4.6.3 .NET** 및 같은 버전의 .NET export templates
 
 저장소 루트에서 실행:
 
 ```sh
 python eng/bootstrap.py
+python eng/build-native.py
 python eng/validate.py --export Linux
 # Windows x64: --export Windows
 # macOS arm64: --export macOS
@@ -19,7 +21,7 @@ python eng/validate.py --export Linux
 
 bootstrap은 공식 Godot 배포본을 내려받아 `eng/toolchain.json`의 SHA-512로 검사한다. SDK는 별도 설치한다. bootstrap 출력의 실행 파일로 `src/OpenD2.Client/project.godot`를 열면 된다. 기존 Godot 설치를 사용하려면 `python eng/validate.py --godot <실행파일경로> --export Linux`를 사용한다.
 
-`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 9개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
+`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 17개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
 
 Godot 없이 코어를 검증할 수 있다:
 
@@ -29,7 +31,7 @@ dotnet run --project tests/OpenD2.Tests -c Release --no-build
 dotnet run --project tools/OpenD2.AssetAudit -- --help
 ```
 
-Tests는 외부 테스트 프레임워크가 없는 실행형 계약 테스트다. **`dotnet test` 대신 위 `dotnet run` 명령을 사용한다.** AssetAudit은 M0에서 디렉터리 접근만 검사하며 MPQ 내용 검증을 의미하지 않는다.
+Tests는 외부 테스트 프레임워크가 없는 실행형 계약 테스트다. **`dotnet test` 대신 위 `dotnet run` 명령을 사용한다.** AssetAudit의 사용법과 인벤토리 한계는 [M1 검증 기록](docs/migration/M1_RESULTS.md)을 참조한다. `build-native.py`는 고정 StormLib 소스를 빌드하고 OS별 라이브러리를 클라이언트·CLI·테스트에 포함한다. 플레이어에게 C++ 빌드 도구를 요구하지 않는다.
 
 ## 실행과 배포
 
@@ -46,7 +48,7 @@ Tests는 외부 테스트 프레임워크가 없는 실행형 계약 테스트�
 | 프로젝트 | 책임 |
 |---|---|
 | OpenD2.Core | 설정·경로·로그·계측, 엔진 미참조 |
-| OpenD2.Assets | 파일 접근 확인, Core만 참조; 파서는 M1 |
+| OpenD2.Assets | 읽기 전용 MPQ·설치 검사·인벤토리, Core만 참조 |
 | OpenD2.Client | Godot 3D 장면·설정 UI·오프라인 실행 |
 | OpenD2.AssetAudit | 엔진 없는 리소스 점검 CLI 기반 |
 | OpenD2.Tests | 파일 손상·백업·경로·계측·로그 계약 검증 |
