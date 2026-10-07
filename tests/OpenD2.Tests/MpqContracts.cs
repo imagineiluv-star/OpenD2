@@ -84,6 +84,19 @@ internal static class MpqContracts
 			Check(AssetDecoders.ReadFromInstall(decoded, "sample.dc6").SequenceEqual(good));
 			Check(File.ReadAllBytes(Path.Combine(decoded, "patch_d2.mpq")).SequenceEqual(before));
 		});
+		test("MPQ DCC and COF audit reports decoder version and keeps source bytes", () =>
+		{
+			string folder = Path.Combine(root, "animation"); Directory.CreateDirectory(folder);
+			byte[] dcc = AnimationContracts.Dcc(), cof = AnimationContracts.Cof();
+			string first = Path.Combine(folder, "patch_d2.mpq"), second = Path.Combine(folder, "d2data.mpq");
+			Check(Fixture(first, "sample.dcc", dcc, (uint)dcc.Length, 1) == 0);
+			Check(Fixture(second, "sample.cof", cof, (uint)cof.Length, 1) == 0);
+			byte[] before = File.ReadAllBytes(first);
+			var report = AssetInventory.Scan(folder, new AuditOptions(Decode: true));
+			var entries = report.Entries.Where(e => e.Format is "dcc" or "cof").ToArray();
+			Check(entries.Length == 2 && entries.All(e => e.DecodeStatus == "validated" && e.DecoderVersion == AssetDecoders.Version && e.ContentHash != null));
+			Check(!report.Complete && report.DecodeBytes == dcc.Length + cof.Length && File.ReadAllBytes(first).SequenceEqual(before));
+		});
 		test("preview resource lookup fails on unreadable higher-priority archive", () =>
 		{
 			string decoded = Path.Combine(root, "decoded");
