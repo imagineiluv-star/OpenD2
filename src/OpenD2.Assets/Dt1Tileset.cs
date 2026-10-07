@@ -45,8 +45,10 @@ public sealed class Dt1Tileset
 {
 	public const int MaxPixels = 16777216;
 	private readonly byte[] data;
+	public string ContentHash { get; }
 	public IReadOnlyList<Dt1Tile> Tiles { get; }
-	private Dt1Tileset(byte[] data, Dt1Tile[] tiles) { this.data = data; Tiles = Array.AsReadOnly(tiles); }
+	private Dt1Tileset(byte[] data, Dt1Tile[] tiles)
+	{ this.data = data; Tiles = Array.AsReadOnly(tiles); ContentHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(data)); }
 	public static Dt1Tileset Parse(ReadOnlySpan<byte> data)
 	{
 		AssetBinary.Require(data.Length is >= 276 and <= AssetDecoders.MaxInputBytes, "DT1 input exceeds size bounds.");

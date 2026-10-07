@@ -23,6 +23,7 @@ try
 	LegacyFormatContracts.Run(Test);
 	AnimationContracts.Run(Test);
 	MapContracts.Run(Test);
+	TableContracts.Run(root, Test);
 	MpqContracts.Run(root, Test);
 	Test("paths create separate directories", () =>
 	{

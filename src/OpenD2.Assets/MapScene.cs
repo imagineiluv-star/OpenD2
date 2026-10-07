@@ -23,7 +23,7 @@ public sealed class MapScene
 		Map = map; Images = Array.AsReadOnly(images); Placements = Array.AsReadOnly(placements);
 		this.collision = collision; this.known = known; MissingTiles = missing; DuplicateKeys = duplicates;
 	}
-	public static MapScene Build(Ds1Map map, IReadOnlyList<MapTileset> tilesets)
+	public static MapScene Build(Ds1Map map, IReadOnlyList<MapTileset> tilesets, TileFrameCache? cache = null)
 	{
 		AssetBinary.Require(tilesets.Count <= 32 && tilesets.Sum(s => (long)s.Tileset.Tiles.Count) <= 8192, "Map tileset budget exceeded.");
 		var lookup = new Dictionary<TileKey, (int Set, int Tile)>(); int duplicates = 0;
@@ -50,7 +50,7 @@ public sealed class MapScene
 						pixels += (long)tile.PixelWidth * tile.PixelHeight;
 						AssetBinary.Require(pixels <= Dt1Tileset.MaxPixels, "Map decoded pixel budget exceeded.");
 						image = images.Count; decoded.Add(reference, image);
-						images.Add(new(source.Name, reference.Tile, tile, source.Tileset.DecodeTile(reference.Tile)));
+						images.Add(new(source.Name, reference.Tile, tile, cache?.GetFrame(source.Tileset, reference.Tile) ?? source.Tileset.DecodeTile(reference.Tile)));
 					}
 					var asset = images[image]; px += asset.Frame.Left;
 					py += asset.Frame.Top + (cell.Orientation is 0 or 15 ? 0 : 80) - asset.Tile.RoofHeight;

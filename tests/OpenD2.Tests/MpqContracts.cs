@@ -5,7 +5,7 @@ using OpenD2.Assets;
 internal static class MpqContracts
 {
 	[DllImport("opend2_mpq", EntryPoint = "od2_fixture", CallingConvention = CallingConvention.Cdecl)]
-	private static extern int Fixture([MarshalAs(UnmanagedType.LPUTF8Str)] string path,
+	internal static extern int Fixture([MarshalAs(UnmanagedType.LPUTF8Str)] string path,
 		[MarshalAs(UnmanagedType.LPUTF8Str)] string logical, byte[] data, uint size, int listfile);
 	private static void Check(bool value) { if (!value) throw new Exception("MPQ assertion failed"); }
 	private static void Throws<T>(Action action) where T : Exception
