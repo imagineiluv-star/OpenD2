@@ -1,6 +1,13 @@
 # OpenD2
 A project to open-source Diablo 2, under the GNU General Public License.
 
+### C# / Godot migration planning
+
+The proposed C# and Godot migration architecture, asset compatibility requirements,
+implementation backlog, and acceptance criteria are documented in
+[the migration plan (한국어)](docs/migration/README.md).
+These documents describe future implementation; they do not change the current C++ runtime.
+
 ![Diablo II Main Menu in OpenD2](https://i.imgur.com/RFNbRiT.png)
 
 ### Project Goals
