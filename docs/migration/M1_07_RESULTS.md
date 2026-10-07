@@ -57,12 +57,13 @@ BIN 컴파일러, levels.bin 전체 필드 해석, 아이템/스킬/몬스터 �
 - 3개 BIN 스키마의 모든 잘린 prefix, 레코드 수/크기 불일치, 꼬리, NUL 누락과 TXT 인코딩/행·셀 예산을 검사했다.
 - 합성 MPQ에서 테이블 읽기·TXT 감사·원본 불변·손상 패치 우선순위를 검사했다. 캐시 hit, 내용 변경, 타일 구분, LRU 순서, 예산/항목 수, 실패 미저장, 동시 접근, 사본 격리와 활성 장면 유지도 검증했다.
 - Linux 전체 빌드: 경고/오류 0. Godot import·헤드리스 시작·Linux Release export 통과. 시작 시 합성 테이블→경로 계획→지도/캐시 hit을 검사하고 `OPEND2_M107_TABLE_CACHE_READY`를 출력한다.
-- 원격 3개 OS CI와 master 병합 결과는 아래 반영 기록에 갱신한다.
+- Linux 배포본을 SDK 경로 없이 실행해 기존 마커와 새 TABLE_CACHE 마커를 확인했다. 합성 BIN MPQ로 CLI를 실행하여 JSON의 참조 안내·미검증 상태·필수 MPQ 누락과 종료 코드 3을 확인했다.
+- 코드 커밋 `46e560a73da87d4ffbf9b1702f2d4456a0289d8c`의 **Windows x64·Linux x64·macOS universal CI 모두 첫 시도 성공**, 각 OS 배포 파일 생성. [push CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37663116702)와 [PR CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37663217397)에서 확인했다. 이전 M1-06의 macOS import 종료 오류는 이번 실행에서는 재현되지 않았다.
 - 실제 1.10f 표/지도, GUI 입력·DPI, Windows/macOS 사용자 설치, 장시간 메모리/성능 인수는 미수행이다.
 
 ## 반영과 다음 작업
 
-M0~M1-06은 [PR #1](https://github.com/imagineiluv-star/OpenD2/pull/1)로 master에 병합했다(`eda78022db75c75425730fce705ab065808e8404`). master push에도 3개 OS CI를 실행하도록 변경했다. 기능 브랜치 검증 후 M1-07 PR을 master에 병합한다.
+M0~M1-06은 [PR #1](https://github.com/imagineiluv-star/OpenD2/pull/1)로 master에 병합했다(`eda78022db75c75425730fce705ab065808e8404`). M1-07의 master 반영 PR은 [#2](https://github.com/imagineiluv-star/OpenD2/pull/2)다. master push에도 3개 OS CI를 실행하도록 변경했다. 위 코드 커밋 검증 이후의 결과 기록 변경은 문서만 포함한다.
 
 다음 코드는 **M2-01 고정 tick·명령·게임 상태·난수·이벤트 경계**다. M1 전체 호환 완료를 기다린다는 의미가 아니라, 합성 콘텐츠로 코어를 진행하면서 실제 데이터 인수와 추가 스키마 지원을 별도로 유지한다.
 
