@@ -44,6 +44,8 @@ Linux 로컬에서 네이티브 소스 빌드, C# 빌드, 17/17 계약 테스트
 
 3개 OS CI는 Windows x64, Linux x64, macOS universal native 빌드와 17개 테스트·Godot 시작·export를 실행한다. 2026-10-07 세 OS 모두 통과했다 ([CI 실행](https://github.com/imagineiluv-star/OpenD2/actions/runs/37618506265), 코드 커밋 `af6e056850a1688de0eb813e70caaea080f0077d`, 2분 45초). 최초 Windows DWORD 포인터 타입 오류를 수정한 뒤 재검증했다. GUI 설치·실제 파일 호환성은 별도 인수다.
 
+후속 M1-04 파서·뷰어 구현과 최신 검증은 [M1_04_RESULTS.md](M1_04_RESULTS.md)를 참조한다. 아래는 1차 구현 시점의 잔건이다.
+
 ## 다음 작업과 리스크
 
 1. M1-04: Palette/TBL/DC6 정상·잘림·범위 초과 fixture와 최소 이미지 뷰어.
