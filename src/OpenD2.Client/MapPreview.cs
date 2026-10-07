@@ -11,6 +11,13 @@ public partial class MapPreview : VBoxContainer
 	private readonly LineEdit palettePath = new() { Text = "data/global/palette/act1/pal.dat" };
 	private readonly TextEdit tilesets = new() { PlaceholderText = "DT1 MPQ paths, one per line (first matching tile wins)", CustomMinimumSize = new Vector2(480, 65) };
 	private readonly Button load = new() { Text = "Load map" };
+	private readonly Button resolve = new() { Text = "Resolve table paths" };
+	private readonly OptionButton tableMode = new();
+	private readonly SpinBox levelId = new() { MinValue = 0, MaxValue = 65535, Value = 1 };
+	private readonly SpinBox presetId = new() { MinValue = 0, MaxValue = 65535, Value = 1 };
+	private readonly SpinBox fileSlot = new() { MinValue = 1, MaxValue = 6, Value = 1 };
+	private readonly TileFrameCache cache = new();
+	private readonly Button clearCache = new() { Text = "Clear tile cache" };
 	private readonly HFlowContainer layers = new();
 	private readonly Label status = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
 	private readonly Label hover = new();
@@ -18,7 +25,13 @@ public partial class MapPreview : VBoxContainer
 	public MapPreview(Func<string> gameDirectory) { this.gameDirectory = gameDirectory; }
 	public override void _Ready()
 	{
-		AddChild(new Label { Text = "DT1 / DS1 map preview" }); AddChild(resource); AddChild(palettePath); AddChild(tilesets);
+		AddChild(new Label { Text = "DT1 / DS1 map preview" });
+		var tableControls = new HFlowContainer(); AddChild(tableControls);
+		tableMode.AddItem("TXT map tables"); tableMode.AddItem("BIN map tables (1.10f only)"); tableControls.AddChild(tableMode);
+		foreach (var input in new[] { ("Level ID", levelId), ("Preset Def", presetId), ("File slot", fileSlot) })
+		{ tableControls.AddChild(new Label { Text = input.Item1 }); tableControls.AddChild(input.Item2); }
+		tableControls.AddChild(resolve); resolve.Pressed += ResolvePaths;
+		AddChild(resource); AddChild(palettePath); AddChild(tilesets);
 		AddChild(load); load.Pressed += LoadMap;
 		var controls = new HBoxContainer(); AddChild(controls);
 		var collision = new CheckButton { Text = "Collision" }; controls.AddChild(collision);
@@ -26,13 +39,34 @@ public partial class MapPreview : VBoxContainer
 		var objects = new CheckButton { Text = "Objects" }; controls.AddChild(objects);
 		objects.Toggled += on => { view.ShowObjects = on; view.QueueRedraw(); };
 		var reset = new Button { Text = "Reset view" }; controls.AddChild(reset); reset.Pressed += view.ResetView;
+		controls.AddChild(clearCache); clearCache.Pressed += () => { cache.Clear(); status.Text = "Tile cache cleared; active preview retained."; };
 		AddChild(layers); AddChild(view); AddChild(hover); AddChild(status);
 		view.Hovered += text => hover.Text = text;
 		LoadSample();
 	}
+	private void Busy(bool value) { load.Disabled = value; resolve.Disabled = value; clearCache.Disabled = value; }
+	private async void ResolvePaths()
+	{
+		Busy(true); status.Text = "Reading map tables and checking references...";
+		try
+		{
+			string directory = gameDirectory(); int level = (int)levelId.Value, preset = (int)presetId.Value, slot = (int)fileSlot.Value - 1;
+			var mode = tableMode.Selected == 0 ? MapTableMode.Txt : MapTableMode.Bin110f;
+			var result = await Task.Run(() =>
+			{
+				var tables = MapTables.Load(p => AssetDecoders.ReadFromInstall(directory, p), mode);
+				return (plan: tables.Resolve(level, preset, slot), issues: tables.Validate());
+			});
+			if (!IsInstanceValid(this) || !IsInsideTree()) return;
+			resource.Text = result.plan.MapPath; tilesets.Text = string.Join('\n', result.plan.Tilesets);
+			status.Text = $"Resolved {result.plan.Tilesets.Count} DT1 slots. Table errors: {result.issues.Count(i => i.IsError)}; context notices: {result.issues.Count(i => !i.IsError)}. Check the Act palette, then Load map. Version and file existence are not yet verified.";
+		}
+		catch (Exception error) { if (IsInstanceValid(this) && IsInsideTree()) status.Text = "Table resolution failed; previous paths retained. " + error.Message; }
+		finally { if (IsInstanceValid(this) && IsInsideTree()) Busy(false); }
+	}
 	private async void LoadMap()
 	{
-		load.Disabled = true; status.Text = "Reading and decoding map...";
+		Busy(true); status.Text = "Reading and decoding map...";
 		try
 		{
 			string directory = gameDirectory(), path = resource.Text, colors = palettePath.Text, sources = tilesets.Text;
@@ -50,13 +84,13 @@ public partial class MapPreview : VBoxContainer
 					if (input > 67108864) throw new InvalidDataException("Map input exceeds 64 MiB.");
 					sets.Add(new(name, Dt1Tileset.Parse(bytes)));
 				}
-				return (scene: MapScene.Build(map, sets), palette);
+				return (scene: MapScene.Build(map, sets, cache), palette);
 			});
-			if (!IsInstanceValid(this) || !IsInsideTree()) return;
+			if (!IsInstanceValid(this) || !IsInsideTree()) { cache.Clear(); return; }
 			ShowMap(loaded.scene, loaded.palette, path);
 		}
 		catch (Exception error) { if (IsInstanceValid(this) && IsInsideTree()) status.Text = "Load failed; previous preview retained. " + error.Message; }
-		finally { if (IsInstanceValid(load)) load.Disabled = false; }
+		finally { if (IsInstanceValid(this) && IsInsideTree()) Busy(false); else cache.Clear(); }
 	}
 	private void ShowMap(MapScene scene, Palette palette, string name)
 	{
@@ -69,7 +103,10 @@ public partial class MapPreview : VBoxContainer
 			check.Toggled += on => { view.VisibleLayers[layerIndex] = on; view.QueueRedraw(); };
 		}
 		status.Text = $"{name}\n{scene.Map.Width} x {scene.Map.Height}, DS1 v{scene.Map.Version}, act {scene.Map.Act}; {scene.Images.Count} shared tiles; {scene.MissingTiles} missing; {scene.DuplicateKeys} duplicate keys.\nDrag to pan / wheel to zoom. Red: walk blocked, amber: other flags, magenta: unknown. Preview uses first tile variant; no gameplay or PL2 blending.";
+		var stats = cache.Stats;
+		status.Text += $"\nTile cache: {stats.RetainedBytes / 1024} / {stats.BudgetBytes / 1024} KiB, {stats.Hits} hits, {stats.Misses} misses, {stats.Evictions} evictions (active scene/GPU memory separate).";
 	}
+	public override void _ExitTree() { cache.Clear(); }
 	private void LoadSample()
 	{
 		// Own synthetic 2 x 2 floor map and a complete 25-block diamond; no game bytes.
@@ -91,10 +128,22 @@ public partial class MapPreview : VBoxContainer
 		D32(0, 18); D32(4, 1); D32(8, 1); D32(28, 1);
 		for (int i = 0; i < 4; i++) D32(32 + i * 4, 0x00100001);
 		byte[] colors = new byte[768]; colors[3] = 80; colors[4] = 150; colors[5] = 90; colors[6] = 55; colors[7] = 105; colors[8] = 60;
-		var scene = MapScene.Build(Ds1Map.Parse(ds1), [new("synthetic.dt1", Dt1Tileset.Parse(dt1))]);
+		var tableFiles = new Dictionary<string, string>
+		{
+			["levels.txt"] = "Id\tLevelType\n1\t0\n",
+			["lvltypes.txt"] = string.Join('\t', Enumerable.Range(1, 32).Select(i => $"File {i}")) + "\nsynthetic.dt1\n",
+			["lvlprest.txt"] = "Def\tLevelId\tFiles\tDt1Mask\tFile1\tFile2\tFile3\tFile4\tFile5\tFile6\n1\t1\t1\t1\tsynthetic.ds1\n"
+		};
+		var tables = MapTables.Load(p => System.Text.Encoding.Latin1.GetBytes(tableFiles[p.Split('\\')[^1]]), MapTableMode.Txt);
+		var plan = tables.Resolve(1, 1);
+		MapTileset[] sets = [new(plan.Tilesets[0], Dt1Tileset.Parse(dt1))];
+		var scene = MapScene.Build(Ds1Map.Parse(ds1), sets, cache);
+		MapScene.Build(Ds1Map.Parse(ds1), sets, cache);
 		ShowMap(scene, Palette.Parse(colors), "Synthetic map (not game content)");
 		if (scene.Placements.Count != 4 || !scene.CollisionAt(0, 0).BlocksWalk || !view.CheckSampleTexture()) throw new InvalidDataException("Map preview smoke failed.");
 		GD.Print("OPEND2_M106_MAP_READY");
+		if (tables.Validate().Count != 0 || cache.Stats.Hits != 1 || plan.MapPath != "data\\global\\tiles\\synthetic.ds1") throw new InvalidDataException("Map table/cache smoke failed.");
+		GD.Print("OPEND2_M107_TABLE_CACHE_READY");
 	}
 }
 

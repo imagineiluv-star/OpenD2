@@ -3,11 +3,22 @@ using OpenD2.Assets;
 
 if (args.Length == 0 || args[0] is "--help" or "-h")
 {
-	Console.WriteLine("Usage: OpenD2.AssetAudit [--probe|--decode] <game-data-directory> [known-paths.txt]\nJSON goes to stdout. Scan uses read-only MPQs; no resource extraction. --decode validates Palette/text TBL/DC6/DCC/COF/DT1/DS1.\nExit 0: scan completed without reported errors; 3: missing archives, read or decode failures; 1: fatal error; 2: usage.\nA successful scan does not establish version compatibility or complete coverage.");
+	Console.WriteLine("Usage: OpenD2.AssetAudit [--probe|--decode] <game-data-directory> [known-paths.txt]\n       OpenD2.AssetAudit --tables-txt|--tables-bin-110f <game-data-directory>\nJSON goes to stdout. Scan uses read-only MPQs; no resource extraction. --decode validates Palette/text TBL/DC6/DCC/COF/DT1/DS1 and TXT structure. BIN schemas require explicit --tables-bin-110f.\nExit 0: scan completed without reported errors; 3: missing archives, read, decode or reference failures; 1: fatal error; 2: usage.\nA successful scan does not establish version compatibility or complete coverage.");
 	return args.Length == 0 ? 2 : 0;
 }
 try
 {
+	if (args[0] is "--tables-txt" or "--tables-bin-110f")
+	{
+		if (args.Length != 2) return 2;
+		var mode = args[0] == "--tables-txt" ? MapTableMode.Txt : MapTableMode.Bin110f;
+		var installation = GameInstall.Probe(args[1]);
+		var tables = MapTables.Load(path => AssetDecoders.ReadFromInstall(args[1], path), mode);
+		var issues = tables.Validate();
+		Console.WriteLine(JsonSerializer.Serialize(new { Installation = installation, Mode = mode.ToString(), VersionStatus = "unverified", Complete = false, ResourceExistenceChecked = false,
+			tables.LevelCount, tables.TypeCount, tables.PresetCount, tables.Sources, Issues = issues, DecoderVersion = AssetDecoders.Version }, new JsonSerializerOptions { WriteIndented = true }));
+		return installation.MissingArchives.Count > 0 || issues.Any(i => i.IsError) ? 3 : 0;
+	}
 	bool decode = args[0] == "--decode";
 	if (decode) args = args[1..];
 	if (args.Length == 0) return 2;

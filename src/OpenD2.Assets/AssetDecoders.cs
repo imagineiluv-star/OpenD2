@@ -2,11 +2,12 @@ namespace OpenD2.Assets;
 
 public static class AssetDecoders
 {
-	public const string Version = "m1.06-1";
+	public const string Version = "m1.07-1";
 	public const int MaxInputBytes = 33554432;
 	public static string? Kind(string logicalPath)
 	{
 		string path = MpqArchive.NormalizePath(logicalPath);
+		if (path.StartsWith("data\\global\\excel\\") && path.EndsWith(".txt")) return "excel_txt";
 		if (path.EndsWith(".dt1")) return "dt1";
 		if (path.EndsWith(".ds1")) return "ds1";
 		if (path.EndsWith(".dcc")) return "dcc";
@@ -20,6 +21,7 @@ public static class AssetDecoders
 	{
 		switch (kind)
 		{
+			case "excel_txt": ExcelTextTable.Parse(data); break;
 			case "ds1": Ds1Map.Parse(data); break;
 			case "dt1":
 				var tiles = Dt1Tileset.Parse(data);

@@ -1,7 +1,7 @@
 name: Migration validation
 on:
   push:
-    branches: ["feat/m0-foundation", "feat/m1-legacy-assets"]
+    branches: ["master", "feat/m0-foundation", "feat/m1-legacy-assets"]
     paths: ["native/**", "Directory.Build.targets", "THIRD_PARTY_NOTICES.md", "src/**", "tests/**", "tools/**", "eng/**", "global.json", "Directory.Build.props", "*.sln", ".github/workflows/m0.yml"]
   pull_request:
   workflow_dispatch:
