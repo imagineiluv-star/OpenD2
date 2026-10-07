@@ -42,7 +42,7 @@ Linux 로컬에서 네이티브 소스 빌드, C# 빌드, 17/17 계약 테스트
 
 합성 fixture로 zlib 압축·암호화·다중 섹터 읽기/해시, 대소문자 경로, 목록 없는 MPQ의 알려진 경로, 패치 우선순위, 잘린 아카이브, 읽기 예산, 경로 거부, 핸들 해제를 검사한다. 이것만으로 모든 실제 MPQ 압축 조합·손상 패턴을 검증했다고 보지 않는다.
 
-3개 OS CI는 Windows x64, Linux x64, macOS universal native 빌드와 17개 테스트·Godot 시작·export를 실행한다. 원격 실행 결과는 브랜치 Actions에서 확인한다. GUI 설치·실제 파일 호환성은 별도 인수다.
+3개 OS CI는 Windows x64, Linux x64, macOS universal native 빌드와 17개 테스트·Godot 시작·export를 실행한다. 2026-10-07 세 OS 모두 통과했다 ([CI 실행](https://github.com/imagineiluv-star/OpenD2/actions/runs/37618506265), 코드 커밋 `af6e056850a1688de0eb813e70caaea080f0077d`, 2분 45초). 최초 Windows DWORD 포인터 타입 오류를 수정한 뒤 재검증했다. GUI 설치·실제 파일 호환성은 별도 인수다.
 
 ## 다음 작업과 리스크
 
