@@ -58,11 +58,12 @@ Tick/region/entity/좌표/명령 수/난수/p99/버린 시간/hash를 표시한�
 - 동일 총시간을 10+10ms 또는 7+13ms 프레임으로 나눠도 50 tick의 상태와 이벤트 열이 같음을 확인했다. 5,000 tick 기록 재생과 미래 예약 명령을 가진 중간 시점 재생을 검사했다.
 - 1,024 entity + 128 Signal의 1 tick에서 1,152 이벤트가 안전하게 생성되는지 검사했다. 한 entity의 지속 이동은 워밍업 후 1,000 tick의 `Step`에서 현재 스레드 관리 할당 증가 0바이트를 확인했다. 전체 게임 성능 측정이나 모든 API 무할당 보장은 아니다.
 - Linux 전체 Debug 빌드(경고/오류 0), Godot import·헤드리스 실행·Release export를 검사했다. 합성 명령→상태→난수→재생 hash→좌표 보간 smoke와 실제 `_Process`→clock→Step 연결을 각각 `OPEND2_M201_SIMULATION_READY`, `OPEND2_M201_TICK_LOOP_READY`로 확인한다.
-- 원격 Windows/Linux/macOS CI와 SDK 경로 없는 Linux 배포본 결과는 확인 후 아래 반영 기록에 갱신한다.
+- Linux 배포본을 SDK 경로 없이 120프레임 실행하여 기존 리소스 마커와 새 시뮬레이션·실제 tick 루프 마커를 확인했다.
+- 코드 커밋 `532929b583ec57956f7e5c9d71862753b986093d`의 **Windows x64·Linux x64·macOS universal CI 모두 첫 시도 성공**, OS별 M2 배포 파일 3개 생성. [push CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37674479742)와 [PR CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37674488132)에서 동일한 104개 계약·golden state·시작 루프·export를 검증했다. 실제 게임 전체의 플랫폼 결정성을 의미하지 않는다.
 - 실제 게임 데이터, GUI 키보드·마우스·DPI 수동 조작, Windows/macOS 사용자 설치, 전투 부하·장시간 성능은 미수행이다. 기존 M1의 형식 제한과 실데이터 인수도 유지한다.
 
 ## 다음 작업
 
 **M2-02**: M1 지도 충돌을 Core의 엔진 독립 판정에 연결하고, 이동/정지/벽·미확인 셀, 공격·피격·사망과 최소 몬스터 AI를 합성 맵에서 구현한다. 게임 규칙이 바뀌면 rules version과 replay 기준을 갱신한다. 이어 M2-03에서 실제 지역 흐름으로 확장한다.
 
-코드·설계·결과를 기능 브랜치에서 검증한 뒤 master에 병합한다. 자체 DLL 소스/고정 도구·의존성 빌드는 모두 저장소에 유지하며 추가 런타임 의존성은 없다.
+master 반영 PR은 [#3](https://github.com/imagineiluv-star/OpenD2/pull/3)이다. 위 코드 커밋의 검증 이후 결과 기록 변경은 문서만 포함한다. 자체 DLL 소스/고정 도구·의존성 빌드는 모두 저장소에 유지하며 추가 런타임 의존성은 없다.
