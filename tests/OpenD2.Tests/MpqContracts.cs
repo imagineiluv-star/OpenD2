@@ -68,6 +68,28 @@ internal static class MpqContracts
 			Check(report.Entries.Any(e => e.LogicalPath == "data\\hidden.bin" && e.ContentHash != null));
 			Check(!report.Complete);
 		});
+		test("MPQ decode inventory keeps hashes and reports malformed DC6", () =>
+		{
+			string decoded = Path.Combine(root, "decoded"); Directory.CreateDirectory(decoded);
+			byte[] good = LegacyFormatContracts.Dc6(), bad = (byte[])good.Clone(); bad[60] = 127;
+			Check(Fixture(Path.Combine(decoded, "patch_d2.mpq"), "sample.dc6", good, (uint)good.Length, 1) == 0);
+			Check(Fixture(Path.Combine(decoded, "d2data.mpq"), "sample.dc6", bad, (uint)bad.Length, 1) == 0);
+			byte[] before = File.ReadAllBytes(Path.Combine(decoded, "patch_d2.mpq"));
+			Check(AssetInventory.Scan(decoded).Entries.Where(e => e.Format == "dc6").All(e => e.DecodeStatus == "not_requested"));
+			var report = AssetInventory.Scan(decoded, new AuditOptions(Decode: true));
+			var entries = report.Entries.Where(e => e.Format == "dc6").ToArray();
+			Check(entries.Length == 2 && entries[0].DecodeStatus == "validated" && entries[0].Selected);
+			Check(entries[1].DecodeStatus == "failed" && entries[1].ContentHash != null && entries[1].ErrorCode != null);
+			Check(report.DecodeBytes == good.Length + bad.Length && !report.Complete);
+			Check(AssetDecoders.ReadFromInstall(decoded, "sample.dc6").SequenceEqual(good));
+			Check(File.ReadAllBytes(Path.Combine(decoded, "patch_d2.mpq")).SequenceEqual(before));
+		});
+		test("preview resource lookup fails on unreadable higher-priority archive", () =>
+		{
+			string decoded = Path.Combine(root, "decoded");
+			File.WriteAllBytes(Path.Combine(decoded, "patch_d2.mpq"), [0, 1, 2]);
+			Throws<MpqException>(() => AssetDecoders.ReadFromInstall(decoded, "sample.dc6"));
+		});
 		test("probe and inventory budgets report gaps", () =>
 		{
 			Check(GameInstall.Probe(dir).MissingArchives.Contains("d2exp.mpq"));
