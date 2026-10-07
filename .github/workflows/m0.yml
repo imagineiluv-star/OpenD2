@@ -1,0 +1,40 @@
+name: M0 foundation
+on:
+  push:
+    branches: ["feat/m0-foundation"]
+    paths: ["src/**", "tests/**", "tools/**", "eng/**", "global.json", "Directory.Build.props", "*.sln", ".github/workflows/m0.yml"]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            preset: Linux
+          - os: windows-2025
+            preset: Windows
+          - os: macos-15
+            preset: macOS
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned Godot and templates
+        run: python eng/bootstrap.py
+      - name: Build, contracts, headless smoke and export
+        run: python eng/validate.py --export ${{ matrix.preset }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenD2-M0-${{ matrix.preset }}
+          path: artifacts/${{ matrix.preset }}/
+          if-no-files-found: error
+          retention-days: 14
