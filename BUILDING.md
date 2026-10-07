@@ -1,6 +1,6 @@
 # C# / Godot M1 개발
 
-브랜치: `feat/m1-legacy-assets`. M1 1차 MPQ 읽기·인벤토리를 구현했으며 Palette·text TBL·DC6 디코더와 이미지 뷰어를 추가했으며 게임 플레이는 아직 없다. 기존 C++ 빌드와 별도로 운영한다.
+브랜치: `feat/m1-legacy-assets`. MPQ 읽기·인벤토리, Palette·text TBL·DC6·DCC·COF 파서와 이미지/애니메이션 뷰어를 구현했다. 게임 플레이는 아직 없다. 기존 C++ 빌드와 별도로 운영한다.
 
 ## 개발자 설치
 
@@ -21,7 +21,7 @@ python eng/validate.py --export Linux
 
 bootstrap은 공식 Godot 배포본을 내려받아 `eng/toolchain.json`의 SHA-512로 검사한다. SDK는 별도 설치한다. bootstrap 출력의 실행 파일로 `src/OpenD2.Client/project.godot`를 열면 된다. 기존 Godot 설치를 사용하려면 `python eng/validate.py --godot <실행파일경로> --export Linux`를 사용한다.
 
-`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 27개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
+`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 40개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
 
 Godot 없이 코어를 검증할 수 있다:
 
@@ -34,6 +34,8 @@ dotnet run --project tools/OpenD2.AssetAudit -- --help
 Tests는 외부 테스트 프레임워크가 없는 실행형 계약 테스트다. **`dotnet test` 대신 위 `dotnet run` 명령을 사용한다.** AssetAudit의 사용법과 인벤토리 한계는 [M1 검증 기록](docs/migration/M1_RESULTS.md)을 참조한다. `build-native.py`는 고정 StormLib 소스를 빌드하고 OS별 라이브러리를 클라이언트·CLI·테스트에 포함한다. 플레이어에게 C++ 빌드 도구를 요구하지 않는다.
 
 M1-04 디코더·뷰어·`--decode` 사용법과 한계는 [M1-04 기록](docs/migration/M1_04_RESULTS.md)을 참조한다.
+
+M1-05 DCC/COF 합성·애니메이션 사용법과 인수 잔건은 [M1-05 기록](docs/migration/M1_05_RESULTS.md)을 참조한다.
 
 ## 실행과 배포
 
