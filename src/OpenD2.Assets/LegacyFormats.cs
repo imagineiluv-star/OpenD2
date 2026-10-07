@@ -135,7 +135,7 @@ public sealed class StringTable
 		AssetBinary.Require(start >= hashEnd && start <= data.Length, "Invalid TBL data start.");
 		AssetBinary.Slice(data, 21, hashEnd - 21);
 		for (int i = 0; i < nodes; i++) AssetBinary.Require(AssetBinary.U16(data, 21 + i * 2) < slots, "TBL index outside hash table.");
-		byte[] owned = data.ToArray(); var result = new List<TblEntry>();
+		byte[] owned = data.ToArray(); var result = new List<TblEntry>(); long stringBytes = 0;
 		for (int i = 0; i < slots; i++)
 		{
 			var node = AssetBinary.Slice(data, hashStart + i * 17L, 17);
@@ -149,6 +149,8 @@ public sealed class StringTable
 			var keyTail = AssetBinary.Slice(data, key, Math.Min(65536L, data.Length - (long)key));
 			int keyLength = keyTail.IndexOf((byte)0);
 			AssetBinary.Require(keyLength >= 0, "TBL key missing terminator.");
+			stringBytes += keyLength + (long)length;
+			AssetBinary.Require(stringBytes <= 33554432, "TBL total string budget exceeded.");
 			result.Add(new TblEntry(index, owned.AsMemory((int)key, keyLength), owned.AsMemory((int)value, length - 1)));
 		}
 		return new StringTable(AssetBinary.U16(data, 0), result.OrderBy(e => e.Index).ToArray());
