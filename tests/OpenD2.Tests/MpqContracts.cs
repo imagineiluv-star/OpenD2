@@ -97,6 +97,23 @@ internal static class MpqContracts
 			Check(entries.Length == 2 && entries.All(e => e.DecodeStatus == "validated" && e.DecoderVersion == AssetDecoders.Version && e.ContentHash != null));
 			Check(!report.Complete && report.DecodeBytes == dcc.Length + cof.Length && File.ReadAllBytes(first).SequenceEqual(before));
 		});
+		test("MPQ DT1 and DS1 audit validates maps, reports damage and keeps sources", () =>
+		{
+			string folder = Path.Combine(root, "maps"); Directory.CreateDirectory(folder);
+			byte[] dt1 = MapContracts.Dt1(), ds1 = MapContracts.Ds1();
+			string first = Path.Combine(folder, "patch_d2.mpq"), second = Path.Combine(folder, "d2data.mpq");
+			Check(Fixture(first, "sample.dt1", dt1, (uint)dt1.Length, 1) == 0);
+			Check(Fixture(second, "sample.ds1", ds1, (uint)ds1.Length, 1) == 0);
+			Check(Fixture(Path.Combine(folder, "d2exp.mpq"), "broken.ds1", [18, 0, 0, 0], 4, 1) == 0);
+			byte[] before = File.ReadAllBytes(first);
+			var report = AssetInventory.Scan(folder, new AuditOptions(Decode: true));
+			var good = report.Entries.Where(e => e.LogicalPath.StartsWith("sample.")).ToArray();
+			Check(good.Length == 2 && good.All(e => e.DecodeStatus == "validated" && e.DecoderVersion == AssetDecoders.Version && e.ContentHash != null));
+			Check(report.Entries.Single(e => e.LogicalPath == "broken.ds1").DecodeStatus == "failed");
+			Check(!report.Complete && report.DecodeBytes == dt1.Length + ds1.Length + 4 && File.ReadAllBytes(first).SequenceEqual(before));
+			var scene = MapScene.Build(Ds1Map.Parse(AssetDecoders.ReadFromInstall(folder, "sample.ds1")), [new("sample.dt1", Dt1Tileset.Parse(AssetDecoders.ReadFromInstall(folder, "sample.dt1")))]);
+			Check(scene.MissingTiles == 0 && scene.Placements.Count == 2);
+		});
 		test("preview resource lookup fails on unreadable higher-priority archive", () =>
 		{
 			string decoded = Path.Combine(root, "decoded");

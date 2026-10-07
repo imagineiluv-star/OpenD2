@@ -80,6 +80,9 @@ public partial class Main : Node3D
 		canvas.AddChild(previews);
 		previews.AddChild(new AssetPreview(() => dataPath.Text) { Name = "DC6" });
 		previews.AddChild(new AnimationPreview(() => dataPath.Text) { Name = "DCC-COF" });
+		var mapScroll = new ScrollContainer { Name = "Map", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+		previews.AddChild(mapScroll);
+		mapScroll.AddChild(new MapPreview(() => dataPath.Text) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
 		var quit = new Button { Text = "Quit" }; panel.AddChild(quit); quit.Pressed += () => GetTree().Quit();
 	}
 

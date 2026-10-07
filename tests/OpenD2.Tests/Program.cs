@@ -22,6 +22,7 @@ try
 {
 	LegacyFormatContracts.Run(Test);
 	AnimationContracts.Run(Test);
+	MapContracts.Run(Test);
 	MpqContracts.Run(root, Test);
 	Test("paths create separate directories", () =>
 	{

@@ -2,11 +2,13 @@ namespace OpenD2.Assets;
 
 public static class AssetDecoders
 {
-	public const string Version = "m1.05-1";
+	public const string Version = "m1.06-1";
 	public const int MaxInputBytes = 33554432;
 	public static string? Kind(string logicalPath)
 	{
 		string path = MpqArchive.NormalizePath(logicalPath);
+		if (path.EndsWith(".dt1")) return "dt1";
+		if (path.EndsWith(".ds1")) return "ds1";
 		if (path.EndsWith(".dcc")) return "dcc";
 		if (path.EndsWith(".cof")) return "cof";
 		if (path.EndsWith(".dc6")) return "dc6";
@@ -18,6 +20,11 @@ public static class AssetDecoders
 	{
 		switch (kind)
 		{
+			case "ds1": Ds1Map.Parse(data); break;
+			case "dt1":
+				var tiles = Dt1Tileset.Parse(data);
+				for (int t = 0; t < tiles.Tiles.Count; t++) tiles.DecodeTile(t);
+				break;
 			case "cof": CofAnimation.Parse(data); break;
 			case "dcc":
 				var animation = DccAnimation.Parse(data);

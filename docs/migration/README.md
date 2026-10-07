@@ -1,6 +1,6 @@
 # OpenD2 C# / Godot 마이그레이션
 
-작성일: 2026-10-07. 상태: M0 및 M1-01~05 기본 코드·합성 검증 구현. 최신 검증·실데이터 인수 잔건은 [M1_05_RESULTS](M1_05_RESULTS.md) 참조.
+작성일: 2026-10-07. 상태: M0 및 M1-01~06 기본 코드·합성 검증 구현. 최신 검증·실데이터 인수 잔건은 [M1_06_RESULTS](M1_06_RESULTS.md) 참조.
 
 ## 목표와 완료의 의미
 
@@ -27,13 +27,13 @@ Godot .NET 클라이언트와 엔진 독립 C# 게임 코어로 이전한다. �
 
 ## 이번 변경과 다음 작업
 
-`feat/m1-legacy-assets`에 엔진 독립 C# Core/Assets, 읽기 전용 MPQ와 인벤토리, Palette/TBL/DC6/DCC/COF 파서, Godot 이미지·애니메이션 뷰어 및 3개 OS CI를 구현했다. 게임 플레이는 M2 이후 범위다.
+`feat/m1-legacy-assets`에 엔진 독립 C# Core/Assets, 읽기 전용 MPQ와 인벤토리, Palette/TBL/DC6/DCC/COF/DT1/DS1 파서, Godot 이미지·애니메이션·지도 뷰어 및 3개 OS CI를 구현했다. 게임 플레이는 M2 이후 범위다.
 
 - [개발·실행 방법](../../BUILDING.md)
 - [M0 검증 결과와 잔여 인수](M0_RESULTS.md)
 - [고정 의존성과 소스 재빌드 기록](M0_DEPENDENCIES.md)
 
-다음 코드 단계는 M1-06 DT1/DS1 지도 뷰어다. M1-05의 특수 변형·효과 및 실제 파일 호환 인수는 남아 있다. 실제 게임 파일을 받기 전에는 synthetic fixture 기반 검사만 수행한다.
+다음 코드 단계는 M1-07 TXT/BIN·교차 참조·예산 기반 캐시다. M1-05~06의 특수 변형·효과 및 실제 파일·지도 호환 인수는 남아 있다. 실제 게임 파일을 받기 전에는 synthetic fixture 기반 검사만 수행한다.
 
 ## 조사 기준
 

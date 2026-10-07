@@ -33,6 +33,7 @@ output = run(godot, "--headless", "--path", "src/OpenD2.Client", "--quit-after",
 assert "OPEND2_M0_READY" in output, "Startup marker missing"
 assert "OPEND2_M104_PREVIEW_READY" in output, "DC6 preview marker missing"
 assert "OPEND2_M105_ANIMATION_READY" in output, "DCC/COF animation marker missing"
+assert "OPEND2_M106_MAP_READY" in output, "DT1/DS1 map marker missing"
 if args.export:
     names = {"Linux": "OpenD2.x86_64", "Windows": "OpenD2.exe", "macOS": "OpenD2.zip"}
     destination = root / "artifacts" / args.export / names[args.export]
