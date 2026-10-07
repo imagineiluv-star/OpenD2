@@ -42,7 +42,7 @@ dotnet run --project tools/OpenD2.AssetAudit -- --decode /path/to/DiabloII known
 - 명시한 예상 픽셀과 비교: signed 원점, 다중 방향, raw/delta 및 부분 mask, 1/2비트 selector, 단색 fill, equal-cell 이동/크기 변경, 5픽셀 셀, 25셀 격자. 모든 바이트 prefix 잘림, 메타데이터/순서/스트림 오류, 좌표·메모리 예산 거절을 포함한다.
 - COF 합성의 프레임별 순서, 투명 구멍, 고정 원점, 누락 매핑·미지원 효과 실패 및 MPQ 원본 불변을 확인한다.
 - Linux 전체 빌드·Godot import·헤드리스·export 통과. SDK 경로 없는 Linux 배포 실행에서 기존 시작 마커와 `OPEND2_M105_ANIMATION_READY`를 확인했다. Godot 검사는 합성 DCC 두 방향→COF 두 레이어→두 번째 프레임 텍스처와 alpha까지 확인한다.
-- 원격 CI 결과: 게시 후 기록.
+- 원격 Windows·Linux·macOS CI 모두 성공(3분 11초), OS별 배포 산출물 3개 생성. 코드 커밋 `18eaf54fd515423b4888c968b86629158af6be90`, [CI 실행](https://github.com/imagineiluv-star/OpenD2/actions/runs/37643274168). GitHub Actions의 기존 Node 20 action에 대한 Node 24 강제 실행 경고는 별도 유지보수 잔건이다.
 
 ## 출처와 다음 작업
 
