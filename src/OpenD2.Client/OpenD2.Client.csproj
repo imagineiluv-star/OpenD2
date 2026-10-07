@@ -1,0 +1,7 @@
+<Project Sdk="Godot.NET.Sdk/4.6.3">
+  <PropertyGroup><EnableDynamicLoading>true</EnableDynamicLoading><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../OpenD2.Core/OpenD2.Core.csproj" />
+    <ProjectReference Include="../OpenD2.Assets/OpenD2.Assets.csproj" />
+  </ItemGroup>
+</Project>

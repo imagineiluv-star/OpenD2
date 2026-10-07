@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../OpenD2.Core/OpenD2.Core.csproj" /></ItemGroup></Project>

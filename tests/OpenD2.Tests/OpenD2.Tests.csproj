@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/OpenD2.Core/OpenD2.Core.csproj" />
+    <ProjectReference Include="../../src/OpenD2.Assets/OpenD2.Assets.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,24 @@
+{
+  "dotnet": "10.0.401",
+  "godot": "4.6.3",
+  "templateVersion": "4.6.3.stable.mono",
+  "baseUrl": "https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable/",
+  "archives": {
+    "linux": {
+      "file": "Godot_v4.6.3-stable_mono_linux_x86_64.zip",
+      "sha512": "962c4f5fd3a704de36c9dedcb2f5f6c973065ac8ed8fd6e12c7ebf7e48c3852d774bcef2ccf76b50b206c0c564ceea54315e2943e76e397529923e7de680508e"
+    },
+    "windows": {
+      "file": "Godot_v4.6.3-stable_mono_win64.zip",
+      "sha512": "87e265d354f3f71971a90eab70bcb18bcaf1698686c403051c57e30d6a8478cb670e25341867e7d9b66fa1f0761c9cc38d0ae7253154a4b2b21a84b09896625f"
+    },
+    "macos": {
+      "file": "Godot_v4.6.3-stable_mono_macos.universal.zip",
+      "sha512": "8c4c1c83a7a3e1cfc845e0fd4b4cdefd6f1cc662f63378c22a551b50f31965f2a633b7bf7c84ab530847e0fddb5dadc1128e04e87918618dd76c75d66eb67bb9"
+    },
+    "templates": {
+      "file": "Godot_v4.6.3-stable_mono_export_templates.tpz",
+      "sha512": "6756c4c45cc711652fab0f5fbb75459f372f1f4b6cca6bb48e8953c25369418845c8cc39fcda0756effd69d0ecaf50e5653ebb9233b8e33f3bde5d8a81635168"
+    }
+  }
+}

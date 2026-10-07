@@ -1,0 +1,8 @@
+{
+  "stormlib": {
+    "repository": "https://github.com/ladislav-zezula/StormLib.git",
+    "commit": "44ebfbfc109d76e2a85bbd5d8b0c949df7e65c6f",
+    "version": "9.30.0",
+    "bundledDependencies": true
+  }
+}

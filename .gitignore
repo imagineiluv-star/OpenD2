@@ -54,3 +54,16 @@ CTestTestfile.cmake
 
 # Vim
 *.swp
+
+# C# migration generated/user data
+**/bin/
+**/obj/
+**/.godot/
+artifacts/
+.local-tools/
+*.mpq
+*.MPQ
+*.d2s
+*.d2i
+/user-data/
+/asset-cache/

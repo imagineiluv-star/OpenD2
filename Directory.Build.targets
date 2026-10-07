@@ -1,0 +1,5 @@
+<Project>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'OpenD2.Client' Or '$(MSBuildProjectName)' == 'OpenD2.Tests' Or '$(MSBuildProjectName)' == 'OpenD2.AssetAudit'">
+    <Content Include="$(MSBuildThisFileDirectory).local-tools/native/dist/*" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
