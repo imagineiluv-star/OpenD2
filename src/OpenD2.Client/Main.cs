@@ -1,4 +1,5 @@
 using Godot;
+using System.Runtime.InteropServices;
 using OpenD2.Core;
 using OpenD2.Assets;
 
@@ -22,13 +23,21 @@ public partial class Main : Node3D
 		BuildScene();
 		try
 		{
+			if (OS.HasFeature("editor"))
+			{
+				string native = OS.GetName() == "Windows" ? "opend2_mpq.dll" : OS.GetName() == "macOS" ? "libopend2_mpq.dylib" : "libopend2_mpq.so";
+				string file = ProjectSettings.GlobalizePath("res://.godot/mono/temp/bin/Debug/" + native);
+				NativeLibrary.SetDllImportResolver(typeof(MpqArchive).Assembly, (name, assembly, search) =>
+					name == "opend2_mpq" ? NativeLibrary.Load(file) : nint.Zero);
+			}
+			MpqArchive.VerifyBackend();
 			paths.EnsureCreated();
 			log = new SessionLog(paths.Logs);
 			settings = AppSettings.Load(paths.SettingsFile);
 			settingsLoaded = true;
 			Engine.MaxFps = settings.MaxFps;
 			dataPath.Text = settings.GameDataPath;
-			status.Text = "Offline ready. M0 foundation — no game content loaded.";
+			status.Text = "Offline ready. M1 asset tools — no game content loaded.";
 			log.Write("startup", "M0 offline client ready");
 			GD.Print("OPEND2_M0_READY");
 		}
@@ -55,8 +64,8 @@ public partial class Main : Node3D
 		var panel = new VBoxContainer { Position = new Vector2(32, 32), CustomMinimumSize = new Vector2(550, 0) };
 		canvas.AddChild(panel);
 		panel.AddChild(new Label { Text = "OPEND2 / FOUNDATION", ThemeTypeVariation = "HeaderLarge" });
-		panel.AddChild(new Label { Text = "C# core + Godot 3D | Offline | M0" });
-		panel.AddChild(new Label { Text = "Game data directory (optional until M1)" });
+		panel.AddChild(new Label { Text = "C# core + Godot 3D | Offline | M1" });
+		panel.AddChild(new Label { Text = "Original LoD game data directory" });
 		dataPath = new LineEdit { PlaceholderText = "Select your original game directory" }; panel.AddChild(dataPath);
 		var browse = new Button { Text = "Choose directory" }; panel.AddChild(browse);
 		var dialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenDir, Access = FileDialog.AccessEnum.Filesystem };
@@ -80,9 +89,11 @@ public partial class Main : Node3D
 		try
 		{
 			var path = string.IsNullOrWhiteSpace(dataPath.Text) ? "" : DataDirectory.Validate(dataPath.Text);
+			var probe = path.Length == 0 ? null : GameInstall.Probe(path);
 			var next = settings with { GameDataPath = path };
 			next.Save(paths.SettingsFile); settings = next;
-			status.Text = "Settings saved. MPQ compatibility is not yet verified.";
+			status.Text = probe is null ? "Settings saved. No game directory selected."
+				: $"Settings saved. {probe.Archives.Count} archives; {probe.MissingArchives.Count} required archives missing. Version compatibility unverified.";
 			log?.Write("settings_saved", "Game data directory preference updated");
 		}
 		catch (Exception error) { status.Text = error.Message; }
