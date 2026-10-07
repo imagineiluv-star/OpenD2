@@ -37,7 +37,7 @@ public partial class Main : Node3D
 			settingsLoaded = true;
 			Engine.MaxFps = settings.MaxFps;
 			dataPath.Text = settings.GameDataPath;
-			status.Text = "Offline ready. M1 asset tools — no game content loaded.";
+			status.Text = "Offline ready. Asset tools and simulation inspector — no game content loaded.";
 			log.Write("startup", "M0 offline client ready");
 			GD.Print("OPEND2_M0_READY");
 		}
@@ -64,7 +64,7 @@ public partial class Main : Node3D
 		var panel = new VBoxContainer { Position = new Vector2(32, 32), CustomMinimumSize = new Vector2(550, 0) };
 		canvas.AddChild(panel);
 		panel.AddChild(new Label { Text = "OPEND2 / FOUNDATION", ThemeTypeVariation = "HeaderLarge" });
-		panel.AddChild(new Label { Text = "C# core + Godot 3D | Offline | M1" });
+		panel.AddChild(new Label { Text = "C# core + Godot 3D | Offline | M2 foundation" });
 		panel.AddChild(new Label { Text = "Original LoD game data directory" });
 		dataPath = new LineEdit { PlaceholderText = "Select your original game directory" }; panel.AddChild(dataPath);
 		var browse = new Button { Text = "Choose directory" }; panel.AddChild(browse);
@@ -83,6 +83,10 @@ public partial class Main : Node3D
 		var mapScroll = new ScrollContainer { Name = "Map", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
 		previews.AddChild(mapScroll);
 		mapScroll.AddChild(new MapPreview(() => dataPath.Text) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
+		var simulationScroll = new ScrollContainer { Name = "Simulation", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+		previews.AddChild(simulationScroll);
+		simulationScroll.AddChild(new SimulationPreview((name, message) => log?.Write(name, message)) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
+		if (OS.GetCmdlineUserArgs().Contains("--smoke-test")) previews.CurrentTab = 3;
 		var quit = new Button { Text = "Quit" }; panel.AddChild(quit); quit.Pressed += () => GetTree().Quit();
 	}
 

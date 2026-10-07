@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace OpenD2.Core;
 
-// Main-thread owned. One bounded frame window; no per-frame collection allocations.
+// Main-thread owned. One bounded duration window; no per-sample collection allocations.
 public sealed class FrameMetrics
 {
 	private readonly double[] samples = new double[600];
@@ -15,12 +15,14 @@ public sealed class FrameMetrics
 		cursor = (cursor + 1) % samples.Length;
 		count = Math.Min(count + 1, samples.Length);
 	}
-	public double P95Milliseconds()
+	public double P95Milliseconds() => PercentileMilliseconds(0.95);
+	public double P99Milliseconds() => PercentileMilliseconds(0.99);
+	private double PercentileMilliseconds(double percentile)
 	{
 		if (count == 0) return 0;
 		var sorted = samples.AsSpan(0, count).ToArray();
 		Array.Sort(sorted);
-		return sorted[(int)Math.Ceiling(count * 0.95) - 1];
+		return sorted[(int)Math.Ceiling(count * percentile) - 1];
 	}
 }
 
