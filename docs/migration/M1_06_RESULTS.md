@@ -48,7 +48,8 @@
 - 타일 공유, 투영 좌표·벽/roof offset, 플래그 OR, 미확인 충돌, 중복 키 선택, 숨김, 누락, 누적 예산을 검증한다. 합성 MPQ에서 지도 로드·감사·손상 보고·원본 불변을 확인한다.
 - Linux 전체 Debug 빌드, Godot import·헤드리스 시작·Release export 통과. 헤드리스 시작은 합성 25블록→2×2 지도 조립, 충돌, 텍스처 160×79와 alpha를 확인하고 `OPEND2_M106_MAP_READY`를 출력한다.
 - Linux 배포본을 SDK 경로 없이 실행해 기존 시작 마커와 새 지도 마커를 확인했다.
-- 원격 OS별 CI 결과는 브랜치 반영 후 이 절에 기록한다.
+- 원격 **Windows·Linux·macOS CI 모두 성공**, OS별 배포 산출물 3개 생성. 코드 커밋 `049313b05d7f29890c9734256dbb26b4abb5c8d4`, [CI 실행](https://github.com/imagineiluv-star/OpenD2/actions/runs/37653534851).
+- macOS 최초 시도는 60/60 테스트 후 Godot import 종료 시 `EditorSettings not instantiated yet ... export/android/android_sdk_path` 오류로 실패했다. 동일 커밋의 macOS 작업을 한 번 재실행해 import·헤드리스·export까지 성공했다. 오류 검사 완화나 무시 처리는 추가하지 않았다. 재발 시 도구 초기화/종료 수명 문제를 조사할 CI 안정성 잔건이다.
 - 실제 LoD MPQ의 타일·지도 이미지 대조, GUI 마우스/DPI 조작, Windows/macOS 사용자 설치, 큰 지도 성능 실측은 미수행이다.
 
 ## 출처와 다음 작업
