@@ -70,3 +70,17 @@ tick은 호환성 검증 전 잠정 25Hz로 둔다. 실제 프레임 기반 스�
 새 저장 포맷에 schemaVersion, contentVersion, 캐릭터, 인벤토리, 퀘스트, 지역 시드·변경분을 기록한다. 임시 파일 작성 → 검증 → 원자 교체와 이전 정상본 백업을 적용한다. 사용자 데이터는 설치 폴더와 분리한다.
 
 원본 `.d2s`는 지원 버전별 가져오기 기능으로 제공하고 원본 파일을 덮어쓰지 않는다. D2R 최신 세이브 지원은 별도 시험 없이 표시하지 않는다. 버전 변환은 이전 fixture로 검증하고, 알 수 없는 새 버전은 명확히 거부한다.
+
+## M2-01 실행 계약 (rules v1)
+
+구현: `GameSimulation`, `FixedTickClock`, `SimulationRandom`과 Client의 `SimulationPreview`. Core는 단일 소유 스레드에서 실행하며 외부 시계·엔진·파일 I/O·이벤트 콜백을 호출하지 않는다. 동시 Submit/Step은 지원하지 않는다. 향후 네트워크 수신은 소유 스레드 큐 앞에서 별도로 정렬·검증해야 한다.
+
+- 기본 25Hz, 정수 시간 누산은 40ms 단위다. 프레임당 최대 5 tick을 실행하고 입력 시간은 250ms로 제한한다. 남은 완전 tick 시간은 버리고 부분 시간은 보간에 남긴다. 버린 벽시계 시간만 계측하며 게임 tick ID를 건너뛰지 않는다. 오프라인 도구 정책이며 네트워크 따라잡기 규약이 아니다.
+- 명령은 target Tick, Actor, Region, 단조 증가 Sequence와 값으로 전달한다. 같은 actor의 제출 target tick은 감소할 수 없다. 승인 순서와 적용 순서를 구분하며 적용 순서는 `(Tick, ActorId, Sequence)`다. 거절은 상태·난수·순번을 바꾸지 않는다.
+- 전역 entity ID와 region ID를 분리한다. 좌표는 tile당 256 정수 단위, 이동 의도는 각 축 -1/0/1이다. 현재 자유 이동은 축당 32, 대각선당 23단위/tick이며 최종 게임 이동 규칙이 아니다. 판정은 엔진 물리/부동소수점 보간과 독립이다.
+- 이벤트는 한 tick의 값 목록이며 callback으로 게임 상태에 재진입하지 않는다. Client가 tick 직후 읽어 처리한다. borrowed state/event span은 다음 Step까지만 사용하고 보관에는 소유 사본 Snapshot을 쓴다. 일반 렌더 프레임은 전체 snapshot을 복제하지 않는다.
+- 원본 OpenD2의 uint32 xorshift 전이를 명시적 seed/state로 유지한다. 0 상태는 거절한다. 범위 변환은 16비트 축소 대신 rejection sampling을 사용한다. 원본 Diablo 게임 RNG 호환은 별도 검증한다.
+- rules v1의 SHA-256은 little-endian 정수 상태·난수·입력 watermark·정렬된 예약 명령을 포함한다. 이벤트 소비/벽시계/렌더 좌표/성능 지표는 판정 상태에 포함하지 않는다. hash는 명시적 진단 시에만 계산한다.
+- 재생은 시작 seed·entity 값과 승인 당시 tick을 포함한 명령 로그에서 새 세션을 만든다. 잘못된 순서·거절 명령·예산 초과는 실패하며 원래 세션을 수정하지 않는다. 저장 포맷/스냅샷 복원/원본 세이브 가져오기는 M2-05다.
+
+상한과 실제 검증 증거, 남은 호환성 범위는 [M2_01_RESULTS](M2_01_RESULTS.md)에 기록한다. rules를 바꾸는 후속 구현은 버전과 golden state 기준을 의도적으로 갱신한다.

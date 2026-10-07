@@ -35,6 +35,8 @@ assert "OPEND2_M104_PREVIEW_READY" in output, "DC6 preview marker missing"
 assert "OPEND2_M105_ANIMATION_READY" in output, "DCC/COF animation marker missing"
 assert "OPEND2_M106_MAP_READY" in output, "DT1/DS1 map marker missing"
 assert "OPEND2_M107_TABLE_CACHE_READY" in output, "Map tables/cache marker missing"
+assert "OPEND2_M201_SIMULATION_READY" in output, "Simulation/replay marker missing"
+assert "OPEND2_M201_TICK_LOOP_READY" in output, "Live simulation tick loop marker missing"
 if args.export:
     names = {"Linux": "OpenD2.x86_64", "Windows": "OpenD2.exe", "macOS": "OpenD2.zip"}
     destination = root / "artifacts" / args.export / names[args.export]

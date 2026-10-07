@@ -1,6 +1,6 @@
-# C# / Godot M1 개발
+# C# / Godot 마이그레이션 개발
 
-브랜치: `feat/m1-legacy-assets`. MPQ 읽기·인벤토리, Palette·text TBL·DC6·DCC·COF·DT1·DS1 파서, TXT/1.10f 맵 BIN 로더·참조 검사·타일 캐시와 이미지/애니메이션/지도 뷰어를 구현했다. 게임 플레이는 아직 없다. 기존 C++ 빌드와 별도로 운영한다.
+기준: `master`, M2 작업: `feat/m2-playable-slice`. MPQ 읽기·인벤토리, Palette·text TBL·DC6·DCC·COF·DT1·DS1 파서, TXT/1.10f 맵 BIN 로더·참조 검사·타일 캐시와 이미지/애니메이션/지도 뷰어를 구현했다. M2-01 고정 tick·명령·상태·난수·재생 기반과 합성 자유 이동 검사 화면을 추가했다. 충돌·전투와 실제 게임 플레이는 아직 없다. 기존 C++ 빌드와 별도로 운영한다.
 
 ## 개발자 설치
 
@@ -21,7 +21,7 @@ python eng/validate.py --export Linux
 
 bootstrap은 공식 Godot 배포본을 내려받아 `eng/toolchain.json`의 SHA-512로 검사한다. SDK는 별도 설치한다. bootstrap 출력의 실행 파일로 `src/OpenD2.Client/project.godot`를 열면 된다. 기존 Godot 설치를 사용하려면 `python eng/validate.py --godot <실행파일경로> --export Linux`를 사용한다.
 
-`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 80개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
+`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 104개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
 
 Godot 없이 코어를 검증할 수 있다:
 
@@ -46,6 +46,8 @@ dotnet run --project tools/OpenD2.AssetAudit -- --tables-txt /path/to/game
 # BIN은 사용자가 1.10f 스키마를 명시적으로 선택한다. 자동 버전 검출이 아니다.
 dotnet run --project tools/OpenD2.AssetAudit -- --tables-bin-110f /path/to/game
 ```
+
+M2-01은 **Simulation** 탭에서 그리드를 클릭하고 방향키로 조작한다. **Pause / Step one tick / Signal / Verify replay**로 상태와 재생을 검사한다. 난수 Seed 변경은 **New run**에서 적용한다. 사용법·명령 순서·예산·검증 범위는 [M2-01 기록](docs/migration/M2_01_RESULTS.md)을 참조한다.
 
 ## 실행과 배포
 
