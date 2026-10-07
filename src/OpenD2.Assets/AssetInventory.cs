@@ -3,14 +3,14 @@ using System.Text;
 
 namespace OpenD2.Assets;
 
-public sealed record AuditOptions(long MaxFileBytes = 268435456, long MaxTotalBytes = 4294967296, int MaxEntries = 100000);
+public sealed record AuditOptions(long MaxFileBytes = 268435456, long MaxTotalBytes = 4294967296, int MaxEntries = 100000, bool Decode = false);
 public sealed record AssetEntry(string SourceArchive, string SourceVersion, string LogicalPath, string ContentId,
 	string? ContentHash, long? Size, string Format, string DecoderVersion, string DecodeStatus,
 	string RuntimeStatus, string? HdReplacementId, bool Selected, string? ErrorCode);
 public sealed record ArchiveAudit(string SourceArchive, string? ArchiveHash, bool EnumerationComplete,
 	int EnumeratedNames, string? ErrorCode);
 public sealed record AssetReport(int SchemaVersion, InstallProbe Installation, IReadOnlyList<ArchiveAudit> Archives,
-	IReadOnlyList<AssetEntry> Entries, bool Complete, string Coverage, long HashedBytes);
+	IReadOnlyList<AssetEntry> Entries, bool Complete, string Coverage, long HashedBytes, long DecodeBytes);
 
 public static class AssetInventory
 {
@@ -24,7 +24,7 @@ public static class AssetInventory
 		if (known.Length > options.MaxEntries) throw new InvalidDataException("Known-path list exceeds entry budget.");
 		var archives = new List<ArchiveAudit>(); var entries = new List<AssetEntry>();
 		var selected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		long bytes = 0;
+		long bytes = 0, decodeBytes = 0;
 		foreach (string path in install.Archives)
 		{
 			string name = Path.GetFileName(path); string? archiveHash = null;
@@ -32,7 +32,7 @@ public static class AssetInventory
 			{
 				// Budget counts successfully hashed bytes (not all backend I/O). Original files are opened read-only.
 				long length = new FileInfo(path).Length;
-				if (length > options.MaxTotalBytes - bytes) throw new InvalidDataException("Archive exceeds remaining I/O budget.");
+				if (length > options.MaxTotalBytes - bytes - decodeBytes) throw new InvalidDataException("Archive exceeds remaining I/O budget.");
 				using (var source = File.OpenRead(path)) archiveHash = Convert.ToHexStringLower(SHA256.HashData(source));
 				bytes += length;
 				using var archive = new MpqArchive(path);
@@ -44,14 +44,32 @@ public static class AssetInventory
 					string? hash = null, error = null; long? size = null;
 					try
 					{
-						var value = archive.Hash(logical, Math.Min(options.MaxFileBytes, options.MaxTotalBytes - bytes));
+						var value = archive.Hash(logical, Math.Min(options.MaxFileBytes, options.MaxTotalBytes - bytes - decodeBytes));
 						size = value.Size; hash = value.Sha256; bytes += value.Size;
 					}
 					catch (MpqException ex) when (ex.Code == 2 && !listed.Contains(logical)) { continue; }
 					catch (Exception ex) when (ex is IOException or InvalidDataException) { error = Error(ex); }
+					string? kind = AssetDecoders.Kind(logical);
+					string decoder = kind is null ? "none" : AssetDecoders.Version;
+					string decodeStatus = kind is null ? "not_implemented" : "not_requested";
+					if (options.Decode && kind is not null)
+					{
+						decodeStatus = "read_failed";
+						if (error is null)
+						{
+							try
+							{
+								var raw = archive.Read(logical, Math.Min(AssetDecoders.MaxInputBytes, Math.Min(options.MaxFileBytes, options.MaxTotalBytes - bytes - decodeBytes)));
+								decodeBytes += raw.Length;
+								AssetDecoders.Validate(kind, raw); decodeStatus = "validated";
+							}
+							catch (Exception ex) when (ex is IOException or InvalidDataException)
+							{ decodeStatus = "failed"; error = "decode_" + Error(ex); }
+						}
+					}
 					entries.Add(new AssetEntry(name, install.VersionStatus, logical,
 						Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(logical))), hash, size,
-						Path.GetExtension(logical.Replace('\\', '/')).TrimStart('.').ToLowerInvariant(), "none", "not_implemented",
+						Path.GetExtension(logical.Replace('\\', '/')).TrimStart('.').ToLowerInvariant(), decoder, decodeStatus,
 						"not_loaded", null, selected.Add(logical), error));
 				}
 				archives.Add(new ArchiveAudit(name, archiveHash, false, listed.Count, null));
@@ -62,7 +80,7 @@ public static class AssetInventory
 			}
 		}
 		// Listfiles and supplied paths cannot establish that every unnamed hash-table entry is accounted for.
-		return new AssetReport(1, install, archives, entries, false, "listfile-and-known-paths-only; version-and-total-coverage-unverified", bytes);
+		return new AssetReport(1, install, archives, entries, false, "listfile-and-known-paths-only; version-and-total-coverage-unverified", bytes, decodeBytes);
 	}
 	private static string Error(Exception ex) => ex is MpqException mpq ? $"mpq_{mpq.Code}" : ex is InvalidDataException ? "budget_or_invalid_data" : ex.GetType().Name;
 }
