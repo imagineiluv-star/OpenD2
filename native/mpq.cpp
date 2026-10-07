@@ -45,7 +45,10 @@ API int od2_file_open(HANDLE archive, const char* name, HANDLE* file, uint64_t* 
 }
 API int od2_read(HANDLE file, void* buffer, uint32_t length, uint32_t* read)
 {
-	return SFileReadFile(file, buffer, length, read, nullptr) ? 0 : failure();
+	DWORD count = 0;
+	bool success = SFileReadFile(file, buffer, length, &count, nullptr);
+	*read = static_cast<uint32_t>(count);
+	return success ? 0 : failure();
 }
 API void od2_file_close(HANDLE file) { SFileCloseFile(file); }
 struct Find { HANDLE handle; SFILE_FIND_DATA data; };
