@@ -9,3 +9,5 @@ The bundled code includes zlib, bzip2, PKLIB, LZMA, Huffman, ADPCM, libtommath a
 The narrow C ABI in `native/mpq.cpp` is OpenD2-owned source. Rebuild with CMake 3.25+ and a C++17 compiler using `python eng/build-native.py`. Windows uses static MSVC runtime, macOS builds universal arm64/x86_64, Linux uses the host C/C++ runtime. Bit-identical builds across compilers have not been established.
 
 Game MPQs and extracted assets are user-supplied, read-only data; they are not included in this repository or CI artifacts. Godot and .NET provenance remains documented in `docs/migration/M0_DEPENDENCIES.md`.
+
+M1-05 DCC/COF implementation reorganizes the existing GPL-3.0 OpenD2 format algorithms in `Engine/DCC.cpp`, `DCC.hpp` and `COF.hpp` into C#. Preserve the original credits to Necrolis, SVR, Paul Siramy and eezstreet. OpenDiablo2/dcc (`16ddc7029d0bf7a90e59f22ace61a17d604722cc`) and OpenDiablo2/cof (`180eb64494ba142c2b2bb6281f74c4fb1275bfa8`) were consulted for comparison; no external Go source, game testdata or additional codec package is bundled.
