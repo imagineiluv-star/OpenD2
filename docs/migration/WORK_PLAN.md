@@ -1,6 +1,6 @@
 # 단계별 작업계획
 
-전체 구현 상태: 미착수. 설계 문서 작성은 게임 구현 완료에 포함하지 않는다.
+전체 구현 상태: M0 기반 구현 및 로컬 검증 완료. 단계별 실제 증거는 [M0_RESULTS](M0_RESULTS.md)에 기록한다. 게임 콘텐츠 구현은 M1부터 진행한다.
 
 ## 단계와 브랜치
 
@@ -20,15 +20,17 @@ M5는 오프라인 제품 출시의 필수 조건이 아니다. M6의 RegionId·
 
 ## 실행 백로그
 
-### M0 — 첫 구현 작업
+### M0 — 기반 구현과 인수
 
-- [ ] **M0-01** Godot .NET / .NET SDK / export template 조합 선정. Windows x64와 macOS arm64 빈 앱 내보내기. 결과와 버전 고정. 막히는 조합은 채택하지 않는다.
-- [ ] **M0-02** Core / Assets / Client / AssetAudit / Tests 생성. Godot 없이 Core·Assets 빌드되는 참조 구조 검증.
-- [ ] **M0-03** CI에 코어 빌드·테스트·엔진 의존성 검사·클라이언트 export 연결. 게임 데이터 없이 수행 가능한 synthetic fixture만 사용.
-- [ ] **M0-04** 의존성 출처·라이선스·소스 빌드 목록과 ignore 규칙 작성. 사용자 데이터 및 추출 캐시가 커밋되지 않게 검사.
+- [x] **M0-01** Godot .NET / .NET SDK / export template 조합 선정. Windows x64와 macOS arm64 빈 앱 내보내기. 결과와 버전 고정. 막히는 조합은 채택하지 않는다.
+- [x] **M0-02** Core / Assets / Client / AssetAudit / Tests 생성. Godot 없이 Core·Assets 빌드되는 참조 구조 검증.
+- [x] **M0-03** CI에 코어 빌드·테스트·엔진 의존성 검사·클라이언트 export 연결. 게임 데이터 없이 수행 가능한 synthetic fixture만 사용.
+- [x] **M0-04** 의존성 출처·라이선스·소스 빌드 목록과 ignore 규칙 작성. 사용자 데이터 및 추출 캐시가 커밋되지 않게 검사.
 - [ ] **M0-05** 설정/세이브/캐시 경로, 구조화 로그, 프레임·tick·메모리 측정 기반 구현. 기본 오프라인 동작 검증.
 
-M0 완료 시 첫 커밋부터 실제 실행 가능한 최소 Godot 앱이 있어야 한다. 빈 DLL과 미사용 추상화만으로 완료 처리하지 않는다.
+M0-03은 3개 OS CI 성공으로 검증했다. M0-05의 frame p95·관리 힙·로그는 구현했고, 실제 게임 tick 계측은 M2 시뮬레이션 구현 시 연결한다. macOS는 공식 universal template로 arm64를 포함해 내보낸다.
+
+M0 완료 시 실제 실행 가능한 최소 Godot 앱이 있어야 한다. 빈 DLL과 미사용 추상화만으로 완료 처리하지 않는다.
 
 ### M1 — 원본 리소스 기반
 
@@ -87,6 +89,8 @@ M0 완료 시 첫 커밋부터 실제 실행 가능한 최소 Godot 앱이 있�
 
 ## 현재 변경 검증
 
-- 설계 문서 내부 링크와 상대 경로 확인.
-- 문서 변경에 대한 `git diff --check` 수행.
-- 이번 변경은 실행 코드가 없어 게임 빌드·런타임·성능 검증 대상으로 보지 않는다. CI 구현 완료를 주장하지 않는다.
+- 엔진 없는 Core/Assets 빌드 및 9개 계약 테스트 통과.
+- Godot 헤드리스 시작과 Linux 독립 실행 시작 확인.
+- Linux x64, Windows x64, macOS universal 내보내기 성공.
+- Windows/macOS 실제 사용자 설치·GUI 실행과 성능 목표 인수는 별도 수행.
+- CI의 OS별 결과 및 후속 잔건: [M0_RESULTS](M0_RESULTS.md).
