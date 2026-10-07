@@ -21,6 +21,7 @@ void Throws<T>(Action action) where T : Exception
 try
 {
 	LegacyFormatContracts.Run(Test);
+	AnimationContracts.Run(Test);
 	MpqContracts.Run(root, Test);
 	Test("paths create separate directories", () =>
 	{
