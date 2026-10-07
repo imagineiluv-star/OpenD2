@@ -81,6 +81,18 @@ internal static class LegacyFormatContracts
 			for (int i = 0; i < 48; i++) { int length = i; Invalid(() => StringTable.Parse(Tbl().AsSpan(0, length))); }
 			foreach (int offset in new[] { 4, 9, 17, 30, 34 })
 			{ var data = Tbl(); U32(data, offset, uint.MaxValue); Invalid(() => StringTable.Parse(data)); }
+			// Many nodes aliasing a long string must not multiply work without a bound.
+			var aliased = new byte[76958]; BinaryPrimitives.WriteUInt16LittleEndian(aliased.AsSpan(2), 600);
+			U32(aliased, 4, 600); U32(aliased, 9, 11421); U32(aliased, 17, (uint)aliased.Length);
+			for (int i = 0; i < 600; i++)
+			{
+				BinaryPrimitives.WriteUInt16LittleEndian(aliased.AsSpan(21 + i * 2), (ushort)i);
+				int at = 1221 + i * 17; aliased[at] = 1;
+				BinaryPrimitives.WriteUInt16LittleEndian(aliased.AsSpan(at + 1), (ushort)i);
+				U32(aliased, at + 7, 11421); U32(aliased, at + 11, 11423);
+				BinaryPrimitives.WriteUInt16LittleEndian(aliased.AsSpan(at + 15), 65535);
+			}
+			Invalid(() => StringTable.Parse(aliased));
 			var noKeyEnd = new byte[52]; Tbl().CopyTo(noKeyEnd, 0); U32(noKeyEnd, 17, 52); U32(noKeyEnd, 30, 48);
 			noKeyEnd.AsSpan(48).Fill(255); Invalid(() => StringTable.Parse(noKeyEnd));
 			foreach (int offset in new[] { 8, 21, 24, 38, 47 })
