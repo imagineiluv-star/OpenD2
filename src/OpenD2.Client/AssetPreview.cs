@@ -40,11 +40,11 @@ public partial class AssetPreview : VBoxContainer
 					var colors = Palette.Parse(AssetDecoders.ReadFromInstall(dir, colorsPath));
 					image.DecodeFrame(0, 0); return (image, colors);
 				});
-				if (!IsInsideTree()) return;
+				if (!IsInstanceValid(this) || !IsInsideTree()) return;
 				current = loaded.image; palette = loaded.colors; source = imagePath;
 				frame.MaxValue = current.FrameCount - 1; frame.SetValueNoSignal(0); ShowFrame();
 			}
-			catch (Exception error) { if (IsInsideTree()) details.Text = "Load failed: " + error.Message; }
+			catch (Exception error) { if (IsInstanceValid(this) && IsInsideTree()) details.Text = "Load failed: " + error.Message; }
 			finally { if (IsInstanceValid(load)) load.Disabled = false; }
 		};
 		AddChild(new Label { Text = "Frame index (direction-major)" }); AddChild(frame);
