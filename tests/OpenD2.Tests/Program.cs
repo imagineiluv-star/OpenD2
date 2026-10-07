@@ -20,6 +20,7 @@ void Throws<T>(Action action) where T : Exception
 }
 try
 {
+	MpqContracts.Run(root, Test);
 	Test("paths create separate directories", () =>
 	{
 		var paths = new AppPaths(Path.Combine(root, "user")); paths.EnsureCreated();
