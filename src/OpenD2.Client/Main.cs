@@ -76,6 +76,7 @@ public partial class Main : Node3D
 		status = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart }; panel.AddChild(status);
 		performance = new Label(); panel.AddChild(performance);
 		panel.AddChild(new Label { Text = "User data: " + paths.Root, AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		canvas.AddChild(new AssetPreview(() => dataPath.Text) { Position = new Vector2(620, 32), CustomMinimumSize = new Vector2(480, 0) });
 		var quit = new Button { Text = "Quit" }; panel.AddChild(quit); quit.Pressed += () => GetTree().Quit();
 	}
 
