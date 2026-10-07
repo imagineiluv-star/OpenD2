@@ -3,7 +3,7 @@ using OpenD2.Assets;
 
 if (args.Length == 0 || args[0] is "--help" or "-h")
 {
-	Console.WriteLine("Usage: OpenD2.AssetAudit [--probe|--decode] <game-data-directory> [known-paths.txt]\nJSON goes to stdout. Scan uses read-only MPQs; no resource extraction. --decode validates Palette/text TBL/DC6.\nExit 0: scan completed without reported errors; 3: missing archives or read failures; 1: fatal error; 2: usage.\nA successful scan does not establish version compatibility or complete coverage.");
+	Console.WriteLine("Usage: OpenD2.AssetAudit [--probe|--decode] <game-data-directory> [known-paths.txt]\nJSON goes to stdout. Scan uses read-only MPQs; no resource extraction. --decode validates Palette/text TBL/DC6/DCC/COF.\nExit 0: scan completed without reported errors; 3: missing archives, read or decode failures; 1: fatal error; 2: usage.\nA successful scan does not establish version compatibility or complete coverage.");
 	return args.Length == 0 ? 2 : 0;
 }
 try
