@@ -1,12 +1,12 @@
 # OpenD2
 A project to open-source Diablo 2, under the GNU General Public License.
 
-### C# / Godot migration — M1 asset foundation
+### C# / Godot migration — M2 combat foundation
 
 The proposed C# and Godot migration architecture, asset compatibility requirements,
 implementation backlog, and acceptance criteria are documented in
 [the migration plan (한국어)](docs/migration/README.md).
-The independent C# M0 foundation is now implemented in `src/`. See [build and run instructions](BUILDING.md) and [verified results / remaining gates](docs/migration/M0_RESULTS.md). M1 now adds read-only MPQ access, installation checks and asset inventory; see [M1 results and remaining work](docs/migration/M1_RESULTS.md). This is not yet a playable Diablo II client. The C++ runtime remains separate.
+The C# implementation in `src/` includes legacy asset readers and viewers, a deterministic simulation, and a synthetic arena with movement collision, melee combat and basic monster AI. See [build and run instructions](BUILDING.md) and [M2-02 results / remaining gates](docs/migration/M2_02_RESULTS.md). Original game data acceptance, campaign gameplay and high-quality 3D presentation remain in progress. The C++ runtime remains separate.
 
 ![Diablo II Main Menu in OpenD2](https://i.imgur.com/RFNbRiT.png)
 

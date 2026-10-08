@@ -4,7 +4,7 @@ using System.Diagnostics;
 
 namespace OpenD2.Client;
 
-// Development inspector for M2-01; world collision/combat are the next milestone.
+// Synthetic combat inspector; the authoritative simulation remains engine independent.
 public partial class SimulationPreview : VBoxContainer
 {
 	private const int MaxRecordingTicks = 15000, MaxRecordingCommands = 4096;
@@ -18,6 +18,7 @@ public partial class SimulationPreview : VBoxContainer
 	private readonly Button pause = new() { Text = "Pause" };
 	private readonly Button singleStep = new() { Text = "Step one tick" };
 	private readonly Button signal = new() { Text = "Signal" };
+	private readonly Button attack = new() { Text = "Attack nearest (Space)" };
 	private readonly Button replay = new() { Text = "Verify replay" };
 	private readonly Label details = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
 	private readonly Label status = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
@@ -28,44 +29,72 @@ public partial class SimulationPreview : VBoxContainer
 	private EntityState previous, current;
 	private uint seed;
 	private ulong sequence;
+	private long lastAttackTick = -GameSimulation.PlayerAttackInterval;
 	private int requestedX, requestedY;
 	private bool paused, verifying;
 	private bool smokeTest;
 	private double elapsed;
 	public SimulationPreview(Action<string, string> log) { this.log = log; advanceTick = RunTick; }
-	private static EntityState[] InitialEntities() => [new(Player, Region, new(0, 0))];
+	private static EntityState[] InitialEntities() =>
+	[
+		new(Player, Region, new(384, 384)),
+		new(new(2), Region, new(1408, 384), Kind: EntityKind.Monster, Health: 36, MaxHealth: 36),
+		new(new(3), Region, new(1664, 1664), Kind: EntityKind.Monster, Health: 36, MaxHealth: 36),
+		new(new(4), Region, new(3200, 1408), Kind: EntityKind.Monster, Health: 48, MaxHealth: 48)
+	];
+	private static CollisionGrid Arena()
+	{
+		var cells = new CollisionCell[16 * 10];
+		for (int y = 0; y < 10; y++) for (int x = 0; x < 16; x++)
+			cells[y * 16 + x] = x == 0 || y == 0 || x == 15 || y == 9 || (x == 8 && y is >= 2 and <= 7 && y != 5) ? CollisionCell.Blocked : CollisionCell.Open;
+		cells[7 * 16 + 3] = CollisionCell.Unknown;
+		return new(Region, 16, 10, cells);
+	}
 	public override void _Ready()
 	{
 		smokeTest = OS.GetCmdlineUserArgs().Contains("--smoke-test");
 		AddChild(new Label { Text = "Simulation inspector / 25 ticks per second" });
-		AddChild(new Label { Text = "Click the grid, then use arrow keys. Signal emits a seeded color event.\nSynthetic free movement; world collision and combat are not loaded.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		AddChild(new Label { Text = "Click the grid, then use arrow keys. Signal emits a seeded color event.\nHold Space to attack the nearest monster. Walls and the purple unknown cell block movement.\nSynthetic combat rules; original game balance and artwork are not loaded.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		var controls = new HFlowContainer(); AddChild(controls);
 		controls.AddChild(new Label { Text = "Seed" }); controls.AddChild(seedInput);
-		foreach (var button in new[] { restart, pause, singleStep, signal, replay }) controls.AddChild(button);
+		foreach (var button in new[] { restart, pause, singleStep, attack, signal, replay }) controls.AddChild(button);
 		AddChild(view); AddChild(details); AddChild(status);
 		restart.Pressed += NewRun; pause.Pressed += () => { SetPaused(!paused); StopInput(); Refresh(); };
 		singleStep.Pressed += () => { SetPaused(true); StopInput(); if (!verifying) { RunTick(); ShowFrame(); Refresh(); } };
-		signal.Pressed += () => Submit(CommandKind.Signal);
+		signal.Pressed += () => Submit(CommandKind.Signal); attack.Pressed += AttackNearest;
 		replay.Pressed += VerifyReplay;
-		Smoke(); NewRun();
+		Smoke(); CombatSmoke(); NewRun();
 	}
 	private void NewRun()
 	{
-		seed = (uint)seedInput.Value; simulation = new(seed, InitialEntities());
-		trace.Clear(); sequence = 0; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
+		seed = (uint)seedInput.Value; simulation = new(seed, InitialEntities(), Arena()); view.SetSimulation(simulation);
+		trace.Clear(); sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
 		previous = current = simulation.GetEntity(Player); view.SignalValue = -1; SetPaused(false);
 		status.Text = "Ready. The seed and accepted command log reproduce this run."; ShowFrame(); Refresh();
 		log("simulation_started", $"rules={GameSimulation.RulesVersion}, seed={seed}");
 	}
 	private void SetPaused(bool value) { paused = value; previous = current; pause.Text = paused ? "Resume" : "Pause"; }
-	private bool Submit(CommandKind kind, int x = 0, int y = 0)
+	private bool Submit(CommandKind kind, int x = 0, int y = 0, EntityId target = default)
 	{
 		if (verifying || simulation.Tick >= MaxRecordingTicks || trace.Count >= MaxRecordingCommands)
 		{ SetPaused(true); status.Text = "Recording limit reached. Start a new run to continue."; return false; }
-		var command = new GameCommand(simulation.Tick + 1, sequence + 1, Player, Region, kind, x, y);
+		var command = new GameCommand(simulation.Tick + 1, sequence + 1, Player, Region, kind, x, y, target);
 		var result = simulation.Submit(command);
 		if (result != CommandResult.Accepted) { status.Text = $"Command rejected: {result}"; return false; }
 		sequence++; trace.Add(new(simulation.Tick, command)); return true;
+	}
+	private void AttackNearest()
+	{
+		if (!current.IsAlive || verifying) return;
+		EntityId nearest = default; long best = long.MaxValue;
+		foreach (var e in simulation.Entities)
+		{
+			if (e.Kind != EntityKind.Monster || !e.IsAlive) continue;
+			long x = (long)e.Position.X - current.Position.X, y = (long)e.Position.Y - current.Position.Y, distance = x * x + y * y;
+			if (distance < best) { best = distance; nearest = e.Id; }
+		}
+		if (nearest == default) { status.Text = "All monsters defeated. New run restarts the arena."; return; }
+		if (Submit(CommandKind.Attack, target: nearest)) lastAttackTick = simulation.Tick;
 	}
 	private void StopInput()
 	{
@@ -74,10 +103,11 @@ public partial class SimulationPreview : VBoxContainer
 	public override void _Process(double delta)
 	{
 		if (simulation is null || verifying) return;
-		bool active = IsVisibleInTree() && view.HasFocus() && GetWindow().HasFocus();
+		bool active = current.IsAlive && IsVisibleInTree() && view.HasFocus() && GetWindow().HasFocus();
 		int x = active && !paused ? (Input.IsKeyPressed(Key.Right) ? 1 : 0) - (Input.IsKeyPressed(Key.Left) ? 1 : 0) : 0;
 		int y = active && !paused ? (Input.IsKeyPressed(Key.Down) ? 1 : 0) - (Input.IsKeyPressed(Key.Up) ? 1 : 0) : 0;
 		if ((x != requestedX || y != requestedY) && Submit(CommandKind.SetMove, x, y)) { requestedX = x; requestedY = y; }
+		if (active && !paused && Input.IsKeyPressed(Key.Space) && simulation.Tick - lastAttackTick >= GameSimulation.PlayerAttackInterval) AttackNearest();
 		try { if (!paused && IsVisibleInTree()) clock.Advance(TimeSpan.FromSeconds(delta), advanceTick); }
 		catch (Exception error) { SetPaused(true); status.Text = "Simulation stopped: " + error.Message; log("simulation_error", error.ToString()); }
 		ShowFrame(); elapsed += delta;
@@ -88,25 +118,32 @@ public partial class SimulationPreview : VBoxContainer
 		if (simulation.Tick >= MaxRecordingTicks) { SetPaused(true); status.Text = "Ten-minute recording limit reached. Start a new run."; return; }
 		previous = current; long start = Stopwatch.GetTimestamp(); simulation.Step();
 		tickMetrics.Record(Stopwatch.GetElapsedTime(start).TotalSeconds); current = simulation.GetEntity(Player);
-		foreach (var item in simulation.Events) if (item.Kind == SimulationEventKind.Signaled) view.SignalValue = item.Value;
+		if (!current.IsAlive) requestedX = requestedY = 0;
+		foreach (var item in simulation.Events)
+		{
+			if (item.Kind == SimulationEventKind.Signaled) view.SignalValue = item.Value;
+			else if (item.Kind == SimulationEventKind.Hit) status.Text = $"Entity {item.Actor.Value} hit {item.Target.Value}: {item.Value} damage";
+			else if (item.Kind == SimulationEventKind.AttackFailed && item.Actor == Player) status.Text = $"Attack: {(AttackFailure)item.Value}";
+			else if (item.Kind == SimulationEventKind.Died) status.Text = item.Actor == Player ? "You died. New run restarts the arena." : $"Monster {item.Actor.Value} defeated.";
+		}
 		if (smokeTest && simulation.Tick == 2) GD.Print("OPEND2_M201_TICK_LOOP_READY");
 	}
 	private void ShowFrame() => view.SetPositions(previous.Position, current.Position, paused ? 1 : clock.Alpha);
 	private void Refresh()
 	{
 		double p99 = tickMetrics.P99Milliseconds();
-		details.Text = $"Tick {simulation.Tick} | region {current.Region.Value}, entity {current.Id.Value}\nPosition {current.Position.X}, {current.Position.Y} / {GameSimulation.UnitsPerTile} units per tile\nCommands {trace.Count}/{MaxRecordingCommands}, queued {simulation.PendingCommands} | RNG {simulation.RandomState}\nTick p99 {p99:F3} ms | dropped wall time {clock.DroppedTime.TotalMilliseconds:F1} ms\nState {simulation.ComputeStateHash()[..16]}";
+		details.Text = $"Tick {simulation.Tick} | region {current.Region.Value}, entity {current.Id.Value}\nPosition {current.Position.X}, {current.Position.Y} / {GameSimulation.UnitsPerTile} units per navigation cell\nHP {current.Health}/{current.MaxHealth} | cooldown {current.AttackCooldown}, hit stun {current.HitStun} ticks\nCommands {trace.Count}/{MaxRecordingCommands}, queued {simulation.PendingCommands} | RNG {simulation.RandomState}\nTick p99 {p99:F3} ms | dropped wall time {clock.DroppedTime.TotalMilliseconds:F1} ms\nState {simulation.ComputeStateHash()[..16]}";
 		log("simulation_metrics", $"tick={simulation.Tick}, p99_ms={p99:F3}, pending={simulation.PendingCommands}, dropped_ms={clock.DroppedTime.TotalMilliseconds:F1}");
 	}
 	private async void VerifyReplay()
 	{
 		SetPaused(true); StopInput(); verifying = true;
-		foreach (var button in new[] { restart, pause, singleStep, signal, replay }) button.Disabled = true;
+		foreach (var button in new[] { restart, pause, singleStep, attack, signal, replay }) button.Disabled = true;
 		uint recordedSeed = seed; long target = simulation.Tick; var recorded = trace.ToArray(); string expected = simulation.ComputeStateHash();
 		status.Text = "Replaying recorded commands...";
 		try
 		{
-			string actual = await Task.Run(() => GameSimulation.Replay(recordedSeed, InitialEntities(), recorded, target).ComputeStateHash());
+			string actual = await Task.Run(() => GameSimulation.Replay(recordedSeed, InitialEntities(), recorded, target, Arena()).ComputeStateHash());
 			if (!IsInstanceValid(this) || !IsInsideTree()) return;
 			bool match = actual == expected;
 			status.Text = match ? $"Replay matched at tick {target}: {actual}" : $"Replay mismatch: {actual}";
@@ -116,16 +153,29 @@ public partial class SimulationPreview : VBoxContainer
 		finally
 		{
 			if (IsInstanceValid(this) && IsInsideTree())
-			{ verifying = false; foreach (var button in new[] { restart, pause, singleStep, signal, replay }) button.Disabled = false; Refresh(); }
+			{ verifying = false; foreach (var button in new[] { restart, pause, singleStep, attack, signal, replay }) button.Disabled = false; Refresh(); }
 		}
+	}
+	private void CombatSmoke()
+	{
+		EntityState[] initial = [new(Player, Region, new(320, 384)), new(new(2), Region, new(576, 384), Kind: EntityKind.Monster, Health: 1)];
+		var grid = Arena(); var sample = new GameSimulation(1, initial, grid);
+		RecordedCommand[] script = [new(0, new(1, 1, Player, Region, CommandKind.Attack, Target: new(2))), new(0, new(2, 2, Player, Region, CommandKind.SetMove, -1))];
+		foreach (var c in script) if (sample.Submit(c.Command) != CommandResult.Accepted) throw new InvalidDataException("Combat smoke command rejected.");
+		sample.Step();
+		if (sample.GetEntity(new(2)).IsAlive || sample.GetEntity(Player).Health != 100) throw new InvalidDataException("Combat death smoke failed.");
+		sample.Step();
+		if (sample.GetEntity(Player).Position != initial[0].Position || sample.Events[0].Kind != SimulationEventKind.Blocked || sample.ComputeStateHash() != GameSimulation.Replay(1, initial, script, 2, grid).ComputeStateHash()) throw new InvalidDataException("Combat collision/replay smoke failed.");
+		GD.Print("OPEND2_M202_COMBAT_READY");
 	}
 	private void Smoke()
 	{
-		var sample = new GameSimulation(1, InitialEntities());
+		EntityState[] initial = [new(Player, Region, new(0, 0))];
+		var sample = new GameSimulation(1, initial);
 		RecordedCommand[] script = [new(0, new(1, 1, Player, Region, CommandKind.SetMove, 1)), new(0, new(2, 2, Player, Region, CommandKind.Signal))];
 		foreach (var item in script) if (sample.Submit(item.Command) != CommandResult.Accepted) throw new InvalidDataException("Simulation smoke command rejected.");
 		var sampleClock = new FixedTickClock(); sampleClock.Advance(TimeSpan.FromMilliseconds(80), sample.Step);
-		var copy = GameSimulation.Replay(1, InitialEntities(), script, 2);
+		var copy = GameSimulation.Replay(1, initial, script, 2);
 		if (sample.GetEntity(Player).Position != new GamePosition(64, 0) || sample.RandomState != 270369 || sample.Events[0].Kind != SimulationEventKind.Signaled || sample.ComputeStateHash() != copy.ComputeStateHash())
 			throw new InvalidDataException("Simulation replay smoke failed.");
 		view.SetPositions(new(0, 0), new(64, 0), 0.5);
@@ -138,6 +188,8 @@ public partial class SimulationCanvas : Control
 {
 	public Vector2 DisplayPosition { get; private set; }
 	public int SignalValue { get; set; } = -1;
+	private GameSimulation? simulation;
+	public void SetSimulation(GameSimulation value) { simulation = value; QueueRedraw(); }
 	public SimulationCanvas() { FocusMode = FocusModeEnum.All; MouseFilter = MouseFilterEnum.Stop; ClipContents = true; }
 	public void SetPositions(GamePosition previous, GamePosition current, double alpha)
 	{
@@ -146,18 +198,34 @@ public partial class SimulationCanvas : Control
 	public override void _GuiInput(InputEvent input)
 	{
 		if (input is InputEventMouseButton { Pressed: true }) GrabFocus();
-		if (input is InputEventKey { Keycode: Key.Up or Key.Down or Key.Left or Key.Right }) AcceptEvent();
+		if (input is InputEventKey { Keycode: Key.Up or Key.Down or Key.Left or Key.Right or Key.Space }) AcceptEvent();
 	}
 	public override void _Draw()
 	{
 		DrawRect(new Rect2(Vector2.Zero, Size), new Color(0.035f, 0.045f, 0.065f));
-		Vector2 center = Size / 2, offset = DisplayPosition / GameSimulation.UnitsPerTile * 32;
-		for (float x = center.X - offset.X % 32; x < Size.X; x += 32) DrawLine(new(x, 0), new(x, Size.Y), new Color(0.15f, 0.19f, 0.23f));
-		for (float x = center.X - offset.X % 32 - 32; x >= 0; x -= 32) DrawLine(new(x, 0), new(x, Size.Y), new Color(0.15f, 0.19f, 0.23f));
-		for (float y = center.Y - offset.Y % 32; y < Size.Y; y += 32) DrawLine(new(0, y), new(Size.X, y), new Color(0.15f, 0.19f, 0.23f));
-		for (float y = center.Y - offset.Y % 32 - 32; y >= 0; y -= 32) DrawLine(new(0, y), new(Size.X, y), new Color(0.15f, 0.19f, 0.23f));
-		DrawCircle(center - offset, 4, Colors.Gray);
-		Color color = SignalValue < 0 ? Colors.CornflowerBlue : Color.FromHsv(SignalValue / 6f, 0.7f, 0.95f);
-		DrawCircle(center, 9, color); if (HasFocus()) DrawArc(center, 14, 0, Mathf.Tau, 32, Colors.White, 1, true);
+		Vector2 center = Size / 2;
+		if (simulation?.Collision is not { } grid) return;
+		Vector2 Project(GamePosition p) => center + (new Vector2(p.X, p.Y) - DisplayPosition) / GameSimulation.UnitsPerTile * 40;
+		int left = Math.Max(0, (int)Math.Floor((DisplayPosition.X - center.X / 40 * 256 - grid.Origin.X) / 256));
+		int top = Math.Max(0, (int)Math.Floor((DisplayPosition.Y - center.Y / 40 * 256 - grid.Origin.Y) / 256));
+		int right = Math.Min(grid.Width, left + (int)(Size.X / 40) + 3), bottom = Math.Min(grid.Height, top + (int)(Size.Y / 40) + 3);
+		for (int y = top; y < bottom; y++) for (int x = left; x < right; x++)
+		{
+			Color color = grid.At(x, y) switch { CollisionCell.Open => new(0.10f, 0.14f, 0.18f), CollisionCell.Blocked => new(0.32f, 0.35f, 0.40f), _ => new(0.32f, 0.13f, 0.38f) };
+			DrawRect(new Rect2(Project(new(grid.Origin.X + x * 256, grid.Origin.Y + y * 256)), new Vector2(39, 39)), color);
+		}
+		foreach (var e in simulation.Entities)
+		{
+			Vector2 point = e.Kind == EntityKind.Player ? center : Project(e.Position);
+			Color color = !e.IsAlive ? Colors.DimGray : e.Kind == EntityKind.Monster ? Colors.IndianRed : SignalValue < 0 ? Colors.CornflowerBlue : Color.FromHsv(SignalValue / 6f, 0.7f, 0.95f);
+			DrawCircle(point, 9, color);
+			if (e.IsAlive)
+			{
+				DrawRect(new Rect2(point + new Vector2(-14, -18), new Vector2(28, 4)), Colors.DarkRed);
+				DrawRect(new Rect2(point + new Vector2(-14, -18), new Vector2(28f * e.Health / e.MaxHealth, 4)), Colors.LimeGreen);
+			}
+			else { DrawLine(point + new Vector2(-7, -7), point + new Vector2(7, 7), Colors.Gray, 2); DrawLine(point + new Vector2(-7, 7), point + new Vector2(7, -7), Colors.Gray, 2); }
+		}
+		if (HasFocus()) DrawArc(center, 14, 0, Mathf.Tau, 32, Colors.White, 1, true);
 	}
 }
