@@ -94,9 +94,10 @@ M1 1차 구현: [M1_RESULTS.md](M1_RESULTS.md). 01~03 코드와 합성 검증을
 
 ## 현재 변경 검증
 
-- NPC-01 엔진 없는 Core/Assets/Npc 및 전체 계약 211/211개가 로컬에서 통과했다. 검증 명령·현재 증거·남은 항목은 [NPC_01_RESULTS](NPC_01_RESULTS.md)에 기록한다.
-- Godot 비동기 대화 헤드리스 시작·Linux 내보내기·SDK 없는 실행을 확인했다. 3개 OS 원격 CI #37777178855 / #37777187171도 성공했다. macOS PR 검사는 편집기 import 종료 오류로 1회 재실행했으며, 해당 엔진 경합은 잔여 위험으로 기록한다.
-- Windows/macOS 실제 사용자 설치·GUI 실행, 실제 LLM 품질·GPU 성능·장시간 부하는 별도 인수다.
+- NPC-02a 포함 전체 실행형 계약 **228/228**을 로컬과 3개 OS CI에서 통과했다. [구현·실측·남은 인수](NPC_02_RESULTS.md).
+- 기능 브랜치 CI [37785448741](https://github.com/imagineiluv-star/OpenD2/actions/runs/37785448741), PR CI [37785507017](https://github.com/imagineiluv-star/OpenD2/actions/runs/37785507017) 성공. 세 OS에서 SDK 검색 경로를 제거한 배포본·포함된 추론 엔진 실행도 확인했다. PR macOS export 종료의 알려진 Godot 오류는 1회 재실행했고 발생 이력을 남겼다.
+- 실제 공식 모델 2개 × 한국어 100문장 CPU 평가: 정답률 51% / 83%, 완료 p95 1.39초 / 4.36초. 형식은 100% 유효했으나 기본 AI로 채택할 품질은 부족하다. 기본 모드는 모델 없이 실행한다.
+- 목표 PC RAM/VRAM·GPU/렌더링 병행, 일반 사용자 GUI·설치/서명 및 장시간 안정성은 NPC-02b 인수다.
 
 ## 다음 구현 순서
 

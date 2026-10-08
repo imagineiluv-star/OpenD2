@@ -60,7 +60,18 @@ Q4와 Q8은 매개변수 수와 양자화가 함께 다르다. 결과 차이를 
 
 처음 로컬 헤드리스 검사에서 Godot 편집기의 메모리 로드 때문에 Assembly.Location이 비어 있는 오류를 발견했다. 편집기 출력 경로를 명시하고 배포본에서는 AppContext.BaseDirectory를 사용하도록 수정해 다시 통과했다. x64 빌드에서 AVX2만 켜고 FMA를 끄면 해당 고정 ggml 소스가 컴파일되지 않아 FMA/F16C 요구를 명시하고 실행 전 CPU 검사를 추가했다.
 
-Windows/macOS/Linux 원격 CI는 이번 변경 커밋에서 실행 예정이며 통과 전에는 완료로 기록하지 않는다.
+코드 커밋 `81c7f9c187e07fc6a3044287fb9707dbf225bef6` 검증:
+
+| 실행 | Windows | Linux | macOS |
+|---|---|---|---|
+| [기능 브랜치 CI 37785448741](https://github.com/imagineiluv-star/OpenD2/actions/runs/37785448741) | 성공 | 성공 | 성공 |
+| [PR CI 37785507017](https://github.com/imagineiluv-star/OpenD2/actions/runs/37785507017) | 성공 | 성공 | export 종료 오류 1회 후 실패 작업만 재실행하여 성공 |
+
+세 OS 모두 228/228 계약과 `EXPORTED PACKAGE SMOKE OK`를 확인했다. macOS는 Apple Silicon runner에서 ZIP을 풀어 앱을 실행했고, Windows/Linux도 내보낸 실행 파일을 실행했다. 이는 개발 도구가 설치된 CI 호스트에서 SDK 검색 경로를 제거한 검사이며 깨끗한 사용자 PC·GUI·서명/공증 인수의 대체가 아니다. CI는 모델을 다운로드하지 않는다.
+
+PR macOS 첫 시도의 계약·대화는 통과했고 ZIP export가 끝난 후 `_EDITOR_GET(editor/settings/editor_settings.cpp:1531)`에서 `export/android/android_sdk_path` 조회 오류가 났다. 실패 job `113339086724`를 보존하고 1회 재실행 job `113343078020`의 성공을 확인했다. 같은 커밋의 기능 브랜치 macOS는 첫 시도부터 성공했다. 엔진 오류를 필터링하거나 테스트를 생략해 성공 처리하지 않았다.
+
+결과 기록 커밋은 Markdown 두 파일만 바꾸며 위 검증 코드와 실행 경로는 동일하다. [PR #9](https://github.com/imagineiluv-star/OpenD2/pull/9)로 master에 반영하고 master push에서도 같은 3개 OS 검증을 실행한다.
 
 Godot 4.6.3의 Android export 설정 조회/에디터 종료 경쟁 조건은 [NPC-01 기록](NPC_01_RESULTS.md)의 알려진 외부 제한이다. 이를 숨기거나 성공으로 처리하지 않는다. 이번 CI에 나타나면 정확한 실패와 재실행 결과를 기록한다.
 
