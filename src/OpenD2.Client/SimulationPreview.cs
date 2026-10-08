@@ -21,6 +21,13 @@ public partial class SimulationPreview : VBoxContainer
 	private readonly Button signal = new() { Text = "Signal" };
 	private readonly Button attack = new() { Text = "Attack nearest (Space)" };
 	private readonly Button interact = new() { Text = "Interact (E)" };
+	private readonly Button pickup = new() { Text = "Pick up nearest (F)" };
+	private readonly Button equip = new() { Text = "Equip selected" };
+	private readonly Button unequip = new() { Text = "Unequip selected" };
+	private readonly Button drop = new() { Text = "Drop selected" };
+	private readonly OptionButton ownedItems = new();
+	private readonly Label gearInfo = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
+	private readonly List<ItemId> itemChoices = new();
 	private readonly Button replay = new() { Text = "Verify replay" };
 	private readonly Label questInfo = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
 	private readonly Label details = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
@@ -34,7 +41,7 @@ public partial class SimulationPreview : VBoxContainer
 	private ulong sequence;
 	private long lastAttackTick = -GameSimulation.PlayerAttackInterval;
 	private int requestedX, requestedY;
-	private bool paused, verifying, interactDown;
+	private bool paused, verifying, interactDown, pickupDown;
 	private bool smokeTest;
 	private double elapsed;
 	public SimulationPreview(Action<string, string> log) { this.log = log; advanceTick = RunTick; }
@@ -66,31 +73,38 @@ public partial class SimulationPreview : VBoxContainer
 	{
 		smokeTest = OS.GetCmdlineUserArgs().Contains("--smoke-test");
 		AddChild(new Label { Text = "Town / dungeon slice — 25 ticks per second" });
-		AddChild(new Label { Text = "Click the grid: arrows move, Space attacks, E talks / uses a portal.\nGreen: NPC. Gold: portal. Gray walls and purple unknown cells block movement.\nSynthetic maps and rules; original game artwork is not loaded.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		AddChild(new Label { Text = "Click the grid: arrows move, Space attacks, E talks / uses a portal, F picks up nearby loot.\nGreen: NPC. Gold: portal. Gray walls and purple unknown cells block movement.\nSynthetic maps and rules; original game artwork is not loaded.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		var controls = new HFlowContainer(); AddChild(controls);
 		controls.AddChild(new Label { Text = "Seed" }); controls.AddChild(seedInput);
 		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay }) controls.AddChild(button);
-		AddChild(questInfo); AddChild(view); AddChild(details); AddChild(status);
+		var inventory = new HFlowContainer(); AddChild(inventory);
+		inventory.AddChild(ownedItems);
+		foreach (var button in new[] { pickup, equip, unequip, drop }) inventory.AddChild(button);
+		pickup.Pressed += PickupNearest;
+		equip.Pressed += () => UseSelected(CommandKind.Equip);
+		unequip.Pressed += () => UseSelected(CommandKind.Unequip);
+		drop.Pressed += () => UseSelected(CommandKind.DropItem);
+		AddChild(gearInfo); AddChild(questInfo); AddChild(view); AddChild(details); AddChild(status);
 		restart.Pressed += NewRun; pause.Pressed += () => { SetPaused(!paused); StopInput(); Refresh(); };
 		singleStep.Pressed += () => { SetPaused(true); StopInput(); if (!verifying) { RunTick(); ShowFrame(); Refresh(); } };
 		signal.Pressed += () => Submit(CommandKind.Signal); attack.Pressed += AttackNearest; interact.Pressed += InteractNearest;
 		replay.Pressed += VerifyReplay;
-		Smoke(); CombatSmoke(); WorldSmoke(); NewRun();
+		Smoke(); CombatSmoke(); WorldSmoke(); ItemSmoke(); NewRun();
 	}
 	private void NewRun()
 	{
 		seed = (uint)seedInput.Value; simulation = new(seed, InitialEntities(), world: DemoWorld()); view.SetSimulation(simulation);
 		trace.Clear(); sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
-		previous = current = simulation.GetEntity(Player); view.SignalValue = -1; interactDown = false; SetPaused(false);
+		previous = current = simulation.GetEntity(Player); view.SignalValue = -1; interactDown = pickupDown = false; SetPaused(false);
 		status.Text = "Talk to the Camp Guide, clear the cellar, then return to the guide."; ShowFrame(); Refresh();
 		log("simulation_started", $"rules={GameSimulation.RulesVersion}, seed={seed}");
 	}
 	private void SetPaused(bool value) { paused = value; previous = current; pause.Text = paused ? "Resume" : "Pause"; }
-	private bool Submit(CommandKind kind, int x = 0, int y = 0, EntityId target = default)
+	private bool Submit(CommandKind kind, int x = 0, int y = 0, EntityId target = default, ItemId item = default)
 	{
 		if (verifying || simulation.Tick >= MaxRecordingTicks || trace.Count >= MaxRecordingCommands)
 		{ SetPaused(true); status.Text = "Recording limit reached. Start a new run to continue."; return false; }
-		var command = new GameCommand(simulation.Tick + 1, sequence + 1, Player, simulation.ActiveRegion, kind, x, y, target);
+		var command = new GameCommand(simulation.Tick + 1, sequence + 1, Player, simulation.ActiveRegion, kind, x, y, target, item);
 		var result = simulation.Submit(command);
 		if (result != CommandResult.Accepted) { status.Text = $"Command rejected: {result}"; return false; }
 		sequence++; trace.Add(new(simulation.Tick, command)); return true;
@@ -122,6 +136,39 @@ public partial class SimulationPreview : VBoxContainer
 		foreach (var portal in world.Portals) Consider(portal.Id, portal.Region, portal.Position);
 		if (nearest != default) Submit(CommandKind.Interact, target: nearest);
 	}
+	private void PickupNearest()
+	{
+		ItemId nearest = default; long best = long.MaxValue;
+		foreach (var item in simulation.Items)
+		{
+			if (item.Location != ItemLocation.Ground || item.Region != current.Region) continue;
+			long x = (long)item.Position.X - current.Position.X, y = (long)item.Position.Y - current.Position.Y, distance = x * x + y * y;
+			if (distance < best || (distance == best && item.Id.Value < nearest.Value)) { best = distance; nearest = item.Id; }
+		}
+		if (nearest == default) { status.Text = "No loot in this region."; return; }
+		Submit(CommandKind.Pickup, item: nearest);
+	}
+	private void UseSelected(CommandKind kind)
+	{
+		int selected = ownedItems.Selected;
+		if (selected >= 0 && selected < itemChoices.Count) Submit(kind, item: itemChoices[selected]);
+	}
+	private void RefreshItems()
+	{
+		ItemId selected = ownedItems.Selected >= 0 && ownedItems.Selected < itemChoices.Count ? itemChoices[ownedItems.Selected] : default;
+		itemChoices.Clear(); ownedItems.Clear(); int bagCount = 0;
+		foreach (var item in simulation.Items)
+		{
+			if (item.Owner != Player) continue;
+			if (item.Location == ItemLocation.Inventory) bagCount++;
+			var spec = ItemCatalog.Get(item.Definition);
+			ownedItems.AddItem($"{(item.Location == ItemLocation.Equipped ? spec.Slot.ToString() : $"Bag {item.Slot + 1}")}: {spec.Name} #{item.Id.Value}");
+			itemChoices.Add(item.Id);
+			if (item.Id == selected) ownedItems.Select(itemChoices.Count - 1);
+		}
+		var stats = simulation.GetStats(Player);
+		gearInfo.Text = $"Bag {bagCount}/{GameSimulation.InventoryCapacity} | Damage {stats.MinimumDamage}–{stats.MaximumDamage} | Armor {stats.Armor} (flat reduction, minimum hit 1)";
+	}
 	private void StopInput()
 	{
 		if ((requestedX != 0 || requestedY != 0) && Submit(CommandKind.SetMove)) requestedX = requestedY = 0;
@@ -136,6 +183,8 @@ public partial class SimulationPreview : VBoxContainer
 		if (active && !paused && Input.IsKeyPressed(Key.Space) && simulation.Tick - lastAttackTick >= GameSimulation.PlayerAttackInterval) AttackNearest();
 		bool pressed = active && !paused && Input.IsKeyPressed(Key.E);
 		if (pressed && !interactDown) InteractNearest(); interactDown = pressed;
+		bool picking = active && !paused && Input.IsKeyPressed(Key.F);
+		if (picking && !pickupDown) PickupNearest(); pickupDown = picking;
 		try { if (!paused && IsVisibleInTree()) clock.Advance(TimeSpan.FromSeconds(delta), advanceTick); }
 		catch (Exception error) { SetPaused(true); status.Text = "Simulation stopped: " + error.Message; log("simulation_error", error.ToString()); }
 		ShowFrame(); elapsed += delta;
@@ -155,6 +204,12 @@ public partial class SimulationPreview : VBoxContainer
 			else if (item.Kind == SimulationEventKind.Hit) status.Text = $"Entity {item.Actor.Value} hit {item.Target.Value}: {item.Value} damage";
 			else if (item.Kind == SimulationEventKind.AttackFailed && item.Actor == Player) status.Text = $"Attack: {(AttackFailure)item.Value}";
 			else if (item.Kind == SimulationEventKind.Died) status.Text = item.Actor == Player ? "You died. New run restarts the arena." : $"Monster {item.Actor.Value} defeated.";
+			else if (item.Kind is SimulationEventKind.ItemDropped or SimulationEventKind.ItemChanged or SimulationEventKind.ItemFailed)
+			{
+				worldChanged = true;
+				status.Text = item.Kind == SimulationEventKind.ItemFailed ? $"Item: {(ItemFailure)item.Value}" :
+					item.Kind == SimulationEventKind.ItemDropped ? "Loot dropped. Approach it and press F." : $"Item #{item.Item.Value}: {(CommandKind)item.Value}";
+			}
 			else if (item.Kind == SimulationEventKind.RegionChanged) status.Text = $"Entered {simulation.World!.GetRegion(current.Region).Name}. Region progress is retained.";
 			else if (item.Kind == SimulationEventKind.InteractionFailed) status.Text = $"Interaction: {(InteractionFailure)item.Value}. Approach the marker; release Space before using E.";
 			else if (item.Kind == SimulationEventKind.NpcTalked || item.Kind == SimulationEventKind.QuestChanged)
@@ -174,6 +229,7 @@ public partial class SimulationPreview : VBoxContainer
 	private void ShowFrame() => view.SetPositions(previous.Position, current.Position, paused ? 1 : clock.Alpha);
 	private void Refresh()
 	{
+		RefreshItems();
 		double p99 = tickMetrics.P99Milliseconds();
 		var quest = simulation.Quest;
 		questInfo.Text = $"{simulation.World!.GetRegion(current.Region).Name} | {simulation.World.QuestTitle}\n{quest.Stage} — {quest.Defeated}/{quest.Required} defeated. Reward: one health restoration.";
@@ -183,7 +239,7 @@ public partial class SimulationPreview : VBoxContainer
 	private async void VerifyReplay()
 	{
 		SetPaused(true); StopInput(); verifying = true;
-		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay }) button.Disabled = true;
+		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop }) button.Disabled = true;
 		uint recordedSeed = seed; long target = simulation.Tick; var recorded = trace.ToArray(); string expected = simulation.ComputeStateHash();
 		status.Text = "Replaying recorded commands...";
 		try
@@ -198,8 +254,23 @@ public partial class SimulationPreview : VBoxContainer
 		finally
 		{
 			if (IsInstanceValid(this) && IsInsideTree())
-			{ verifying = false; foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay }) button.Disabled = false; Refresh(); }
+			{ verifying = false; foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop }) button.Disabled = false; Refresh(); }
 		}
+	}
+	private static void ItemSmoke()
+	{
+		EntityState[] initial = [new(Player, Region, new(384, 384)), new(new(2), Region, new(640, 384), Kind: EntityKind.Monster, Health: 1)];
+		var grid = Arena(); var sample = new GameSimulation(1, initial, grid);
+		RecordedCommand[] script = [new(0, new(1, 1, Player, Region, CommandKind.Attack, Target: new(2))),
+			new(1, new(2, 2, Player, Region, CommandKind.Pickup, Item: new(2))),
+			new(2, new(3, 3, Player, Region, CommandKind.Equip, Item: new(2)))];
+		foreach (var entry in script)
+		{
+			if (sample.Submit(entry.Command) != CommandResult.Accepted) throw new InvalidDataException("Item smoke command rejected."); sample.Step();
+		}
+		if (sample.Items.Length != 1 || sample.GetItem(new(2)).Location != ItemLocation.Equipped || sample.GetStats(Player).MinimumDamage != 20 ||
+			sample.ComputeStateHash() != GameSimulation.Replay(1, initial, script, 3, grid).ComputeStateHash()) throw new InvalidDataException("Item ownership/stats/replay smoke failed.");
+		GD.Print("OPEND2_M204_ITEMS_READY");
 	}
 	private static void WorldSmoke()
 	{
@@ -262,7 +333,7 @@ public partial class SimulationCanvas : Control
 	public override void _GuiInput(InputEvent input)
 	{
 		if (input is InputEventMouseButton { Pressed: true }) GrabFocus();
-		if (input is InputEventKey { Keycode: Key.Up or Key.Down or Key.Left or Key.Right or Key.Space or Key.E }) AcceptEvent();
+		if (input is InputEventKey { Keycode: Key.Up or Key.Down or Key.Left or Key.Right or Key.Space or Key.E or Key.F }) AcceptEvent();
 	}
 	public override void _Draw()
 	{
@@ -307,6 +378,14 @@ public partial class SimulationCanvas : Control
 			}
 			else { DrawLine(point + new Vector2(-7, -7), point + new Vector2(7, 7), Colors.Gray, 2); DrawLine(point + new Vector2(-7, 7), point + new Vector2(7, -7), Colors.Gray, 2); }
 		}
+		foreach (var item in simulation.Items)
+		{
+			if (item.Location != ItemLocation.Ground || item.Region != simulation.ActiveRegion) continue;
+			var point = Project(item.Position);
+			DrawRect(new Rect2(point - new Vector2(4, 4), new Vector2(8, 8)), Colors.Cyan);
+			DrawString(GetThemeDefaultFont(), point + new Vector2(12, 19), ItemCatalog.Get(item.Definition).Name, fontSize: 14, modulate: Colors.Cyan);
+		}
+
 		if (HasFocus()) DrawArc(center, 14, 0, Mathf.Tau, 32, Colors.White, 1, true);
 	}
 }

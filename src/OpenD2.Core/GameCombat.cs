@@ -42,7 +42,8 @@ public sealed partial class GameSimulation
 			!target.IsAlive ? AttackFailure.DeadTarget : DistanceSquared(e.Position, target.Position) > (long)AttackRange * AttackRange ? AttackFailure.OutOfRange :
 			!Collision!.HasMeleeLine(e.Position, target.Position) ? AttackFailure.Obstructed : null;
 		if (failure is { } reason) { Emit(tick, SimulationEventKind.AttackFailed, e, target.Position, (int)reason, target.Id); return; }
-		int damage = e.Kind == EntityKind.Player ? 14 + random.NextInt(7) : 4 + random.NextInt(4);
+		var stats = GetStats(e.Id);
+		int damage = Math.Max(1, stats.MinimumDamage + random.NextInt(stats.MaximumDamage - stats.MinimumDamage + 1) - GetStats(target.Id).Armor);
 		int health = Math.Max(0, target.Health - damage);
 		entities[index] = e with { AttackCooldown = e.Kind == EntityKind.Player ? PlayerAttackInterval : MonsterAttackInterval };
 		attacked[index] = true;
@@ -55,6 +56,7 @@ public sealed partial class GameSimulation
 		if (health == 0)
 		{
 			Emit(tick, SimulationEventKind.Died, target, target.Position, 0, e.Id);
+			DropLoot(target, tick);
 			UpdateQuest(tick);
 		}
 	}

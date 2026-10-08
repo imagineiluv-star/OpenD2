@@ -97,9 +97,9 @@ internal static class CombatContracts
 			var game = Game(Monster with { Health = 1 }); Accept(game, Attack()); Accept(game, Attack(sequence: 2)); game.Step();
 			Check(game.GetEntity(Monster.Id).Health == 0 && game.GetEntity(Monster.Id).Mode == MonsterMode.Dead && game.GetEntity(Monster.Id).MoveX == 0);
 			Check(game.GetEntity(Player.Id).Health == 100 && game.RandomState == 270369);
-			// Independent Python struct.pack little-endian encoding of this v3 state.
-			const string golden = "6805dac771b7e06d3d2003c6439c54e64a17de15ca4e63bbe22bcb6e650f2819";
-			Check(game.ComputeStateHash() == golden); Console.WriteLine("COMBAT_V3_GOLDEN " + golden);
+			// Independent Python struct.pack little-endian encoding of this v4 state.
+			const string golden = "d30b55c799e1372f991643cb0f5730f41d0553878b541170dad723383b58384a";
+			Check(game.ComputeStateHash() == golden); Console.WriteLine("COMBAT_V4_GOLDEN " + golden);
 			var events = game.Events.ToArray(); Check(events.Count(e => e.Kind == SimulationEventKind.AttackStarted) == 1 && events.Count(e => e.Kind == SimulationEventKind.Died) == 1);
 			Check(events.Single(e => e.Kind == SimulationEventKind.Hit).Value == 1 && events.Single(e => e.Kind == SimulationEventKind.Died).Target == Player.Id);
 			game.Step(); Check(!game.Events.ToArray().Any(e => e.Kind == SimulationEventKind.Died));

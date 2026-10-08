@@ -23,6 +23,7 @@ def run(*command, capture=False):
     return result.stdout
 
 run(sys.executable, "eng/verify.py")
+run(sys.executable, "eng/check-state-vectors.py")
 version = run(godot, "--version", capture=True)
 assert version.strip().startswith("4.6.3.stable.mono."), version
 run("dotnet", "restore", "OpenD2.sln", "--locked-mode", "-m:1", "-p:BuildInParallel=false")
@@ -39,6 +40,7 @@ assert "OPEND2_M201_SIMULATION_READY" in output, "Simulation/replay marker missi
 assert "OPEND2_M201_TICK_LOOP_READY" in output, "Live simulation tick loop marker missing"
 assert "OPEND2_M202_COMBAT_READY" in output, "Combat/collision/replay marker missing"
 assert "OPEND2_M203_WORLD_READY" in output, "Town/dungeon/quest/replay marker missing"
+assert "OPEND2_M204_ITEMS_READY" in output, "Loot/inventory/equipment/replay marker missing"
 if args.export:
     names = {"Linux": "OpenD2.x86_64", "Windows": "OpenD2.exe", "macOS": "OpenD2.zip"}
     destination = root / "artifacts" / args.export / names[args.export]
