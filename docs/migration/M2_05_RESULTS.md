@@ -52,7 +52,7 @@ dotnet run --project tools/OpenD2.AssetAudit -- --inspect-save /path/to/characte
 - 손상 주 파일·백업 복구·둘 다 손상·checksum 변조·미지원 버전·콘텐츠 불일치·잘못된 필드/상한·복원 불변식·잠금 충돌·백업 교체 실패·임시 잔여 파일을 검사했다. 실패 주입은 실제 I/O 대상 충돌로 수행했으며 전원 차단 실험은 아니다.
 - 원본 검사는 합성 v96 헤더와 독립 Python checksum 기준값으로 검증했다. 실제 사용자 `.d2s`는 제공받지 않았으며 검증하지 않았다.
 - Godot import·헤드리스 시작·Linux self-contained export 성공. `OPEND2_M205_SAVE_READY`는 저장/재로드와 이전 정상본 복구를 검사한다. 최종 188개 계약과 플레이어 정체성 검사까지 반영한 코드에서 재검증했다.
-- Linux SDK 없는 배포 smoke도 종료 코드 0으로 모든 준비 마커를 출력했다. 원격 CI는 실행 확인 후 기록한다.
+- Linux SDK 없는 배포 smoke도 종료 코드 0으로 모든 준비 마커를 출력했다. 최종 기능 브랜치/PR CI의 Linux·Windows·macOS도 모두 통과했다.
 
 ```sh
 python eng/validate.py --export Linux
@@ -69,3 +69,15 @@ git diff --check
 1. 원본 세이브 본문/실제 자료 인수와 손실 없는 변환 계획. 읽지 못한 아이템·퀘스트를 버리고 가져오기를 완료한 것으로 처리하지 않는다.
 2. M2-06 음향·HUD·설정/패키지와 실제 사용자 PC의 GUI 조작·서명/공증·장시간 인수. 자동 저장·여러 슬롯·원격 동기화·충돌 해결은 이번 단일 슬롯에 포함되지 않는다.
 3. NPC-01: [NPC LLM 설계](NPC_LLM_DESIGN.md)의 제한된 대화/행동 경계와 가짜 모델 실패 시험부터 구현. NPC 기억 저장은 별도 스키마 변경과 마이그레이션이 필요하다.
+
+## 원격 검증과 병합
+
+최종 코드/계약 커밋 `64d547e6b9e4bc1f29fd5a1830d9f3f1e332ffba`의 [기능 브랜치 CI #37754289066](https://github.com/imagineiluv-star/OpenD2/actions/runs/37754289066)와 [PR CI #37754294534](https://github.com/imagineiluv-star/OpenD2/actions/runs/37754294534)가 모두 성공했다.
+
+| 환경 | 검증 | 결과 |
+|---|---|---|
+| Linux x64 / ubuntu-24.04 | 188개 계약·Godot 시작·export | 성공 |
+| Windows x64 / windows-2025 | 188개 계약·Godot 시작·export | 성공 |
+| macOS universal / macos-15 | 188개 계약·Godot 시작·export | 성공 |
+
+[PR #7](https://github.com/imagineiluv-star/OpenD2/pull/7)로 master에 반영한다. 코드 검증 이후의 변경은 이 문서와 작업계획의 CI 증거뿐이다. master push에서도 같은 검증을 수행한다. 아티팩트는 기존 정책대로 14일 보존되며 실제 사용자 PC의 GUI/설치·서명/공증 인수는 별도다.
