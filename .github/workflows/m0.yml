@@ -2,9 +2,14 @@ name: Migration validation
 on:
   push:
     branches: ["master", "feat/m0-foundation", "feat/m1-legacy-assets", "feat/m2-playable-slice"]
-    paths: ["native/**", "Directory.Build.targets", "THIRD_PARTY_NOTICES.md", "src/**", "tests/**", "tools/**", "eng/**", "global.json", "Directory.Build.props", "*.sln", ".github/workflows/m0.yml"]
+    paths: ["native/**", "Directory.Build.targets", "THIRD_PARTY_NOTICES.md", "src/**", "tests/**", "tools/**", "eng/**", "global.json", "Directory.Build.props", "*.sln", ".github/workflows/**"]
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_tag:
+        type: string
+        default: ci
 permissions:
   contents: read
 jobs:
@@ -20,6 +25,7 @@ jobs:
           - os: macos-15
             preset: macOS
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -30,15 +36,22 @@ jobs:
           python-version: "3.12"
       - name: Install pinned Godot and templates
         run: python eng/bootstrap.py
+      - name: Test release packaging contracts
+        run: python -m unittest discover -s eng -p "test_release.py" -v
       - name: Build pinned MPQ backend from source
         run: python eng/build-native.py
       - name: Build pinned optional NPC runtime from source
         run: python eng/build-npc.py
       - name: Build, contracts, headless smoke and export
         run: python eng/validate.py --export ${{ matrix.preset }}
+      - name: Archive and smoke the extracted release package
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || 'ci' }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: python eng/release.py pack --preset ${{ matrix.preset }} --smoke
       - uses: actions/upload-artifact@v4
         with:
           name: OpenD2-M2-${{ matrix.preset }}
-          path: artifacts/${{ matrix.preset }}/
+          path: artifacts/packages/
           if-no-files-found: error
           retention-days: 14

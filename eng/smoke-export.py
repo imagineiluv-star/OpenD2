@@ -9,8 +9,9 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument("preset", choices=["Linux", "Windows", "macOS"])
+parser.add_argument("--folder", type=Path, help="Extracted release package to test")
 args = parser.parse_args()
-folder = root / "artifacts" / args.preset
+folder = (args.folder or root / "artifacts" / args.preset).resolve()
 with tempfile.TemporaryDirectory(prefix="opend2-export-") as temporary:
     if args.preset == "macOS":
         subprocess.run(["ditto", "-x", "-k", str(folder / "OpenD2.zip"), temporary], check=True)
