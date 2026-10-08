@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace OpenD2.Core;
 
 public sealed record AppSettings(int SchemaVersion = 1, string GameDataPath = "", int MaxFps = 60,
-	bool Fullscreen = false, bool ShowDiagnostics = false)
+	bool Fullscreen = false, bool ShowDiagnostics = false, int MasterVolume = 80, int EffectsVolume = 80, int MusicVolume = 50, bool Muted = false)
 {
 	public void Validate()
 	{
@@ -11,6 +11,8 @@ public sealed record AppSettings(int SchemaVersion = 1, string GameDataPath = ""
 			throw new InvalidDataException($"Unsupported settings version: {SchemaVersion}.");
 		if (MaxFps is < 30 or > 240 || GameDataPath is null)
 			throw new InvalidDataException("Settings require a data path string and FPS between 30 and 240.");
+		if (MasterVolume is < 0 or > 100 || EffectsVolume is < 0 or > 100 || MusicVolume is < 0 or > 100)
+			throw new InvalidDataException("Audio volumes must be between 0 and 100.");
 	}
 
 	public static AppSettings Load(string path)

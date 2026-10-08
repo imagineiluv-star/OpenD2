@@ -12,7 +12,7 @@ public sealed record PlaySpawn(uint Id, uint Region, int X, int Y, bool Player, 
 public sealed record PlayNpc(uint Id, uint Region, int X, int Y, string Name);
 public sealed record PlayPortal(uint Id, uint Region, int X, int Y, uint Destination, int ArrivalX, int ArrivalY);
 public sealed record LegacySceneRequest(int SchemaVersion, string Title, PlayRegion[] Regions, PlaySpawn[] Actors,
-	PlayNpc Npc, PlayPortal[] Portals, uint[] QuestTargets, LegacyActorRequest[]? Artwork = null, bool NavigateWalls = false)
+	PlayNpc Npc, PlayPortal[] Portals, uint[] QuestTargets, LegacyActorRequest[]? Artwork = null, bool NavigateWalls = false, LegacyAudioRequest? Audio = null)
 {
 	public static LegacySceneRequest Read(string file)
 	{
@@ -32,8 +32,9 @@ public sealed class LegacyPlayScene
 	public string ContentId { get; }
 	public IReadOnlyDictionary<EntityId, LegacyActorArt> Artwork { get; }
 	public IReadOnlyList<LegacyAssetSource> ArtworkSources { get; }
-	private LegacyPlayScene(WorldDefinition world, EntityState[] actors, Dictionary<RegionId, LegacyMapAsset> terrain, Dictionary<EntityId, LegacyActorArt> artwork, LegacyAssetSource[] artworkSources, string id)
-	{ World = world; Actors = Array.AsReadOnly(actors); Terrain = new ReadOnlyDictionary<RegionId, LegacyMapAsset>(terrain); Artwork = new ReadOnlyDictionary<EntityId, LegacyActorArt>(artwork); ArtworkSources = Array.AsReadOnly(artworkSources); ContentId = id; }
+	public LegacyAudioBank? Audio { get; }
+	private LegacyPlayScene(WorldDefinition world, EntityState[] actors, Dictionary<RegionId, LegacyMapAsset> terrain, Dictionary<EntityId, LegacyActorArt> artwork, LegacyAssetSource[] artworkSources, string id, LegacyAudioBank? audio)
+	{ World = world; Actors = Array.AsReadOnly(actors); Terrain = new ReadOnlyDictionary<RegionId, LegacyMapAsset>(terrain); Artwork = new ReadOnlyDictionary<EntityId, LegacyActorArt>(artwork); ArtworkSources = Array.AsReadOnly(artworkSources); ContentId = id; Audio = audio; }
 	public GameSimulation Create(uint seed) => new(seed, Actors, world: World);
 	public static LegacyPlayScene Load(string directory, LegacySceneRequest request) => Load(request, path => AssetDecoders.ReadFromInstall(directory, path));
 	public static LegacyPlayScene Load(LegacySceneRequest request, Func<string, byte[]> read)
@@ -92,7 +93,8 @@ public sealed class LegacyPlayScene
 		{ hash.AppendData(Encoding.UTF8.GetBytes(source.Path + "\n" + source.Sha256 + "\n")); }
 		if (artworkRequests.Length > 0) hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(artworkRequests));
 		foreach (var source in artworkSources) hash.AppendData(Encoding.UTF8.GetBytes(source.Path + "\n" + source.Sha256 + "\n"));
-		return new(world, actors, terrain, artwork, artworkSources.ToArray(), Convert.ToHexStringLower(hash.GetHashAndReset()));
+		var audio = request.Audio is null ? null : LegacyAudioBank.Load(request.Audio, regions.Select(r => new RegionId(r.Id)), Read);
+		return new(world, actors, terrain, artwork, artworkSources.ToArray(), Convert.ToHexStringLower(hash.GetHashAndReset()), audio);
 	}
 }
 

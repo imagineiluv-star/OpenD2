@@ -27,6 +27,7 @@ try
 	PlayAssetContracts.Run(root, Test);
 	PlaySceneContracts.Run(root, Test);
 	ActorArtContracts.Run(Test);
+	AudioContracts.Run(Test);
 	NavigationContracts.Run(Test);
 	PlayReadinessContracts.Run(Test);
 	RecordingContracts.Run(Test);
@@ -48,7 +49,7 @@ Npc02Contracts.Run(Test);
 	Test("settings round trip and preserve previous backup", () =>
 	{
 		var path = Path.Combine(root, "settings.json");
-		var first = new AppSettings(GameDataPath: "한글 데이터", MaxFps: 120, Fullscreen: true, ShowDiagnostics: true); first.Save(path);
+		var first = new AppSettings(GameDataPath: "한글 데이터", MaxFps: 120, Fullscreen: true, ShowDiagnostics: true, MasterVolume: 75, EffectsVolume: 60, MusicVolume: 30, Muted: true); first.Save(path);
 		new AppSettings(MaxFps: 30).Save(path);
 		Check(AppSettings.Load(path).MaxFps == 30 && AppSettings.Load(path + ".bak") == first);
 		Check(!Directory.EnumerateFiles(root, "*.tmp").Any());
@@ -64,6 +65,7 @@ Npc02Contracts.Run(Test);
 		var path = Path.Combine(root, "existing-settings.json"); const string data = "{\"SchemaVersion\":1,\"GameDataPath\":\"\",\"MaxFps\":120}";
 		File.WriteAllText(path, data); var settings = AppSettings.Load(path);
 		Check(settings.MaxFps == 120 && !settings.Fullscreen && !settings.ShowDiagnostics && File.ReadAllText(path) == data);
+		Check(settings.MasterVolume == 80 && settings.EffectsVolume == 80 && settings.MusicVolume == 50 && !settings.Muted);
 	});
 	Test("future schema rejected without overwrite", () =>
 	{

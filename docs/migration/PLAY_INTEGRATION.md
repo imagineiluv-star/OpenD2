@@ -182,7 +182,7 @@ PLAY-04 로컬 검증: **249/249**, 기존 rules-v4 독립 벡터, Linux export�
 현재 preview 전투/아이템 규칙을 원본 규칙 호환 완료로 표시하지 않는다.
 
 **미완료인 콘텐츠 작업**: 실제 LoD 지도/캐릭터 경로와 방향·프레임·좌표를 지정한 scene JSON,
-원본 게임 테이블의 의미/전투·아이템 규칙 매핑, NPC 아트·HUD·음향, 실제 화면/조작 대조.
+원본 게임 테이블의 의미/전투·아이템 규칙 매핑, NPC 아트·전체 UI·미지원 오디오 형식, 실제 화면/조작/청취 대조.
 원본 MPQ 미제공 때문에 이들 항목은 이번 합성 검사 통과와 별도로 열린 상태다.
 
 PLAY-05 로컬 검증: 전체 계약 **253/253**, Linux export·배포본 smoke 성공.
@@ -249,3 +249,37 @@ PLAY-06 첫 CI의 macOS 작업은 Godot 다운로드 HTTP 500으로 빌드 전�
 PLAY-06은 [PR #16](https://github.com/imagineiluv-star/OpenD2/pull/16),
 [3개 OS CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37814052074) 성공 후 master `5834394`에 병합했다.
 첫 시도의 Linux/Windows는 통과했고, HTTP 500으로 중단된 macOS 작업만 2차 시도에서 통과했다.
+
+
+## M2-06b1: 선택 효과음·지역 음악
+
+v0.2.0-rc.2 이후 빌드에서 scene 최상위에 선택 `Audio`를 추가할 수 있다.
+아래는 **설명용 경로**다. 실제 설치의 감사 목록에서 확인한 경로로 교체한다.
+자료가 없거나 형식이 지원되지 않으면 `Audio`를 생략한다. 임의 경로를 원본 경로로 간주하지 않는다.
+
+```json
+"Audio": {
+  "Effects": [
+    { "Cue": "Hit", "Path": "data/sfx/verified-hit.wav" },
+    { "Cue": "Portal", "Path": "data/sfx/verified-portal.wav" }
+  ],
+  "Music": [
+    { "Region": 1, "Path": "data/global/music/verified-town.wav" },
+    { "Region": 2, "Path": "data/global/music/verified-dungeon.wav" }
+  ]
+}
+```
+
+`Effects`와 `Music`은 둘 다 배열이며 빈 배열을 허용한다. cue는 대소문자까지 정확히
+`Attack`, `Hit`, `Death`, `Loot`, `Quest`, `Portal`만 허용하고 중복은 거절한다.
+Music의 Region은 scene Regions에 있는 ID다. 매핑이 없는 지역은 무음이다.
+WAV는 PCM8/16, 모노/스테레오, 8~96 kHz만 지원한다. 압축/float WAV 등은 거절한다.
+음악은 전체 구간 반복이며 WAV smpl loop 지점·스트리밍은 아직 지원하지 않는다.
+
+MPQ 파일을 읽을 때 기존 patch 우선순위를 적용한다. 파일 누락/손상/미지원 형식이면
+scene 로딩이 실패하고 이전 세션을 유지한다. 오디오를 추가/교체해도 기존 ContentId 저장 슬롯은 유지한다.
+`--check-scene`/`--check-play-ready`도 지정된 음원을 읽어 검증하지만 실제 청취 PASS가 아니다.
+경로별 실제 청취·출력 장치·무음/복귀·region loop는 QA-06/09 증거로 남긴다.
+
+합성 Camp/Cellar는 직접 생성한 짧은 효과 톤만 사용하고 음악은 없다. 원본 scene에는 합성 톤을 대신 넣지 않는다.
+메모리/voice 제한·지원 범위·미인수 항목: [M2-06b1 결과](M2_06B_RESULTS.md).

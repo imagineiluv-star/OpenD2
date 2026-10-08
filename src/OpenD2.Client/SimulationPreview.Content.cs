@@ -64,6 +64,7 @@ public partial class SimulationPreview
 			view.SetTerrain(next); legacyScene = next; NewRun();
 			contentInfo.Text = $"Legacy terrain: {next.World.Regions.Length} region(s). Content {next.ContentId[..16]}.\nExplicit placements and preview game rules; original campaign compatibility is not validated. Artwork profiles: {next.Artwork.Count}/{next.Actors.Count}.";
 			contentInfo.Text += $"\nStatic quest loop: {checkedScene.Readiness.QuestLoopReachable}; GUI QA: NOT_RUN. " + string.Join(", ", checkedScene.Readiness.Issues.Take(8));
+			contentInfo.Text += $"\nAudio: {next.Audio?.Effects.Count ?? 0} effects, {next.Audio?.Music.Count ?? 0} region tracks. Listening QA: NOT_RUN.";
 			log("legacy_scene_loaded", $"content={next.ContentId}, regions={next.World.Regions.Length}");
 		}
 		catch (Exception error)
