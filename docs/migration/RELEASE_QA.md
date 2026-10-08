@@ -20,6 +20,10 @@ Windows는 ZIP, macOS는 Godot ZIP 원본 바이트를 사용한다.
 최종 handoff 아티팩트는 30일 보관하며 공개 Release 파일은 이 만료와 별개다.
 
 `release-manifest.json`은 버전·소스 SHA·빌드 URL·파일 해시/크기를 기록한다.
+PLAY-07부터 manifest/result는 schema 2이며 기본 `synthetic_preview` GUI, 원본 scene GUI,
+2시간 soak 상태를 분리한다. 개별 package 메타데이터는 schema 1을 유지한다.
+기존 결과 수집기가 있다면 schema 2를 읽도록 수정하고 누락 상태를 통과로 추정하지 않는다.
+`LEGACY_PLAY_SETUP.md`에 scene JSON·아트 방향·좌표·사전검사 방법을 함께 첨부한다.
 `SHA256SUMS`는 패키지와 지침/메타데이터를 포함한다. GUI QA는 `NOT_RUN`으로 시작한다.
 CI에는 SDK가 설치되어 있으므로 검색 경로를 제한한 검사를 'SDK 없는 실제 사용자 PC' 시험으로 간주하지 않는다.
 macOS 서명/공증, Linux GUI, 실제 GPU, 설치 경험, 원본 리소스는 별도 인수다.
@@ -46,7 +50,8 @@ Release 발행 이벤트가 다음 워크플로를 실행하리라 가정하지 
 이 OpenD2 출시 후보를 실제 사용 테스트해줘: <Release URL>
 release-manifest.json, SHA256SUMS, GROK_TASK.md, qa-result-template.json을 기준으로 해.
 Linux x64 배포 파일의 해시를 확인하고 새 테스트 프로필에서 일반 창으로 실행해.
-필수 QA-01~06을 최대 20분 동안 키보드·마우스로 시험해.
+필수 QA-01~06/08을 최대 20분 동안 키보드·마우스로 시험해.
+같은 run의 15,000 tick 경계를 지나도 자동 정지하지 않는지 확인하고 저장/재실행해.
 모델 다운로드는 하지 마. 실패 재시도는 1회까지만 해.
 qa-result.json, 입력 기록, 스크린샷/영상, 게임 로그를 첨부해줘.
 실행하지 못한 항목은 BLOCKED/NOT_RUN으로 기록하고 원인도 알려줘.
@@ -66,7 +71,7 @@ qa-result.json, 입력 기록, 스크린샷/영상, 게임 로그를 첨부해�
 
 - 저장소 `imagineiluv-star/OpenD2`, 새 prerelease, 태그 `vX.Y.Z-rc.N`.
 - Release ID·태그·manifest commit을 확인하고 같은 후보는 한 번만 실행.
-- QA-01~06, 모델 다운로드 없음, 20분/실패 재시도 1회, 진행 중인 시험과 직렬 처리.
+- QA-01~06/08, 모델 다운로드 없음, 20분/실패 재시도 1회, 진행 중인 시험과 직렬 처리.
 - 실행 불가·시간 초과는 BLOCKED/NOT_RUN, 결과와 증거는 Bot 대화에 첨부.
 
 Release 이벤트/알림 필터가 없으면 링크를 전달하는 수동 경로를 쓴다.
@@ -81,21 +86,42 @@ FAIL/BLOCKED/NOT_RUN/누락은 통과가 아니다. 정식 승격은 현재 워�
 후속: 봇 실제 1회 실행 → 이벤트 연동 확인 → 신뢰된 결과 회수/기계 검증 → 목표 OS/PC별 인수.
 실제 NPC 모델 정답률 51%/83%와 원본 데이터 미제공 한계는 그대로 유효하다.
 
+### 원본 장면과 장시간 인수
+
+PLAY-01~06은 원본 지도·충돌·DCC/COF 표현·클릭 경로·연속 세션을 연결했다.
+원본 자료가 제공되기 전까지 지원 범위는 합성 fixture로 검증한 코드다. 모든 원본 형식/캠페인 호환을 뜻하지 않는다.
+
+- **QA-08 필수**: 같은 run에서 일반 창으로 10분 이상 진행해 15,000 tick 경계 전후의 이동,
+  replay 일치, 저장/재실행을 기록한다. 빠른 합성 tick 반복은 이 GUI 시험을 대체하지 않는다.
+- **QA-09 별도 인수**: 사용자 소유 LoD 데이터 + 실제 경로/좌표/아트 방향을 확인한 scene JSON +
+  `--check-play-ready` 리포트가 필요하다. 자료가 없으면 BLOCKED이며 기본 프리뷰 결과에 합치지 않는다.
+  ContentId·scene JSON 해시·리소스 경로/해시를 기록하고 실제 지형/아트/충돌/퀘스트 왕복을 조작한다.
+  원본 리소스 파일은 공개 결과에 첨부하지 않는다. 결과는 해당 scene에만 적용한다.
+- **QA-10 별도 인수**: 2시간 실제 창/렌더링/입력·메모리·지역 전환을 관찰한다.
+  기본 20분 실행 제한의 예외는 별도 시험 지시로 정한다. 계약 테스트의 '2시간 상당 tick'은 soak PASS가 아니다.
+- 현재 원본 전투/아이템 규칙, NPC 아트·HUD·음향, 전체 캠페인과 3D는 별도 잔건이다.
+  `original_rules_validated=false`를 유지한다. GUI 한 장면의 성공으로 이 상태를 변경하지 않는다.
+
 ## 개발 검증
 
 ```sh
-python -m unittest discover -s eng -p 'test_release.py' -v
+python -m unittest discover -s eng -p 'test_*.py' -v
 python eng/release.py check-version v0.2.0-rc.1
 ```
 
 패키징 시험은 작은 가짜 파일을 사용하며 실제 게임 통과 증거가 아니다.
+PLAY-07 기준 패키징 10개와 다운로드 경계 6개를 함께 실행한다. Godot의 일시적 다운로드 오류는
+최대 3회 재시도하며 SHA-512 불일치는 그대로 실패한다. macOS CI의 HTTP 500 사례를 반영한 변경이다.
 실제 검증은 `eng/validate.py --export <OS>` 후 `RELEASE_TAG`, `SOURCE_SHA`를 환경변수로 지정하고
 `python eng/release.py pack --preset <OS> --smoke`를 실행한다. 같은 패키지가 있으면 덮어쓰지 않는다.
 
 2026-10-08 로컬 검증: 패키징 계약 10/10, 기존 게임 계약 228/228, Linux release export와
 압축 해제 후 실행 성공. actionlint 1.7.12로 두 workflow 문법/식 검사를 통과했다.
 Windows에서는 POSIX 권한 검사를 건너뛰며 해당 검사는 Linux/macOS에서 수행한다.
-실제 GitHub Release 발행과 Grok Bot GUI 실행은 아직 수행하지 않았다.
+이후 [v0.2.0-rc.1](https://github.com/imagineiluv-star/OpenD2/releases/tag/v0.2.0-rc.1)을
+[3개 OS 릴리즈 검증](https://github.com/imagineiluv-star/OpenD2/actions/runs/37800399047) 후 발행했다.
+이 버전은 PLAY-01~07 이전이다. 새 기능 시험에는 이후 master로 새 rc를 생성해야 한다.
+Grok Bot/실제 원본 데이터 GUI 시험은 아직 수행하지 않았다.
 
 ## 공식 근거
 

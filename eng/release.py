@@ -22,6 +22,9 @@ CASES = [
     ("QA-05", "Basic NPC dialogue and explicit quest confirmation", True),
     ("QA-06", "Window resize, input focus, Korean text and errors", True),
     ("QA-07", "Optional model download/cancel/resume/run/fallback/remove", False),
+    ("QA-08", "Play across a ten-minute replay rollover, verify, save and reload", True),
+    ("QA-09", "Owned legacy scene: terrain, animation, collision, quest loop and reload", False),
+    ("QA-10", "Separately scheduled two-hour visible gameplay soak", False),
 ]
 
 
@@ -118,13 +121,20 @@ def prepare(folder, version, commit, repository, run_url):
         packages.append(metadata)
     release_url = f"https://github.com/{repository}/releases/tag/{version}"
     write_json(folder / "release-manifest.json", {
-        "schema_version": 1, "version": version, "commit": commit,
+        "schema_version": 2, "version": version, "commit": commit,
         "repository": repository, "build_run": run_url, "release_url": release_url,
-        "gui_qa_status": "NOT_RUN", "packages": packages,
+        "gui_qa_status": "NOT_RUN", "gui_qa_scope": "synthetic_preview",
+        "legacy_scene_qa_status": "NOT_RUN", "original_rules_validated": False,
+        "two_hour_soak_status": "NOT_RUN", "packages": packages,
     })
     write_json(folder / "qa-result-template.json", {
-        "schema_version": 1, "version": version, "commit": commit,
+        "schema_version": 2, "version": version, "commit": commit,
         "platform": "", "package_sha256": "", "status": "NOT_RUN",
+        "status_scope": "synthetic_preview",
+        "legacy_scene_qa": {"status": "NOT_RUN", "scene_json_sha256": "", "content_id": "",
+                            "profile": "", "asset_report": "", "source_hashes": [],
+                            "original_rules_validated": False},
+        "two_hour_soak": {"status": "NOT_RUN", "active_seconds": 0, "evidence": []},
         "environment": {"os": "", "architecture": "", "gpu": "", "display": "", "sdk_present": None},
         "started_utc": "", "finished_utc": "", "action_log": "", "limitations": [],
         "cases": [{"id": key, "title": title, "required": required, "status": "NOT_RUN",
@@ -132,6 +142,7 @@ def prepare(folder, version, commit, repository, run_url):
     })
     for source, target in (("docs/migration/RELEASE_QA.md", "GROK_BOT_SETUP.md"),
                            ("eng/qa/grok-task.md", "GROK_TASK.md"),
+                           ("docs/migration/PLAY_INTEGRATION.md", "LEGACY_PLAY_SETUP.md"),
                            ("LICENSE", "LICENSE"), ("THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md")):
         shutil.copyfile(ROOT / source, folder / target)
     notes = f"""# OpenD2 {version} — GUI QA pending
@@ -153,7 +164,12 @@ See `GROK_BOT_SETUP.md` for setup and the currently supported handoff.
 Return screenshots/video, game logs, an action log and a completed result JSON.
 FAIL, BLOCKED, NOT_RUN or missing evidence must not be treated as a pass.
 
-Scope: synthetic Camp/Cellar preview. No original game assets are included.
+Default QA scope: synthetic Camp/Cellar preview, including bounded replay rollover without stopping play.
+Legacy scene loading also connects DS1/DT1 terrain, optional DCC/COF actor art and click navigation.
+Supply owned game data and a verified scene JSON using `LEGACY_PLAY_SETUP.md` to test that path.
+No original game assets are included. Preview combat/items are not original Diablo II rule parity.
+Manifest/report schema 2 keeps synthetic GUI, legacy scene and two-hour soak acceptance separate.
+Passing the default GUI cases does not accept the original campaign or original assets.
 Optional NPC AI remains experimental. Windows/macOS installation, GPU performance,
 original assets and long-duration acceptance require their own evidence.
 """

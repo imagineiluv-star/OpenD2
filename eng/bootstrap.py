@@ -1,12 +1,11 @@
 """Fetch pinned Godot .NET editor/templates and verify official SHA-512 digests."""
-import hashlib
 import json
 import os
 from pathlib import Path
 import platform
 import shutil
-import urllib.request
 import zipfile
+from pinned_download import fetch_verified
 
 ROOT = Path(__file__).resolve().parents[1]
 lock = json.loads((ROOT / "eng/toolchain.json").read_text())
@@ -18,16 +17,7 @@ cache.mkdir(exist_ok=True)
 
 def fetch(key):
     spec = lock["archives"][key]
-    path = cache / spec["file"]
-    if not path.exists():
-        temporary = path.with_suffix(".download")
-        urllib.request.urlretrieve(lock["baseUrl"] + spec["file"], temporary)
-        temporary.replace(path)
-    with path.open("rb") as stream:
-        actual = hashlib.file_digest(stream, "sha512").hexdigest()
-    if actual != spec["sha512"]:
-        raise SystemExit(f"SHA512 mismatch: remove {path} and retry")
-    return path
+    return fetch_verified(lock["baseUrl"] + spec["file"], cache / spec["file"], spec["sha512"])
 
 editor_dir = cache / "godot"
 with zipfile.ZipFile(fetch(host)) as archive:

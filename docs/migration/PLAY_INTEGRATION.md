@@ -11,7 +11,7 @@
 | 4 | `feat/play-04-navigation` | 화면 좌표·마우스 이동·벽 우회 | 코드·합성 검증 완료; GUI 대기 |
 | 5 | `feat/play-05-content` | 대표 지역·생성 위치·NPC/포털·콘텐츠 연결 | 연결 인수 도구 구현; 원본 콘텐츠 지정/규칙 대기 |
 | 6 | `feat/play-06-continuous-session` | 기록 예산과 플레이 진행 분리 | 코드·합성 검증 완료; 실제 장시간 GUI 대기 |
-| 7 | `feat/play-07-acceptance` | 배포·실제 GUI·증거/인수 | 대기 |
+| 7 | `feat/play-07-acceptance` | 배포·실제 GUI·증거/인수 | 인수 자료 구현; 원본/GUI/2시간 실제 시험 대기 |
 
 ## PLAY-01: 선택 지도 사전검사
 
@@ -210,3 +210,42 @@ PLAY-06 로컬 검증: 전체 계약 **256/256**, Linux export·배포본 smoke 
 
 PLAY-05는 [PR #15](https://github.com/imagineiluv-star/OpenD2/pull/15)의
 [3개 OS CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37812531405) 성공 후 master `3ff1150`에 병합했다.
+
+## PLAY-07: 배포본 인수와 증거 경계
+
+릴리즈 handoff에 이 문서를 `LEGACY_PLAY_SETUP.md`로 첨부하고 SHA256SUMS에 포함한다.
+manifest/result schema 2는 기본 프리뷰 GUI, 지정 원본 scene GUI, 실제 2시간 soak를 각각 NOT_RUN으로 시작한다.
+기존 개별 package metadata는 schema 1을 유지한다. 자동으로 봇을 호출하거나 GUI 결과를 생성하지 않는다.
+
+| 인수 | 필수 자료/조작 | 현재 증거 |
+|---|---|---|
+| 코드·배포 자동 검증 | 256개 게임 계약, 16개 패키징/다운로드 계약, OS별 export/압축 해제 실행 | 합성/헤드리스 검증; 단계별 CI 링크 참조 |
+| 기본 프리뷰 GUI | QA-01~06/08, 설치·퀘스트·아이템·저장·입력 및 10분 경계 | NOT_RUN |
+| 지정 원본 장면 GUI | QA-09, 소유 MPQ·scene JSON·사전검사 리포트와 실제 화면/조작 | 자료 미제공, NOT_RUN |
+| 목표 PC 장시간 | QA-10, 2시간 실제 렌더링/입력·메모리·성능 기록 | NOT_RUN |
+| 원본 규칙/캠페인 | 실제 전투·아이템·퀘스트 기준과 전체 콘텐츠 대조 | 미구현/미검증 잔건 유지 |
+
+기본 결과의 PASS는 synthetic_preview 범위다. 원본 장면은 ContentId·scene JSON 해시·자료 경로/해시,
+실제로 시험한 지역/클래스/동작과 QA-09 증거를 별도로 기록한다. 원본 규칙 검증은 계속 false다.
+공개 CI/릴리즈에 원본 MPQ나 추출 리소스를 넣지 않는다. 실제 GUI가 불가능하거나 데이터가 없으면
+해당 항목을 BLOCKED/NOT_RUN으로 남기고 자동 검증으로 대체하지 않는다.
+
+다음 실제 시험 순서:
+1. 사용자가 소유한 LoD 1.10f 데이터로 대표 지도·팔레트·DT1·DCC/COF 경로/방향을 확인한다.
+2. 실제 좌표의 scene JSON과 `--check-play-ready` 리포트를 작성한다. 미지원 형식·경로·아트 누락을 먼저 해소한다.
+3. PLAY-07 이후 master로 새 rc를 만들어 OS별 실행 파일과 handoff를 받는다.
+4. 일반 창에서 QA-01~06/08 및 준비된 QA-09를 조작하고 영상·입력·로그·저장 복원 증거를 수집한다.
+5. 대상 PC별 설치/서명·GPU와 QA-10을 별도 인수한다. 실패 항목은 새 기능 브랜치로 수정 후 같은 절차를 반복한다.
+
+기존 `v0.2.0-rc.1`은 통합 전 버전이며 이번 기능 시험에 사용할 수 없다.
+세부 봇 지시는 [RELEASE_QA.md](RELEASE_QA.md)와 [grok-task.md](../../eng/qa/grok-task.md)에 있다.
+
+PLAY-06 첫 CI의 macOS 작업은 Godot 다운로드 HTTP 500으로 빌드 전에 실패했다.
+이 장애에 대응해 PLAY-07에서 bootstrap 다운로드의 일시 오류를 최대 3회(2초/4초 대기) 재시도한다.
+404와 해시 불일치는 재시도하지 않는다. SHA-512를 검증한 뒤에만 캐시에 확정하고 실패한 임시 파일은 정리한다.
+관련 6개 계약은 부분 전송 중단·재시도 상한·잘못된 캐시/해시를 포함하며 실제 네트워크를 사용하지 않는다.
+로컬 패키징/다운로드 계약 **16/16**, Linux 실제 압축 해제 후 배포 실행 검사도 통과했다.
+
+PLAY-06은 [PR #16](https://github.com/imagineiluv-star/OpenD2/pull/16),
+[3개 OS CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37814052074) 성공 후 master `5834394`에 병합했다.
+첫 시도의 Linux/Windows는 통과했고, HTTP 500으로 중단된 macOS 작업만 2차 시도에서 통과했다.
