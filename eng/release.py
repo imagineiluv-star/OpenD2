@@ -20,7 +20,7 @@ CASES = [
     ("QA-03", "Pick up, equip, unequip and drop an item", True),
     ("QA-04", "Save, exit, relaunch and load the same checkpoint", True),
     ("QA-05", "Basic NPC dialogue and explicit quest confirmation", True),
-    ("QA-06", "Window resize, input focus, Korean text and errors", True),
+    ("QA-06", "HUD, window resize, saved display settings, input focus and Korean text", True),
     ("QA-07", "Optional model download/cancel/resume/run/fallback/remove", False),
     ("QA-08", "Play across a ten-minute replay rollover, verify, save and reload", True),
     ("QA-09", "Owned legacy scene: terrain, animation, collision, quest loop and reload", False),
@@ -158,6 +158,9 @@ Linux: extract the tar.gz into a new directory and run `./OpenD2.x86_64`.
 Windows: extract the entire ZIP and run `OpenD2.exe`.
 macOS: extract the ZIP and open the app; this development build is not signed/notarized.
 SDK, Godot editor, Python and NPC model downloads are not needed to play the synthetic preview.
+The Simulation tab opens first. The HUD shows health, region and play/pause state.
+FPS/fullscreen/diagnostics preferences apply immediately; choose Save settings to keep them.
+Use F11 to leave fullscreen and Show diagnostics for seed, replay, tick and state hashes.
 
 For Grok Bot, provide [this release]({release_url}), `GROK_TASK.md` and `qa-result-template.json`.
 See `GROK_BOT_SETUP.md` for setup and the currently supported handoff.

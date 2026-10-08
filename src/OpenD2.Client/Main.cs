@@ -14,7 +14,10 @@ public partial class Main : Node3D
 	private Label status = null!;
 	private Label performance = null!;
 	private LineEdit dataPath = null!;
-	private MeshInstance3D model = null!;
+	private SimulationPreview simulation = null!;
+	private readonly SpinBox fpsLimit = new() { MinValue = 30, MaxValue = 240, Step = 1, Value = 60 };
+	private readonly CheckButton fullscreen = new() { Text = "Fullscreen (F11)" };
+	private readonly CheckButton diagnostics = new() { Text = "Show diagnostics" };
 	private double elapsed;
 	private bool settingsLoaded;
 
@@ -35,9 +38,12 @@ public partial class Main : Node3D
 			log = new SessionLog(paths.Logs);
 			settings = AppSettings.Load(paths.SettingsFile);
 			settingsLoaded = true;
-			Engine.MaxFps = settings.MaxFps;
+			fpsLimit.Value = settings.MaxFps;
+			fullscreen.SetPressedNoSignal(settings.Fullscreen);
+			diagnostics.SetPressedNoSignal(settings.ShowDiagnostics);
+			ApplyDisplaySettings();
 			dataPath.Text = settings.GameDataPath;
-			status.Text = "Offline ready. Asset tools and simulation inspector — no game content loaded.";
+			status.Text = "Offline ready. Synthetic Camp / Cellar is playable. Original game data is optional and unverified.";
 			log.Write("startup", "M0 offline client ready");
 			GD.Print("OPEND2_M0_READY");
 		}
@@ -51,20 +57,24 @@ public partial class Main : Node3D
 
 	private void BuildScene()
 	{
+		GetWindow().MinSize = new Vector2I(1000, 680);
 		var camera = new Camera3D { Position = new Vector3(0, 2, 5), Current = true };
 		AddChild(camera); camera.LookAt(Vector3.Zero);
 		AddChild(new DirectionalLight3D { RotationDegrees = new Vector3(-40, -30, 0) });
-		model = new MeshInstance3D
-		{
-			Mesh = new BoxMesh(), Position = new Vector3(1.8f, 0, 0),
-			MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.7f, 0.45f, 0.2f), Roughness = 0.5f }
-		};
-		AddChild(model);
 		var canvas = new CanvasLayer(); AddChild(canvas);
-		var panel = new VBoxContainer { Position = new Vector2(32, 32), CustomMinimumSize = new Vector2(550, 0) };
-		canvas.AddChild(panel);
-		panel.AddChild(new Label { Text = "OPEND2 / FOUNDATION", ThemeTypeVariation = "HeaderLarge" });
-		panel.AddChild(new Label { Text = "C# core + Godot 3D | Offline | M2 foundation" });
+		var margin = new MarginContainer(); canvas.AddChild(margin); margin.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+		foreach (var side in new[] { "left", "top", "right", "bottom" }) margin.AddThemeConstantOverride("margin_" + side, 16);
+		var columns = new HBoxContainer(); margin.AddChild(columns); columns.AddThemeConstantOverride("separation", 16);
+		var settingsScroll = new ScrollContainer { CustomMinimumSize = new Vector2(280, 0), HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+		columns.AddChild(settingsScroll);
+		var panel = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+		settingsScroll.AddChild(panel);
+		panel.AddChild(new Label { Text = "OPEND2", ThemeTypeVariation = "HeaderLarge" });
+		panel.AddChild(new Label { Text = "Offline play preview" });
+		panel.AddChild(new Label { Text = "FPS limit (30–240)" }); panel.AddChild(fpsLimit);
+		panel.AddChild(fullscreen); panel.AddChild(diagnostics);
+		fpsLimit.ValueChanged += _ => ApplyDisplaySettings();
+		fullscreen.Toggled += _ => ApplyDisplaySettings(); diagnostics.Toggled += _ => ApplyDisplaySettings();
 		panel.AddChild(new Label { Text = "Original LoD game data directory" });
 		dataPath = new LineEdit { PlaceholderText = "Select your original game directory" }; panel.AddChild(dataPath);
 		var browse = new Button { Text = "Choose directory" }; panel.AddChild(browse);
@@ -76,18 +86,31 @@ public partial class Main : Node3D
 		status = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart }; panel.AddChild(status);
 		performance = new Label(); panel.AddChild(performance);
 		panel.AddChild(new Label { Text = "User data: " + paths.Root, AutowrapMode = TextServer.AutowrapMode.WordSmart });
-		var previews = new TabContainer { Position = new Vector2(620, 32), Size = new Vector2(500, 640) };
-		canvas.AddChild(previews);
+		var previews = new TabContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.ExpandFill };
+		columns.AddChild(previews);
+		var simulationScroll = new ScrollContainer { Name = "Simulation", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+		previews.AddChild(simulationScroll);
+		simulation = new SimulationPreview((name, message) => log?.Write(name, message), paths.Saves, Path.Combine(paths.Root, "npc-models"), () => dataPath.Text) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+		simulationScroll.AddChild(simulation);
 		previews.AddChild(new AssetPreview(() => dataPath.Text) { Name = "DC6" });
 		previews.AddChild(new AnimationPreview(() => dataPath.Text) { Name = "DCC-COF" });
 		var mapScroll = new ScrollContainer { Name = "Map", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
 		previews.AddChild(mapScroll);
 		mapScroll.AddChild(new MapPreview(() => dataPath.Text) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
-		var simulationScroll = new ScrollContainer { Name = "Simulation", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
-		previews.AddChild(simulationScroll);
-		simulationScroll.AddChild(new SimulationPreview((name, message) => log?.Write(name, message), paths.Saves, Path.Combine(paths.Root, "npc-models"), () => dataPath.Text) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
-		if (OS.GetCmdlineUserArgs().Contains("--smoke-test")) previews.CurrentTab = 3;
+		previews.CurrentTab = 0;
 		var quit = new Button { Text = "Quit" }; panel.AddChild(quit); quit.Pressed += () => GetTree().Quit();
+	}
+	private void ApplyDisplaySettings()
+	{
+		Engine.MaxFps = (int)fpsLimit.Value;
+		if (DisplayServer.GetName() != "headless") GetWindow().Mode = fullscreen.ButtonPressed ? Window.ModeEnum.Fullscreen : Window.ModeEnum.Windowed;
+		if (simulation is not null) simulation.SetDiagnosticsVisible(diagnostics.ButtonPressed);
+		if (performance is not null) performance.Visible = diagnostics.ButtonPressed;
+	}
+	public override void _UnhandledKeyInput(InputEvent @event)
+	{
+		if (@event is InputEventKey { Pressed: true, Echo: false, Keycode: Key.F11 })
+		{ fullscreen.ButtonPressed = !fullscreen.ButtonPressed; GetViewport().SetInputAsHandled(); }
 	}
 
 	private void SaveSettings()
@@ -101,11 +124,12 @@ public partial class Main : Node3D
 		{
 			var path = string.IsNullOrWhiteSpace(dataPath.Text) ? "" : DataDirectory.Validate(dataPath.Text);
 			var probe = path.Length == 0 ? null : GameInstall.Probe(path);
-			var next = settings with { GameDataPath = path };
+			var next = settings with { GameDataPath = path, MaxFps = (int)fpsLimit.Value,
+				Fullscreen = fullscreen.ButtonPressed, ShowDiagnostics = diagnostics.ButtonPressed };
 			next.Save(paths.SettingsFile); settings = next;
 			status.Text = probe is null ? "Settings saved. No game directory selected."
 				: $"Settings saved. {probe.Archives.Count} archives; {probe.MissingArchives.Count} required archives missing. Version compatibility unverified.";
-			log?.Write("settings_saved", "Game data directory preference updated");
+			log?.Write("settings_saved", "Game data and display preferences updated");
 		}
 		catch (Exception error) { status.Text = error.Message; }
 	}
@@ -113,7 +137,6 @@ public partial class Main : Node3D
 	public override void _Process(double delta)
 	{
 		metrics.Record(delta); elapsed += delta;
-		model.RotateY((float)delta * 0.4f);
 		if (elapsed < 1) return;
 		elapsed = 0;
 		performance.Text = $"FPS {Engine.GetFramesPerSecond()} | frame p95 {metrics.P95Milliseconds():F2} ms | managed {GC.GetTotalMemory(false) / 1048576.0:F1} MiB";

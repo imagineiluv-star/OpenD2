@@ -48,7 +48,7 @@ Npc02Contracts.Run(Test);
 	Test("settings round trip and preserve previous backup", () =>
 	{
 		var path = Path.Combine(root, "settings.json");
-		var first = new AppSettings(GameDataPath: "한글 데이터", MaxFps: 120); first.Save(path);
+		var first = new AppSettings(GameDataPath: "한글 데이터", MaxFps: 120, Fullscreen: true, ShowDiagnostics: true); first.Save(path);
 		new AppSettings(MaxFps: 30).Save(path);
 		Check(AppSettings.Load(path).MaxFps == 30 && AppSettings.Load(path + ".bak") == first);
 		Check(!Directory.EnumerateFiles(root, "*.tmp").Any());
@@ -58,6 +58,12 @@ Npc02Contracts.Run(Test);
 		var path = Path.Combine(root, "valid.json"); new AppSettings().Save(path);
 		Throws<InvalidDataException>(() => new AppSettings(MaxFps: 0).Save(path));
 		Check(AppSettings.Load(path).MaxFps == 60);
+	});
+	Test("existing settings gain safe display defaults without changing source bytes", () =>
+	{
+		var path = Path.Combine(root, "existing-settings.json"); const string data = "{\"SchemaVersion\":1,\"GameDataPath\":\"\",\"MaxFps\":120}";
+		File.WriteAllText(path, data); var settings = AppSettings.Load(path);
+		Check(settings.MaxFps == 120 && !settings.Fullscreen && !settings.ShowDiagnostics && File.ReadAllText(path) == data);
 	});
 	Test("future schema rejected without overwrite", () =>
 	{

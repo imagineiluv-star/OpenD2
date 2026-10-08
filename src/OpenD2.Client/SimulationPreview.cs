@@ -84,13 +84,12 @@ public partial class SimulationPreview : VBoxContainer
 	public override void _Ready()
 	{
 		smokeTest = OS.GetCmdlineUserArgs().Contains("--smoke-test");
-		AddChild(new Label { Text = "Town / dungeon slice — 25 ticks per second" });
-		AddChild(new Label { Text = "Click ground to move / click a monster to attack. Arrows move, Space attacks, E talks / uses a portal, F picks up nearby loot.\nGreen: NPC. Gold: portal. Gray walls and purple unknown cells block movement.\nDefault: synthetic maps and rules. Load a checked legacy scene below for original terrain.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
-		BuildContentControls();
+		AddChild(new Label { Text = "Camp / Cellar — offline play" });
+		BuildHud(); AddChild(questInfo); AddChild(view); AddChild(status);
 		view.MoveRequested += ClickMove; view.AttackRequested += ClickAttack;
 		var controls = new HFlowContainer(); AddChild(controls);
-		controls.AddChild(new Label { Text = "Seed" }); controls.AddChild(seedInput);
-		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, save, load }) controls.AddChild(button);
+		foreach (var button in new[] { restart, pause, attack, interact, save, load }) controls.AddChild(button);
+		AddChild(new Label { Text = "Click ground to move; click a monster to attack. Arrows move · Space attacks · E talks / uses a portal · F picks up loot.\nGreen: NPC · Gold: portal · Gray / purple: blocked cells. Click the game view to use the keyboard.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		var inventory = new HFlowContainer(); AddChild(inventory);
 		inventory.AddChild(ownedItems);
 		foreach (var button in new[] { pickup, equip, unequip, drop }) inventory.AddChild(button);
@@ -98,7 +97,12 @@ public partial class SimulationPreview : VBoxContainer
 		equip.Pressed += () => UseSelected(CommandKind.Equip);
 		unequip.Pressed += () => UseSelected(CommandKind.Unequip);
 		drop.Pressed += () => UseSelected(CommandKind.DropItem);
-		AddChild(gearInfo); AddChild(questInfo); AddChild(view); AddChild(details); AddChild(status);
+		AddChild(gearInfo);
+		BuildContentControls();
+		AddChild(diagnosticControls);
+		diagnosticControls.AddChild(new Label { Text = "Seed" }); diagnosticControls.AddChild(seedInput);
+		foreach (var button in new[] { singleStep, signal, replay }) diagnosticControls.AddChild(button);
+		AddChild(details); SetDiagnosticsVisible(false);
 		AddChild(new Label { Text = "Camp Guide — 기본 대사 / 선택형 로컬 AI", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		BuildNpcSettings();
 		AddChild(dialogueInput); var conversation = new HFlowContainer(); AddChild(conversation);
@@ -109,19 +113,19 @@ public partial class SimulationPreview : VBoxContainer
 		signal.Pressed += () => Submit(CommandKind.Signal); attack.Pressed += AttackNearest; interact.Pressed += InteractNearest;
 		replay.Pressed += VerifyReplay; save.Pressed += () => CheckpointFile(false); load.Pressed += () => CheckpointFile(true);
 		Smoke(); CombatSmoke(); WorldSmoke(); ItemSmoke(); SaveSmoke(); NewRun();
-		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); }
+		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); HudSmoke(); }
 		if (smokeTest) { npcSmokePending = true; dialogueInput.Text = "안녕"; SendDialogue(); }
 	}
 	private void NewRun()
 	{
-		ResetDialogue(); ClearRoute();
+		ResetDialogue(); ClearRoute(); lastHud = null;
 		seed = (uint)seedInput.Value; simulation = new(seed, ActiveActors, world: ActiveWorld); view.SetSimulation(simulation);
 		recording = new(simulation); sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
 		previous = current = simulation.GetEntity(Player); view.SignalValue = -1; interactDown = pickupDown = false; SetPaused(false);
 		status.Text = "Talk to the quest giver, defeat the marked targets, then return."; ShowFrame(); Refresh();
 		log("simulation_started", $"rules={GameSimulation.RulesVersion}, seed={seed}");
 	}
-	private void SetPaused(bool value) { paused = value; previous = current; pause.Text = paused ? "Resume" : "Pause"; }
+	private void SetPaused(bool value) { paused = value; previous = current; pause.Text = paused ? "Resume" : "Pause"; RefreshHud(); }
 	private bool Submit(CommandKind kind, int x = 0, int y = 0, EntityId target = default, ItemId item = default)
 	{
 		if (verifying) return false;
@@ -253,7 +257,7 @@ public partial class SimulationPreview : VBoxContainer
 		if (worldChanged) Refresh();
 		if (smokeTest && simulation.Tick == 2) GD.Print("OPEND2_M201_TICK_LOOP_READY");
 	}
-	private void ShowFrame() => view.SetPositions(previous.Position, current.Position, paused ? 1 : clock.Alpha);
+	private void ShowFrame() { view.SetPositions(previous.Position, current.Position, paused ? 1 : clock.Alpha); RefreshHud(); }
 	private void ResetDialogue()
 	{
 		npcMind.Invalidate(); dialogueOffer = null; dialogueFacts = null; dialogueConfirm.Disabled = true;
