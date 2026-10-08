@@ -49,6 +49,7 @@ public partial class Main : Node3D
 			musicVolume.SetValueNoSignal(settings.MusicVolume); muted.SetPressedNoSignal(settings.Muted);
 			ApplyDisplaySettings();
 			ApplyAudioSettings();
+			simulation.SetScenePath(settings.LastScenePath);
 			dataPath.Text = settings.GameDataPath;
 			status.Text = "Offline ready. Synthetic Camp / Cellar is playable. Original game data is optional and unverified.";
 			log.Write("startup", "M0 offline client ready");
@@ -137,7 +138,7 @@ public partial class Main : Node3D
 			var probe = path.Length == 0 ? null : GameInstall.Probe(path);
 			var next = settings with { GameDataPath = path, MaxFps = (int)fpsLimit.Value,
 				Fullscreen = fullscreen.ButtonPressed, ShowDiagnostics = diagnostics.ButtonPressed,
-				MasterVolume = (int)masterVolume.Value, EffectsVolume = (int)effectsVolume.Value, MusicVolume = (int)musicVolume.Value, Muted = muted.ButtonPressed };
+				MasterVolume = (int)masterVolume.Value, EffectsVolume = (int)effectsVolume.Value, MusicVolume = (int)musicVolume.Value, Muted = muted.ButtonPressed, LastScenePath = simulation.ScenePath };
 			next.Save(paths.SettingsFile); settings = next;
 			status.Text = probe is null ? "Settings saved. No game directory selected."
 				: $"Settings saved. {probe.Archives.Count} archives; {probe.MissingArchives.Count} required archives missing. Version compatibility unverified.";

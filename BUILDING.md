@@ -22,7 +22,7 @@ python eng/validate.py --export Linux
 
 bootstrap은 공식 Godot 배포본을 내려받아 `eng/toolchain.json`의 SHA-512로 검사한다. SDK는 별도 설치한다. bootstrap 출력의 실행 파일로 `src/OpenD2.Client/project.godot`를 열면 된다. 기존 Godot 설치를 사용하려면 `python eng/validate.py --godot <실행파일경로> --export Linux`를 사용한다.
 
-`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 267개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export·SDK 검색 경로를 제거한 배포본 실행 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
+`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 268개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export·SDK 검색 경로를 제거한 배포본 실행 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
 
 Godot 없이 코어를 검증할 수 있다:
 
@@ -58,6 +58,10 @@ dotnet run --project tools/OpenD2.AssetAudit -- --tables-bin-110f /path/to/game
 **F11**은 전체화면을 전환한다. 최소 창 크기는 1000×680이며 더 큰 창에서는 컨테이너가 가용 공간에 맞춰 확장된다.
 전체/효과/음악 음량(0~100)과 Mute audio도 즉시 적용되며 Save settings로 유지한다. 합성 장면은 짧은 효과 톤만 재생한다. 원본 scene PCM WAV 효과·지역 음악은 [오디오 연결 절차](docs/migration/PLAY_INTEGRATION.md)를 따른다.
 실제 DPI·다중 모니터·전체화면 전환·키보드 포커스·청취는 QA-06/09의 GUI 인수 대상이다.
+
+가방 8칸과 Weapon/Body 슬롯에서 아이템을 선택하면 상세 수치와 가능한 장착/해제/버리기 조작이 나타난다.
+New run과 장면 교체는 확인 후 실행한다. 취소하면 이전 일시정지 상태로 돌아간다.
+원본 scene을 성공적으로 읽은 뒤 Save settings를 누르면 경로가 저장된다. 재실행 후 **Load remembered scene**으로 재사용하며 자동 로드하지 않는다.
 
 ## 실행과 배포
 

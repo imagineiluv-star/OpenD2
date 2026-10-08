@@ -57,6 +57,7 @@ M1 1차 구현: [M1_RESULTS.md](M1_RESULTS.md). 01~03 코드와 합성 검증을
 - [ ] **M2-06** 음향·음악·HUD·설정과 독립 실행 패키지. 개발 도구 없는 PC 검증.
   - [x] **M2-06a** 플레이 우선 화면·HP/상태 HUD·FPS/전체화면/진단 설정 저장, 합성 바인딩/기존 설정 호환 검증. [범위와 GUI 잔건](M2_06A_RESULTS.md).
   - [x] **M2-06b1** 선택 scene PCM WAV 효과음·지역 음악, 유한 voice/음량 저장·정지/전환·합성 검증. [범위와 잔건](M2_06B_RESULTS.md).
+  - [x] **M2-06c** 가방 8칸/장비 2칸·아이템 상세/선택 상태, 새 게임 확인과 최근 원본 scene 경로 저장/재사용. [범위와 GUI 잔건](M2_06C_RESULTS.md).
   - [ ] **M2-06b2** 실제 원본 음원/미지원 codec 인수·전체 게임 UI와 실제 DPI/전체화면/다중 모니터 인수.
   - [x] **RELEASE-QA-01** 3개 OS 압축 패키지·추출 후 실행 검사·시험용 Release workflow·Grok Bot 전달 자료. [설정/범위](RELEASE_QA.md).
   - [ ] **RELEASE-QA-02** Grok Bot 실제 GUI 시험·이벤트 연결·결과 회수, 목표 OS/PC별 설치 인수. Release workflow 성공만으로 완료 처리하지 않음.
