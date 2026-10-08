@@ -54,6 +54,11 @@ dotnet run --project tools/OpenD2.AssetAudit -- --tables-bin-110f /path/to/game
 
 ## 실행과 배포
 
+출시 후보는 Actions의 **Release candidate and QA handoff** (`release.yml`)를 사용한다.
+`v0.2.0-rc.1` 형식의 버전과 `publish` 여부를 선택한다. 기본값은 발행 없는 검증이며,
+발행 시에도 GUI QA 대기 상태의 prerelease만 만든다. [실행 절차와 Grok Bot 설정](docs/migration/RELEASE_QA.md).
+CI 다운로드는 `OpenD2-M2-<OS>` 아티팩트 안의 OS별 압축 파일 전체를 풀어 사용한다.
+
 `artifacts/<OS>/` **전체 디렉터리**를 전달한다. 실행 파일 옆의 PCK와 런타임 디렉터리를 함께 배포해야 한다. 플레이어에게 SDK·Godot 편집기·Python·DB 설치를 요구하지 않는 self-contained export를 사용한다. OS 기본 시스템 라이브러리와 그래픽 드라이버는 필요하다.
 
 현재 게임 판정은 이 실행 파일 안에서 `OpenD2.Core`가 수행한다. 외부 게임 서버·로그인·DB는 필요하지 않다. 네트워크 협동 및 그래픽 없는 `OpenD2.Server` .NET 호스트는 M5 예정이며 현재 별도 서버 실행 파일은 없다. 역할과 확장 조건은 [아키텍처 ADR-002](docs/migration/ARCHITECTURE.md#adr-002-로컬-우선-선택적-협동-세션)를 참조한다.

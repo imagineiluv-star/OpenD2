@@ -68,3 +68,4 @@ artifacts/
 *.gguf
 /user-data/
 /asset-cache/
+**/__pycache__/

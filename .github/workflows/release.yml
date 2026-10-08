@@ -1,0 +1,120 @@
+name: Release candidate and QA handoff
+
+on:
+  push:
+    tags: ["v*-rc.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New candidate tag, e.g. v0.2.0-rc.1"
+        required: true
+        type: string
+      publish:
+        description: "Publish a prerelease (false = downloadable Actions artifacts only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check candidate version and source commit
+        id: check
+        env:
+          RELEASE_TAG: ${{ inputs.version || github.ref_name }}
+          PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        shell: bash
+        run: |
+          python eng/release.py check-version "$RELEASE_TAG"
+          if [ "$PUBLISH" = true ]; then
+            git merge-base --is-ancestor "$GITHUB_SHA" "origin/$DEFAULT_BRANCH"
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+              echo 'Publish must be dispatched from the default branch.' >&2
+              exit 1
+            fi
+          fi
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
+          fi
+          echo "version=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+  validate:
+    needs: preflight
+    uses: ./.github/workflows/m0.yml
+    with:
+      release_tag: ${{ needs.preflight.outputs.version }}
+
+  handoff:
+    needs: [preflight, validate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: OpenD2-M2-*
+          path: artifacts/release
+          merge-multiple: true
+      - name: Verify all packages and prepare Grok Bot test material
+        env:
+          RELEASE_TAG: ${{ needs.preflight.outputs.version }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: python eng/release.py prepare
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenD2-${{ needs.preflight.outputs.version }}-release
+          path: artifacts/release/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record pending GUI QA
+        shell: bash
+        run: cat artifacts/release/RELEASE_NOTES.md >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    if: github.event_name == 'push' || inputs.publish
+    needs: [preflight, handoff]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: OpenD2-${{ needs.preflight.outputs.version }}-release
+          path: release
+      - name: Publish tested bytes as prerelease with QA pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.preflight.outputs.version }}
+        shell: bash
+        run: |
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$GITHUB_SHA"
+          fi
+          cd release
+          sha256sum --check SHA256SUMS
+          gh release create "$RELEASE_TAG" ./* \
+            --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "OpenD2 $RELEASE_TAG — GUI QA pending" \
+            --notes-file RELEASE_NOTES.md
