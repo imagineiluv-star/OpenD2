@@ -67,6 +67,8 @@ New run과 장면 교체는 확인 후 실행한다. 취소하면 이전 일시�
 
 원본 scene을 성공적으로 읽은 뒤 Save settings를 누르면 경로가 저장된다. 재실행 후 **Load remembered scene**으로 재사용하며 자동 로드하지 않는다.
 
+원본 캐릭터/몬스터 아트는 **Map → Edit generated artwork** 또는 **Scene art → Open scene JSON for artwork**에서 설정한다. 배우별 다섯 동작의 DCC/COF 경로·레이어·8방향·FPS를 입력하고 기존 DCC-COF 탭에서 미리본다. 검증 후 새 장면 복사본으로 저장하며 원본 파일은 유지한다. [PLAY-09 절차](docs/migration/PLAY_INTEGRATION.md#play-09-캐릭터몬스터-아트-연결-화면).
+
 ## 실행과 배포
 
 출시 후보는 Actions의 **Release candidate and QA handoff** (`release.yml`)를 사용한다.

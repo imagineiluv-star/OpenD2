@@ -13,6 +13,35 @@
 | 6 | `feat/play-06-continuous-session` | 기록 예산과 플레이 진행 분리 | 코드·합성 검증 완료; 실제 장시간 GUI 대기 |
 | 7 | `feat/play-07-acceptance` | 배포·실제 GUI·증거/인수 | 인수 자료 구현; 원본/GUI/2시간 실제 시험 대기 |
 | 8 | `feat/play-08-scene-setup` | 데이터 폴더 점검·지도에서 장면 생성·시작 메뉴 연결 | 구현; 실제 자료/GUI 인수 대기 |
+| 9 | `feat/play-09-actor-art-setup` | 장면별 캐릭터/몬스터 아트 입력·방향 미리보기·복사본 저장 | 구현; 실제 자료/GUI 인수 대기 |
+
+## PLAY-09: 캐릭터·몬스터 아트 연결 화면
+
+PLAY-09 이후 빌드의 **Scene art** 탭을 사용한다. 기존 v0.2.0-rc.3에는 포함되지 않는다.
+
+1. 원본 데이터 폴더를 지정한 상태에서 Map의 **Edit generated artwork**, 또는 Scene art의
+   **Open scene JSON for artwork**로 읽을 수 있는 scene을 연다. 지형·기존 아트·오디오를 원본 폴더에서 검증한다.
+   다른 scene을 열 때는 편집 중 값 교체를 확인하며, 취소/실패하면 이전 폼과 저장 파일을 유지한다.
+2. Player/Monster ID를 선택하고 **Use artwork for this actor**를 켠다. 기존 아트가 있으면 불러온다.
+   없는 아트의 팔레트는 해당 지역 팔레트로 채우지만 반드시 실제 캐릭터에 맞는지 확인한다.
+3. **Idle / Walk / Attack / Hit / Death** 각각 DCC 또는 COF 경로를 입력한다.
+   COF는 `component number=DCC path`를 한 줄씩 입력하며, DCC는 레이어 칸을 비운다.
+4. 각 동작에 **8개 방향 번호**를 쉼표로 구분해 입력한다. 순서는 화면의 Core 이동 벡터 안내를 따른다.
+   빈 방향을 자동 추정하지 않는다. FPS 기본값 12는 편집 예시이며 원작 속도 판정이 아니다.
+5. 확인할 facing을 선택하고 **Inspect this motion in DCC-COF**를 누른다.
+   해당 경로·팔레트·레이어·소스 방향·FPS를 기존 애니메이션 탭으로 보내 읽는다.
+   Play/Frame/Direction으로 확인하고 Scene art로 돌아와 수정한다. 미리보기에서 한 변경은 폼에 역반영되지 않는다.
+6. 배우를 바꿔도 미완성 입력을 유지한다. **Validate and save a new scene copy**는 켠 모든 actor의
+   다섯 동작/모든 지정 방향, 지형·배치·퀘스트 연결 및 로더 예산을 검사한다.
+   `scenes/artwork-<unique-id>.json`에 새로 저장하며 원본 JSON/MPQ/세이브를 덮어쓰지 않는다.
+7. **Load saved copy**로 플레이에 연결한다. 기존 세션 교체 확인과 메뉴 정지/Continue 절차는 PLAY-08과 같다.
+   변경한 아트는 ContentId에 반영되므로 별도 체크포인트 슬롯을 사용한다. 로드 후 Save settings로 최근 경로를 기억한다.
+
+아트를 끈 배우는 임시 표시다. 일부 배우만 설정한 중간 복사본도 저장할 수 있으며 설정 수를 보고한다.
+모든 combat actor 아트가 로드되어도 실제 색상/방향/타이밍/가림을 확인한 것은 아니다.
+NPC/장비 교체별 아트, 원작 HUD, 원본 캠페인 규칙, 3D는 이 편집기 범위에 포함되지 않는다.
+리소스 자동 검색/클래스 프리셋 추론 없이 검증한 MPQ 경로를 사용한다.
+검증 기록은 [PLAY_09_RESULTS](PLAY_09_RESULTS.md)를 따른다.
 
 ## PLAY-08: JSON 수동 작성 없는 첫 지형 장면
 

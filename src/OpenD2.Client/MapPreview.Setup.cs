@@ -7,6 +7,8 @@ public partial class MapPreview
 {
 	private readonly string sceneDirectory;
 	private readonly Action<string> openScene;
+	private readonly Action<string> editArtwork;
+	private readonly Button editCreatedArtwork = new() { Text = "Edit generated artwork", Disabled = true };
 	private readonly LineEdit sceneTitle = new() { Text = "Original terrain preview", MaxLength = 80 };
 	private readonly SpinBox[] cells = Enumerable.Range(0, 6).Select(i => new SpinBox { MinValue = 0, MaxValue = 4095, Step = 1, Value = i % 2 == 1 ? 1 : i / 2 + 1 }).ToArray();
 	private readonly Button createScene = new() { Text = "Validate and create scene", Disabled = true };
@@ -19,7 +21,7 @@ public partial class MapPreview
 	private void BuildSetup()
 	{
 		AddChild(new Label { Text = "Create a one-region playable preview" });
-		AddChild(new Label { Text = "1. Check the data directory on the left. Resolve or enter DS1 / DT1 paths and the Act palette, then Load map.\n2. Enable Collision and hover the map to read cell X,Y. Choose three distinct walkable, connected cells.\n3. Create the scene, then load it. Actors use placeholders; original animations, audio and campaign rules are not added by this setup.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		AddChild(new Label { Text = "1. Check the data directory on the left. Resolve or enter DS1 / DT1 paths and the Act palette, then Load map.\n2. Enable Collision and hover the map to read cell X,Y. Choose three distinct walkable, connected cells.\n3. Create the scene, then load it. Actors use placeholders; use Edit generated artwork to add animations. Audio and campaign rules are not added here.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		AddChild(sceneTitle);
 		var row = new HFlowContainer(); AddChild(row);
 		for (int i = 0; i < 3; i++)
@@ -27,17 +29,18 @@ public partial class MapPreview
 			row.AddChild(new Label { Text = new[] { "Player X / Y", "Monster X / Y", "Guide X / Y" }[i] });
 			row.AddChild(cells[i * 2]); row.AddChild(cells[i * 2 + 1]);
 		}
-		AddChild(createScene); AddChild(openCreatedScene); AddChild(setupStatus);
+		AddChild(createScene); AddChild(openCreatedScene); AddChild(editCreatedArtwork); AddChild(setupStatus);
 		resource.TextChanged += _ => InvalidateMap(); palettePath.TextChanged += _ => InvalidateMap(); tilesets.TextChanged += InvalidateMap;
 		createScene.Pressed += () => _ = CreateScene();
 		openCreatedScene.Pressed += () => { if (!busy && createdScene.Length > 0) openScene(createdScene); };
+		editCreatedArtwork.Pressed += () => { if (!busy && createdScene.Length > 0) editArtwork(createdScene); };
 		setupStatus.Text = "Load your map before creating a scene. The startup map is synthetic.";
 	}
 	private void InvalidateMap() { inputRevision++; loadedMap = null; RefreshSetup(); }
 	private void RefreshSetup()
 	{
 		createScene.Disabled = busy || loadedMap is null;
-		openCreatedScene.Disabled = busy || createdScene.Length == 0;
+		openCreatedScene.Disabled = busy || createdScene.Length == 0; editCreatedArtwork.Disabled = openCreatedScene.Disabled;
 	}
 	private async Task CreateScene()
 	{

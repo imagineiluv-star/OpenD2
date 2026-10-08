@@ -115,11 +115,18 @@ public partial class Main : Node3D
 		simulation = new SimulationPreview((name, message) => log?.Write(name, message), paths.Saves, Path.Combine(paths.Root, "npc-models"), () => dataPath.Text) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
 		simulationScroll.AddChild(simulation);
 		previews.AddChild(new AssetPreview(() => dataPath.Text) { Name = "DC6" });
-		previews.AddChild(new AnimationPreview(() => dataPath.Text) { Name = "DCC-COF" });
+		var animation = new AnimationPreview(() => dataPath.Text) { Name = "DCC-COF" }; previews.AddChild(animation);
+		var artScroll = new ScrollContainer { Name = "Scene art", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+		var artwork = new SceneArtworkEditor(() => dataPath.Text, Path.Combine(paths.Root, "scenes"),
+			file => { previews.CurrentTab = 0; simulation.RequestSceneLoad(file); },
+			(colors, motion, facing) => { if (!animation.InspectMotion(colors, motion, facing)) return false; previews.CurrentTab = 2; return true; })
+		{ SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
 		var mapScroll = new ScrollContainer { Name = "Map", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
 		previews.AddChild(mapScroll);
 		mapScroll.AddChild(new MapPreview(() => dataPath.Text, Path.Combine(paths.Root, "scenes"), file =>
-		{ if (simulation.RequestSceneLoad(file)) previews.CurrentTab = 0; }) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
+		{ previews.CurrentTab = 0; simulation.RequestSceneLoad(file); },
+		file => { previews.CurrentTab = 4; artwork.RequestOpen(file); }) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
+		previews.AddChild(artScroll); artScroll.AddChild(artwork);
 		previews.CurrentTab = 0;
 		var quit = new Button { Text = "Quit" }; panel.AddChild(quit); quit.Pressed += () => GetTree().Quit();
 	}
