@@ -85,7 +85,7 @@ public partial class Main : Node3D
 		mapScroll.AddChild(new MapPreview(() => dataPath.Text) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
 		var simulationScroll = new ScrollContainer { Name = "Simulation", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
 		previews.AddChild(simulationScroll);
-		simulationScroll.AddChild(new SimulationPreview((name, message) => log?.Write(name, message), paths.Saves, Path.Combine(paths.Root, "npc-models")) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
+		simulationScroll.AddChild(new SimulationPreview((name, message) => log?.Write(name, message), paths.Saves, Path.Combine(paths.Root, "npc-models"), () => dataPath.Text) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
 		if (OS.GetCmdlineUserArgs().Contains("--smoke-test")) previews.CurrentTab = 3;
 		var quit = new Button { Text = "Quit" }; panel.AddChild(quit); quit.Pressed += () => GetTree().Quit();
 	}

@@ -3,11 +3,20 @@ using OpenD2.Assets;
 
 if (args.Length == 0 || args[0] is "--help" or "-h")
 {
-	Console.WriteLine("Usage: OpenD2.AssetAudit --check-map <game-data-directory> <map-request.json>\n       OpenD2.AssetAudit --inspect-save <legacy-v96.d2s> (read-only header/checksum; no import)\n       OpenD2.AssetAudit [--probe|--decode] <game-data-directory> [known-paths.txt]\n       OpenD2.AssetAudit --tables-txt|--tables-bin-110f <game-data-directory>\nJSON goes to stdout. Scan uses read-only MPQs; no resource extraction. --decode validates Palette/text TBL/DC6/DCC/COF/DT1/DS1 and TXT structure. BIN schemas require explicit --tables-bin-110f.\nExit 0: scan completed without reported errors; 3: missing archives, read, decode or reference failures; 1: fatal error; 2: usage.\nA successful scan does not establish version compatibility or complete coverage.");
+	Console.WriteLine("Usage: OpenD2.AssetAudit --check-scene <game-data-directory> <scene-request.json>\n       OpenD2.AssetAudit --check-map <game-data-directory> <map-request.json>\n       OpenD2.AssetAudit --inspect-save <legacy-v96.d2s> (read-only header/checksum; no import)\n       OpenD2.AssetAudit [--probe|--decode] <game-data-directory> [known-paths.txt]\n       OpenD2.AssetAudit --tables-txt|--tables-bin-110f <game-data-directory>\nJSON goes to stdout. Scan uses read-only MPQs; no resource extraction. --decode validates Palette/text TBL/DC6/DCC/COF/DT1/DS1 and TXT structure. BIN schemas require explicit --tables-bin-110f.\nExit 0: scan completed without reported errors; 3: missing archives, read, decode or reference failures; 1: fatal error; 2: usage.\nA successful scan does not establish version compatibility or complete coverage.");
 	return args.Length == 0 ? 2 : 0;
 }
 try
 {
+	if (args[0] == "--check-scene")
+	{
+		if (args.Length != 3) return 2;
+		var installation = GameInstall.Probe(args[1]);
+		var scene = LegacyPlayScene.Load(args[1], LegacySceneRequest.Read(args[2]));
+		Console.WriteLine(JsonSerializer.Serialize(new { Installation = installation, scene.ContentId, VersionStatus = "unverified", GameplayValidated = false,
+			Maps = scene.Terrain.Select(p => new { Region = p.Key.Value, p.Value.Check }) }, new JsonSerializerOptions { WriteIndented = true }));
+		return installation.MissingArchives.Count == 0 ? 0 : 3;
+	}
 	if (args[0] == "--check-map")
 	{
 		if (args.Length != 3) return 2;

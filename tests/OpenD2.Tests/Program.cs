@@ -25,6 +25,7 @@ try
 	MapContracts.Run(Test);
 	TableContracts.Run(root, Test);
 	PlayAssetContracts.Run(root, Test);
+	PlaySceneContracts.Run(root, Test);
 	MpqContracts.Run(root, Test);
 	SimulationContracts.Run(Test);
 	CombatContracts.Run(Test);

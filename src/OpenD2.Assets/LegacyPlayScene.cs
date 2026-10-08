@@ -1,0 +1,90 @@
+using System.Collections.ObjectModel;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using OpenD2.Core;
+
+namespace OpenD2.Assets;
+
+public sealed record PlayRegion(uint Id, string Name, LegacyMapRequest Terrain);
+public sealed record PlaySpawn(uint Id, uint Region, int X, int Y, bool Player, int Health = 100);
+public sealed record PlayNpc(uint Id, uint Region, int X, int Y, string Name);
+public sealed record PlayPortal(uint Id, uint Region, int X, int Y, uint Destination, int ArrivalX, int ArrivalY);
+public sealed record LegacySceneRequest(int SchemaVersion, string Title, PlayRegion[] Regions, PlaySpawn[] Actors,
+	PlayNpc Npc, PlayPortal[] Portals, uint[] QuestTargets)
+{
+	public static LegacySceneRequest Read(string file)
+	{
+		using var input = File.OpenRead(file);
+		if (input.Length > 262144) throw new InvalidDataException("Scene request exceeds 256 KiB.");
+		return JsonSerializer.Deserialize<LegacySceneRequest>(input, new JsonSerializerOptions
+		{ MaxDepth = 12, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow }) ?? throw new InvalidDataException("Scene request is empty.");
+	}
+}
+
+// Explicit placements avoid guessing DS1 object IDs, NPC meanings or original campaign rules.
+public sealed class LegacyPlayScene
+{
+	public WorldDefinition World { get; }
+	public IReadOnlyList<EntityState> Actors { get; }
+	public IReadOnlyDictionary<RegionId, LegacyMapAsset> Terrain { get; }
+	public string ContentId { get; }
+	private LegacyPlayScene(WorldDefinition world, EntityState[] actors, Dictionary<RegionId, LegacyMapAsset> terrain, string id)
+	{ World = world; Actors = Array.AsReadOnly(actors); Terrain = new ReadOnlyDictionary<RegionId, LegacyMapAsset>(terrain); ContentId = id; }
+	public GameSimulation Create(uint seed) => new(seed, Actors, world: World);
+	public static LegacyPlayScene Load(string directory, LegacySceneRequest request) => Load(request, path => AssetDecoders.ReadFromInstall(directory, path));
+	public static LegacyPlayScene Load(LegacySceneRequest request, Func<string, byte[]> read)
+	{
+		ArgumentNullException.ThrowIfNull(request); ArgumentNullException.ThrowIfNull(read);
+		if (request.SchemaVersion != 1 || string.IsNullOrWhiteSpace(request.Title) || request.Title.Length > 80 || request.Title.Any(char.IsControl) ||
+			request.Regions is null || request.Regions.Length is < 1 or > WorldDefinition.MaxRegions || request.Regions.Any(r => r is null || r.Terrain is null) ||
+			request.Actors is null || request.Actors.Length is < 2 or > GameSimulation.MaxEntities || request.Actors.Any(a => a is null) ||
+			request.Npc is null || request.Portals is null || request.Portals.Length > WorldDefinition.MaxPortals || request.Portals.Any(p => p is null) ||
+			request.QuestTargets is null || request.QuestTargets.Length is < 1 or > WorldDefinition.MaxQuestTargets)
+			throw new InvalidDataException("Invalid scene schema, title or content counts.");
+		var regions = request.Regions.Select(r => r with { Terrain = r.Terrain with { Tilesets = r.Terrain.Tilesets?.ToArray()! } }).OrderBy(r => r.Id).ToArray();
+		var spawns = request.Actors.ToArray(); var portals = request.Portals.ToArray(); var targets = request.QuestTargets.ToArray(); var npc = request.Npc; string title = request.Title;
+		if (regions.Any(r => r.Id == 0 || string.IsNullOrWhiteSpace(r.Name) || r.Name.Length > 80 || r.Name.Any(char.IsControl)) || regions.Select(r => r.Id).Distinct().Count() != regions.Length ||
+			spawns.Count(a => a.Player) != 1 || spawns.Single(a => a.Player).Id != 1 || spawns.Any(a => a.Health is < 1 or > 100000))
+			throw new InvalidDataException("Scene requires unique regions and exactly one player with ID 1 and valid health.");
+		foreach (var region in regions) region.Terrain.Validate();
+		var terrain = new Dictionary<RegionId, LegacyMapAsset>(); long input = 0, pixels = 0, cells = 0;
+		byte[] Read(string path)
+		{
+			var bytes = read(path); input += bytes.LongLength;
+			if (input > 128L * 1024 * 1024) throw new InvalidDataException("Scene input exceeds 128 MiB."); return bytes;
+		}
+		foreach (var region in regions)
+		{
+			var asset = LegacyMapAsset.Load(region.Terrain, Read); asset.RequirePlayableTerrain();
+			cells += (long)asset.Check.Width * asset.Check.Height * 25;
+			pixels += asset.Scene.Images.Sum(i => (long)i.Frame.Indices.Length);
+			if (cells > CollisionGrid.MaxCells || pixels > Dt1Tileset.MaxPixels) throw new InvalidDataException("Scene collision or decoded pixel budget exceeded.");
+			terrain.Add(new(region.Id), asset);
+		}
+		var world = new WorldDefinition(regions.Select(r => new WorldRegion(r.Name, terrain[new(r.Id)].Scene.ToCollisionGrid(new(r.Id)))),
+			portals.Select(p => new WorldPortal(new(p.Id), new(p.Region), new(p.X, p.Y), new(p.Destination), new(p.ArrivalX, p.ArrivalY))),
+			new(new(npc.Id), new(npc.Region), new(npc.X, npc.Y), npc.Name), targets.Select(id => new EntityId(id)), title);
+		var actors = spawns.Select(a => new EntityState(new(a.Id), new(a.Region), new(a.X, a.Y), Kind: a.Player ? EntityKind.Player : EntityKind.Monster, Health: a.Health, MaxHealth: a.Health)).OrderBy(a => a.Id.Value).ToArray();
+		_ = new GameSimulation(1, actors, world: world); // Validate IDs, ownership, spawns, quest targets and portal references before exposing content.
+		using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+		hash.AppendData(Encoding.UTF8.GetBytes(world.ContentHash)); hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(actors));
+		foreach (var pair in terrain.OrderBy(p => p.Key.Value)) foreach (var source in pair.Value.Check.Sources)
+		{ hash.AppendData(Encoding.UTF8.GetBytes(source.Path + "\n" + source.Sha256 + "\n")); }
+		return new(world, actors, terrain, Convert.ToHexStringLower(hash.GetHashAndReset()));
+	}
+}
+
+public static class LegacyProjection
+{
+	// One DS1 tile is 5 navigation cells, 160 x 80 pixels. World coordinates are 256 units per cell.
+	public static (double X, double Y) Project(double x, double y) => ((x - y) / 16, (x + y) / 32);
+	public static GamePosition Unproject(double x, double y)
+	{
+		double wx = x * 8 + y * 16, wy = y * 16 - x * 8;
+		if (!double.IsFinite(wx) || !double.IsFinite(wy) || Math.Abs(wx) > GameSimulation.PositionLimit || Math.Abs(wy) > GameSimulation.PositionLimit)
+			throw new ArgumentOutOfRangeException(nameof(x));
+		return new((int)Math.Round(wx), (int)Math.Round(wy));
+	}
+}
