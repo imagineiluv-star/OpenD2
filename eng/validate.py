@@ -38,6 +38,7 @@ assert "OPEND2_M107_TABLE_CACHE_READY" in output, "Map tables/cache marker missi
 assert "OPEND2_M201_SIMULATION_READY" in output, "Simulation/replay marker missing"
 assert "OPEND2_M201_TICK_LOOP_READY" in output, "Live simulation tick loop marker missing"
 assert "OPEND2_M202_COMBAT_READY" in output, "Combat/collision/replay marker missing"
+assert "OPEND2_M203_WORLD_READY" in output, "Town/dungeon/quest/replay marker missing"
 if args.export:
     names = {"Linux": "OpenD2.x86_64", "Windows": "OpenD2.exe", "macOS": "OpenD2.zip"}
     destination = root / "artifacts" / args.export / names[args.export]
