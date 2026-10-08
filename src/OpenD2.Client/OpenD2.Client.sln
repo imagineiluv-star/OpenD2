@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenD2.Core", "..\OpenD2.Co
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenD2.Assets", "..\OpenD2.Assets\OpenD2.Assets.csproj", "{21949A64-F72F-4D0D-BC7D-FDB2B7E38FFB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenD2.Npc", "..\OpenD2.Npc\OpenD2.Npc.csproj", "{35D93E78-6AE8-4637-96CC-CCF0592789DA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -55,6 +57,18 @@ Global
 		{21949A64-F72F-4D0D-BC7D-FDB2B7E38FFB}.Release|x64.Build.0 = Release|Any CPU
 		{21949A64-F72F-4D0D-BC7D-FDB2B7E38FFB}.Release|x86.ActiveCfg = Release|Any CPU
 		{21949A64-F72F-4D0D-BC7D-FDB2B7E38FFB}.Release|x86.Build.0 = Release|Any CPU
+		{35D93E78-6AE8-4637-96CC-CCF0592789DA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{35D93E78-6AE8-4637-96CC-CCF0592789DA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{35D93E78-6AE8-4637-96CC-CCF0592789DA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{35D93E78-6AE8-4637-96CC-CCF0592789DA}.Debug|x64.Build.0 = Debug|Any CPU
+		{35D93E78-6AE8-4637-96CC-CCF0592789DA}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{35D93E78-6AE8-4637-96CC-CCF0592789DA}.Debug|x86.Build.0 = Debug|Any CPU
+		{35D93E78-6AE8-4637-96CC-CCF0592789DA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{35D93E78-6AE8-4637-96CC-CCF0592789DA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{35D93E78-6AE8-4637-96CC-CCF0592789DA}.Release|x64.ActiveCfg = Release|Any CPU
+		{35D93E78-6AE8-4637-96CC-CCF0592789DA}.Release|x64.Build.0 = Release|Any CPU
+		{35D93E78-6AE8-4637-96CC-CCF0592789DA}.Release|x86.ActiveCfg = Release|Any CPU
+		{35D93E78-6AE8-4637-96CC-CCF0592789DA}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

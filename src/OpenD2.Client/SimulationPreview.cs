@@ -1,5 +1,6 @@
 using Godot;
 using OpenD2.Core;
+using OpenD2.Npc;
 using System.Diagnostics;
 
 namespace OpenD2.Client;
@@ -30,6 +31,14 @@ public partial class SimulationPreview : VBoxContainer
 	private readonly List<ItemId> itemChoices = new();
 	private readonly Button save = new() { Text = "Save checkpoint" };
 	private readonly Button load = new() { Text = "Load checkpoint" };
+	private readonly NpcMindService npcMind = new(new ScriptedNpcModel());
+	private readonly LineEdit dialogueInput = new() { PlaceholderText = "안녕 / 퀘스트 / 수락 / 완료", MaxLength = NpcDecisionGate.MaxInputChars, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+	private readonly Button dialogueSend = new() { Text = "Talk to Guide" };
+	private readonly Button dialogueConfirm = new() { Text = "Confirm quest action", Disabled = true };
+	private readonly Label dialogue = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
+	private NpcResult? dialogueOffer;
+	private NpcFacts? dialogueFacts;
+	private bool npcSmokePending;
 	private readonly string savePath;
 	private SimulationSnapshot? replayCheckpoint;
 	private long recordingStart;
@@ -90,14 +99,20 @@ public partial class SimulationPreview : VBoxContainer
 		unequip.Pressed += () => UseSelected(CommandKind.Unequip);
 		drop.Pressed += () => UseSelected(CommandKind.DropItem);
 		AddChild(gearInfo); AddChild(questInfo); AddChild(view); AddChild(details); AddChild(status);
+		AddChild(new Label { Text = "Camp Guide — offline scripted preview; LLM not connected", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		AddChild(dialogueInput); var conversation = new HFlowContainer(); AddChild(conversation);
+		conversation.AddChild(dialogueSend); conversation.AddChild(dialogueConfirm); AddChild(dialogue);
+		dialogueSend.Pressed += SendDialogue; dialogueInput.TextSubmitted += _ => SendDialogue(); dialogueConfirm.Pressed += ConfirmDialogue;
 		restart.Pressed += NewRun; pause.Pressed += () => { SetPaused(!paused); StopInput(); Refresh(); };
 		singleStep.Pressed += () => { SetPaused(true); StopInput(); if (!verifying) { RunTick(); ShowFrame(); Refresh(); } };
 		signal.Pressed += () => Submit(CommandKind.Signal); attack.Pressed += AttackNearest; interact.Pressed += InteractNearest;
 		replay.Pressed += VerifyReplay; save.Pressed += () => CheckpointFile(false); load.Pressed += () => CheckpointFile(true);
 		Smoke(); CombatSmoke(); WorldSmoke(); ItemSmoke(); SaveSmoke(); NewRun();
+		if (smokeTest) { npcSmokePending = true; dialogueInput.Text = "안녕"; SendDialogue(); }
 	}
 	private void NewRun()
 	{
+		ResetDialogue();
 		seed = (uint)seedInput.Value; simulation = new(seed, InitialEntities(), world: DemoWorld()); view.SetSimulation(simulation);
 		trace.Clear(); replayCheckpoint = null; recordingStart = 0; sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
 		previous = current = simulation.GetEntity(Player); view.SignalValue = -1; interactDown = pickupDown = false; SetPaused(false);
@@ -180,7 +195,9 @@ public partial class SimulationPreview : VBoxContainer
 	}
 	public override void _Process(double delta)
 	{
-		if (simulation is null || verifying) return;
+		if (simulation is null) return;
+		PollDialogue();
+		if (verifying) return;
 		bool active = current.IsAlive && IsVisibleInTree() && view.HasFocus() && GetWindow().HasFocus();
 		int x = active && !paused ? (Input.IsKeyPressed(Key.Right) ? 1 : 0) - (Input.IsKeyPressed(Key.Left) ? 1 : 0) : 0;
 		int y = active && !paused ? (Input.IsKeyPressed(Key.Down) ? 1 : 0) - (Input.IsKeyPressed(Key.Up) ? 1 : 0) : 0;
@@ -201,6 +218,7 @@ public partial class SimulationPreview : VBoxContainer
 		previous = current; long start = Stopwatch.GetTimestamp(); simulation.Step();
 		tickMetrics.Record(Stopwatch.GetElapsedTime(start).TotalSeconds); current = simulation.GetEntity(Player);
 		bool worldChanged = previous.Region != current.Region;
+		if (worldChanged || (previous.IsAlive && !current.IsAlive)) ResetDialogue();
 		if (worldChanged) { previous = current; requestedX = requestedY = 0; }
 		if (!current.IsAlive) requestedX = requestedY = 0;
 		foreach (var item in simulation.Events)
@@ -232,6 +250,61 @@ public partial class SimulationPreview : VBoxContainer
 		if (smokeTest && simulation.Tick == 2) GD.Print("OPEND2_M201_TICK_LOOP_READY");
 	}
 	private void ShowFrame() => view.SetPositions(previous.Position, current.Position, paused ? 1 : clock.Alpha);
+	private void ResetDialogue()
+	{
+		npcMind.Invalidate(); dialogueOffer = null; dialogueFacts = null; dialogueConfirm.Disabled = true;
+		dialogueInput.Text = ""; dialogue.Text = "Approach the Camp Guide to talk. Dialogue is not saved.";
+	}
+	private void SendDialogue()
+	{
+		if (verifying) return;
+		var facts = NpcDecisionGate.Capture(simulation);
+		var result = npcMind.Request(facts, dialogueInput.Text);
+		if (result == NpcStart.Accepted) { dialogueFacts = facts; dialogueOffer = null; dialogueConfirm.Disabled = true; dialogueInput.Text = ""; }
+		dialogue.Text = result switch
+		{
+			NpcStart.Accepted => "Guide is thinking... The game continues.",
+			NpcStart.Busy => "A dialogue request is still running. Please wait.",
+			NpcStart.Unavailable => "Approach the guide in Camp; you must be alive and able to act.",
+			_ => "Enter 1–512 characters without control characters."
+		};
+	}
+	private void PollDialogue()
+	{
+		var facts = NpcDecisionGate.Capture(simulation);
+		if (dialogueFacts is { } expected && expected != facts)
+		{
+			npcMind.Invalidate(); dialogueFacts = null;
+			dialogue.Text = "The situation changed; the pending reply was cancelled.";
+		}
+		if (npcMind.Poll(facts) is { } result)
+		{
+			dialogueFacts = null;
+			dialogue.Text = result.Reply.Speech + (result.Outcome == NpcOutcome.Answer ? "" : $" [기본 대사: {result.Outcome}]");
+			dialogueOffer = result.Reply.OffersInteraction ? result : null;
+			log("npc_dialogue", $"request={result.Request.Id}, outcome={result.Outcome}, intent={result.Reply.Intent}");
+			if (npcSmokePending)
+			{
+				npcSmokePending = false;
+				if (result.Outcome == NpcOutcome.Answer && result.Reply.Intent == NpcIntent.Greeting) GD.Print("OPEND2_NPC01_DIALOGUE_READY");
+				else GD.PushError("NPC dialogue smoke failed.");
+			}
+		}
+		if (dialogueOffer is { } offer && !NpcDecisionGate.CanConfirm(offer, npcMind.Generation, facts)) dialogueOffer = null;
+		dialogueSend.Disabled = verifying || npcMind.IsBusy;
+		dialogueInput.Editable = !verifying;
+		dialogueConfirm.Disabled = verifying || dialogueOffer is null;
+	}
+	private void ConfirmDialogue()
+	{
+		if (verifying || dialogueOffer is not { } offer) return;
+		dialogueOffer = null; dialogueConfirm.Disabled = true;
+		if (!NpcDecisionGate.CanConfirm(offer, npcMind.Generation, NpcDecisionGate.Capture(simulation)))
+		{ dialogue.Text = "The situation changed. Ask the guide again."; return; }
+		if (Submit(CommandKind.Interact, target: offer.Request.Facts.Npc))
+			dialogue.Text = paused ? "Action queued. Resume or step to resolve it." : "Action queued; the game rules will resolve it.";
+	}
+	public override void _ExitTree() => npcMind.Dispose();
 	private void Refresh()
 	{
 		RefreshItems();
@@ -243,6 +316,7 @@ public partial class SimulationPreview : VBoxContainer
 	}
 	private async void VerifyReplay()
 	{
+		ResetDialogue();
 		SetPaused(true); StopInput(); verifying = true;
 		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop, save, load }) button.Disabled = true;
 		uint recordedSeed = seed; long target = simulation.Tick; var recorded = trace.ToArray(); string expected = simulation.ComputeStateHash();
@@ -266,6 +340,7 @@ public partial class SimulationPreview : VBoxContainer
 	private async void CheckpointFile(bool loading)
 	{
 		if (verifying) return;
+		ResetDialogue();
 		SetPaused(true); StopInput(); verifying = true;
 		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop, save, load }) button.Disabled = true;
 		var checkpoint = simulation.CaptureSnapshot(); status.Text = loading ? "Loading checkpoint..." : "Saving checkpoint...";

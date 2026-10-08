@@ -3,5 +3,6 @@
   <ItemGroup>
     <ProjectReference Include="../OpenD2.Core/OpenD2.Core.csproj" />
     <ProjectReference Include="../OpenD2.Assets/OpenD2.Assets.csproj" />
+    <ProjectReference Include="../OpenD2.Npc/OpenD2.Npc.csproj" />
   </ItemGroup>
 </Project>

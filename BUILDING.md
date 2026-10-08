@@ -21,7 +21,7 @@ python eng/validate.py --export Linux
 
 bootstrap은 공식 Godot 배포본을 내려받아 `eng/toolchain.json`의 SHA-512로 검사한다. SDK는 별도 설치한다. bootstrap 출력의 실행 파일로 `src/OpenD2.Client/project.godot`를 열면 된다. 기존 Godot 설치를 사용하려면 `python eng/validate.py --godot <실행파일경로> --export Linux`를 사용한다.
 
-`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 188개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
+`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 211개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
 
 Godot 없이 코어를 검증할 수 있다:
 
@@ -69,6 +69,7 @@ dotnet run --project tools/OpenD2.AssetAudit -- --tables-bin-110f /path/to/game
 |---|---|
 | OpenD2.Core | 설정·계측·고정 tick·전투·AI·지역·퀘스트·재생, 엔진 미참조 |
 | OpenD2.Assets | 읽기 전용 MPQ·포맷 파서·캐시·충돌 변환, Core만 참조 |
+| OpenD2.Npc | 비동기 대화 계약·검증·기본 대사, Core만 참조 |
 | OpenD2.Client | Godot 표현·입력·뷰어·합성 마을/던전·오프라인 실행 |
 | OpenD2.AssetAudit | 엔진 없는 리소스 점검 CLI 기반 |
 | OpenD2.Tests | 파일 손상·백업·경로·계측·로그 계약 검증 |
@@ -81,4 +82,4 @@ dotnet run --project tools/OpenD2.AssetAudit -- --tables-bin-110f /path/to/game
 
 원본 세이브 사전검사: `dotnet run --project tools/OpenD2.AssetAudit -- --inspect-save /path/to/character.d2s`. v96 헤더/전체 checksum을 읽기 전용으로 검사하며 원본 캐릭터 가져오기나 본문 검증은 지원하지 않는다. 자체 체크포인트와는 별개 형식이다.
 
-NPC LLM은 [설계/실측 계획](docs/migration/NPC_LLM_DESIGN.md) 단계이며 모델·API 키·추론 서버 설치는 현재 필요 없다.
+Simulation 탭 하단에서 Camp Guide에게 **안녕 / 퀘스트 / 수락 / 완료** 또는 **hello / quest / accept / turn in**을 입력하고 **Talk to Guide**를 누른다. 수락/완료 제안은 **Confirm quest action**으로 확인한 뒤 다음 tick에 판정한다. Pause 상태에서는 Resume 또는 Step이 필요하다. NPC-01은 고정 대사·3개 의도를 사용하는 오프라인 프리뷰이며 LLM은 연결하지 않았다. 대화는 저장되지 않고, 새 게임·지역 이동·사망·저장/로드·재생 검사 때 대기 응답과 제안을 취소한다. [구현/검증 기록](docs/migration/NPC_01_RESULTS.md), [후속 모델 도입 계획](docs/migration/NPC_LLM_DESIGN.md). 모델·API 키·추론 서버 설치는 현재 필요 없다.

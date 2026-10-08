@@ -90,4 +90,4 @@ The serverside is responsible for quest management, AI, and more. Ideally, this 
 #### Clientside (D2Client.dll)
 The clientside is responsible for client logic, mostly with drawing the menus and sprites.
 
-Optional LLM-driven NPC dialogue, memory and planning are under [design review](docs/migration/NPC_LLM_DESIGN.md); no model runtime or autonomous NPC inference is shipped yet.
+The [NPC-01 Camp Guide preview](docs/migration/NPC_01_RESULTS.md) adds three scripted dialogue intents, bounded asynchronous inference, grounded responses and player-confirmed quest actions. It runs offline without a model. Actual LLM inference, persistent memory and open-world NPC planning remain in the [NPC roadmap](docs/migration/NPC_LLM_DESIGN.md).

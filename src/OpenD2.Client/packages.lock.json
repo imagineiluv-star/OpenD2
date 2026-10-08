@@ -31,6 +31,12 @@
       },
       "opend2.core": {
         "type": "Project"
+      },
+      "opend2.npc": {
+        "type": "Project",
+        "dependencies": {
+          "OpenD2.Core": "[1.0.0, )"
+        }
       }
     }
   }
