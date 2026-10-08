@@ -54,6 +54,7 @@ public partial class SimulationPreview : VBoxContainer
 	private int requestedX, requestedY;
 	private bool paused, verifying, interactDown, pickupDown;
 	private bool smokeTest;
+	private readonly SceneAudio audio = new();
 	private double elapsed;
 	public SimulationPreview(Action<string, string> log, string saveDirectory, string modelDirectory, Func<string> gameDirectory)
 	{ this.log = log; this.gameDirectory = gameDirectory; savePath = Path.Combine(saveDirectory, "simulation-v1.json"); advanceTick = RunTick; npcMind = new(npcRuntime); npcStore = new(modelDirectory); }
@@ -84,6 +85,7 @@ public partial class SimulationPreview : VBoxContainer
 	public override void _Ready()
 	{
 		smokeTest = OS.GetCmdlineUserArgs().Contains("--smoke-test");
+		AddChild(audio);
 		AddChild(new Label { Text = "Camp / Cellar — offline play" });
 		BuildHud(); AddChild(questInfo); AddChild(view); AddChild(status);
 		view.MoveRequested += ClickMove; view.AttackRequested += ClickAttack;
@@ -113,19 +115,22 @@ public partial class SimulationPreview : VBoxContainer
 		signal.Pressed += () => Submit(CommandKind.Signal); attack.Pressed += AttackNearest; interact.Pressed += InteractNearest;
 		replay.Pressed += VerifyReplay; save.Pressed += () => CheckpointFile(false); load.Pressed += () => CheckpointFile(true);
 		Smoke(); CombatSmoke(); WorldSmoke(); ItemSmoke(); SaveSmoke(); NewRun();
-		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); HudSmoke(); }
+		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); HudSmoke(); AudioSmoke(); }
 		if (smokeTest) { npcSmokePending = true; dialogueInput.Text = "안녕"; SendDialogue(); }
 	}
 	private void NewRun()
 	{
 		ResetDialogue(); ClearRoute(); lastHud = null;
+		audio.SetBank(legacyScene?.Audio, legacyScene is null);
 		seed = (uint)seedInput.Value; simulation = new(seed, ActiveActors, world: ActiveWorld); view.SetSimulation(simulation);
 		recording = new(simulation); sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
 		previous = current = simulation.GetEntity(Player); view.SignalValue = -1; interactDown = pickupDown = false; SetPaused(false);
 		status.Text = "Talk to the quest giver, defeat the marked targets, then return."; ShowFrame(); Refresh();
 		log("simulation_started", $"rules={GameSimulation.RulesVersion}, seed={seed}");
 	}
-	private void SetPaused(bool value) { paused = value; previous = current; pause.Text = paused ? "Resume" : "Pause"; RefreshHud(); }
+	private void SetPaused(bool value) { paused = value; previous = current; pause.Text = paused ? "Resume" : "Pause"; RefreshHud(); SyncAudio(); }
+	public void SetAudioVolume(int master, int effects, int music, bool mute) => audio.SetVolume(master, effects, music, mute);
+	private void SyncAudio() => audio.Sync(current.Region, paused || verifying || !IsVisibleInTree() || !GetWindow().HasFocus());
 	private bool Submit(CommandKind kind, int x = 0, int y = 0, EntityId target = default, ItemId item = default)
 	{
 		if (verifying) return false;
@@ -204,6 +209,7 @@ public partial class SimulationPreview : VBoxContainer
 		if (simulation is null) return;
 		PollNpcSettings();
 		PollDialogue();
+		SyncAudio();
 		if (verifying) return;
 		bool active = current.IsAlive && IsVisibleInTree() && view.HasFocus() && GetWindow().HasFocus();
 		int x = active && !paused ? (Input.IsKeyPressed(Key.Right) ? 1 : 0) - (Input.IsKeyPressed(Key.Left) ? 1 : 0) : 0;
@@ -225,6 +231,7 @@ public partial class SimulationPreview : VBoxContainer
 		previous = current; long start = Stopwatch.GetTimestamp(); recording.PrepareForTick(); simulation.Step();
 		tickMetrics.Record(Stopwatch.GetElapsedTime(start).TotalSeconds); current = simulation.GetEntity(Player);
 		ObserveRouteTick();
+		SyncAudio(); audio.PlayEvents(simulation.Events, current.Region);
 		bool worldChanged = previous.Region != current.Region;
 		if (worldChanged || (previous.IsAlive && !current.IsAlive)) { ResetDialogue(); ClearRoute(); }
 		if (worldChanged) { previous = current; requestedX = requestedY = 0; }
@@ -373,7 +380,7 @@ public partial class SimulationPreview : VBoxContainer
 				sequence = recording.Baseline.Inputs.First(c => c.Actor == Player).Sequence;
 				previous = current = simulation.GetEntity(Player); requestedX = current.MoveX; requestedY = current.MoveY;
 				lastAttackTick = simulation.Tick - GameSimulation.PlayerAttackInterval; interactDown = pickupDown = false;
-				clock.Reset(); tickMetrics = new(); view.SignalValue = -1; ShowFrame();
+				clock.Reset(); tickMetrics = new(); view.SignalValue = -1; audio.SetBank(legacyScene?.Audio, legacyScene is null); SyncAudio(); ShowFrame();
 				status.Text = result.RecoveredFromBackup ? "Recovered the previous valid backup. Files preserved; paused for review." : "Checkpoint loaded. Press Resume to continue.";
 				log("game_loaded", $"tick={simulation.Tick}, backup={result.RecoveredFromBackup}");
 			}

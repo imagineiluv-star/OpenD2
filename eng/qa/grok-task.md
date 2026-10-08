@@ -34,11 +34,13 @@
 | QA-03 | 청록색 아이템 근처에서 F. 목록 선택 → Equip selected → Unequip selected → Drop selected. | 가방·장비·능력 표시가 조작과 일치. 버튼별 전후 화면 기록 |
 | QA-04 | Show diagnostics 활성화 → Pause → Save checkpoint. tick·State hash·위치·체력·퀘스트·아이템 기록. 종료 후 같은 프로필로 재실행 → Load checkpoint. | 로드가 일시정지 상태이며 기록한 상태와 HUD가 일치. Resume으로 정상 진행 |
 | QA-05 | New run 후 Guide 근처 이동. '안녕', '퀘스트', '수락'을 Talk to Guide로 전송. | 기본 대사와 제안 표시. Confirm quest action 전에는 수락이 적용되지 않으며 확인 후 다음 tick에 적용 |
-| QA-06 | 창 크기 변경, 탭 이동, 그리드 재클릭, 대화 입력 후 이동·공격 재시도. FPS 30/60, Fullscreen/F11, Show diagnostics 변경 → Save settings → 재실행. | 한글·HUD·버튼·스크롤 접근, 입력 포커스, 저장한 표시 설정 복원. F11로 전체화면 해제. 실제 시험한 창 크기/DPI만 기록; FPS 제한을 목표 FPS 달성으로 간주하지 않음 |
+| QA-06 | 창 크기 변경, 탭 이동, 그리드 재클릭, 대화 입력 후 이동·공격 재시도. FPS 30/60, Fullscreen/F11, Show diagnostics, 전체/효과/음악 음량과 Mute audio 변경 → Save settings → 재실행. 합성 전투/드롭/포털 효과음과 Pause·탭·창 포커스 이동 확인. | 한글·HUD·버튼·스크롤 접근, 입력 포커스, 저장한 표시·음량/음소거 설정 복원, 음소거 시 무음·복귀 시 과거 효과 몰림 없음. F11로 전체화면 해제. 실제 시험한 창 크기/DPI만 기록; FPS 제한을 목표 FPS 달성으로 간주하지 않음 |
 | QA-07 (선택) | 0.6B 모델 → Download model → Cancel → 이어받기 → Start local AI → 대화 → Use basic dialogue → Remove model. | 진행·취소·이어받기·응답·전환·제거. 미지원 CPU는 BLOCKED. 큰 비교 모델은 별도 요청 없이 다운로드 금지 |
 | QA-08 | 같은 run에서 15,000 tick을 넘기도록 일반 창에서 10분 이상 진행. 경계 전후 이동·공격 → Verify replay → Save checkpoint → 종료/재실행 → Load checkpoint → Resume. | 자동 정지 없이 tick 증가, Replay window 기준점/rolled 증가, replay 일치, 체력·퀘스트·아이템 유지와 저장 복원. 벽시계 시각과 경계 전후 화면 기록 |
-| QA-09 (원본 장면 별도 인수) | 제공된 게임 경로 지정 → Load legacy scene JSON. 알려진 지면/벽 클릭, 8방향 이동, 공격/피격/사망, NPC 수락→포털→목표 처치→귀환, 저장/재실행/같은 scene 재선택/로드. | 원본 지형·팔레트·캐릭터 프레임·방향·가림, 충돌/코너, 퀘스트 왕복과 scene 저장 슬롯 확인. 실제 확인한 클래스/지역/동작만 결과에 기록 |
+| QA-09 (원본 장면 별도 인수) | 제공된 게임 경로 지정 → Load legacy scene JSON. 알려진 지면/벽 클릭, 8방향 이동, 공격/피격/사망, NPC 수락→포털→목표 처치→귀환, 저장/재실행/같은 scene 재선택/로드. Audio 매핑이 있으면 원본 효과음·지역 음악 전환/loop, 무음 지역, 잘못된 WAV 로드 실패 후 이전 세션도 확인. | 원본 지형·팔레트·캐릭터 프레임·방향·가림, 충돌/코너, 퀘스트 왕복과 scene 저장 슬롯 확인. 실제 확인한 클래스/지역/동작만 결과에 기록 |
 | QA-10 (별도 시간 승인) | 일반 창으로 2시간 반복 이동·지역 전환·전투·저장 복원. 시작/중간/끝의 메모리·tick p99·프레임/오류 기록. | 크래시·입력 정지·지속 메모리 증가 여부. 시험 OS/CPU/GPU와 실제 활성 플레이 시간을 기록. 빠른 tick 반복/헤드리스는 증거로 사용 금지 |
+
+음향 판정은 실제 캡처/청취 증거가 필요하다. 도구/장치가 없으면 해당 항목을 BLOCKED로 기록하며 화면/헤드리스 marker만으로 음향 PASS를 주장하지 않는다. 원본 Audio 매핑이 없으면 음악/원본 효과 인수도 별도 BLOCKED다.
 
 전투에 Pause/Step one tick을 사용했다면 기록한다. 핵심 기능에서 실패하면 이후 불가능한 항목은 BLOCKED다.
 실패를 숨기기 위해 New run을 반복하지 않는다. 원본 캠페인·3D 고품질 그래픽·다른 OS·GPU 성능·장시간

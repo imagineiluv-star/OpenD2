@@ -10,11 +10,13 @@ The C# implementation in `src/` includes legacy asset readers and viewers, deter
 
 The [PLAY integration work](docs/migration/PLAY_INTEGRATION.md) connects explicitly configured legacy DS1/DT1 terrain, DCC/COF actor artwork and click navigation to the local simulation. Diagnostic replay windows now roll without stopping gameplay. Loading a legacy scene requires owned game data and a scene JSON with verified resource paths, coordinates and animation directions; preview combat/items do not yet reproduce the original rules. Real-data and visible gameplay acceptance remain pending.
 
-See [release testing](docs/migration/RELEASE_QA.md) for packaged builds and the separate synthetic, legacy-scene and two-hour GUI acceptance cases. The existing `v0.2.0-rc.1` predates PLAY integration; use a new candidate built from the updated master for those features.
+See [release testing](docs/migration/RELEASE_QA.md) for packaged builds and the separate synthetic, legacy-scene and two-hour GUI acceptance cases. `v0.2.0-rc.2` includes PLAY integration and the HUD; subsequent audio changes require a newer build.
 
 The historical image and CMake/TCP-IP instructions below describe the original C++ project. They are not evidence of C# GUI gameplay acceptance.
 
 [M2-06a](docs/migration/M2_06A_RESULTS.md) opens the Simulation tab by default, adds a health/state HUD and saves FPS, fullscreen and diagnostics preferences. Use **Save settings** to keep changes, **F11** to toggle fullscreen, and **Show diagnostics** for seed/replay tools. Real GUI, DPI and fullscreen acceptance is pending.
+
+[M2-06b1](docs/migration/M2_06B_RESULTS.md) adds optional scene PCM WAV effects/region music, bounded voices and saved audio levels/mute. The synthetic preview uses short generated effect tones; original audio listening acceptance is pending.
 
 ![Diablo II Main Menu in OpenD2](https://i.imgur.com/RFNbRiT.png)
 

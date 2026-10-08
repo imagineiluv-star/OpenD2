@@ -2,7 +2,7 @@ namespace OpenD2.Assets;
 
 public static class AssetDecoders
 {
-	public const string Version = "m1.07-1";
+	public const string Version = "m2.06-audio-1";
 	public const int MaxInputBytes = 33554432;
 	public static string? Kind(string logicalPath)
 	{
@@ -13,6 +13,7 @@ public static class AssetDecoders
 		if (path.EndsWith(".dcc")) return "dcc";
 		if (path.EndsWith(".cof")) return "cof";
 		if (path.EndsWith(".dc6")) return "dc6";
+		if (path.EndsWith(".wav")) return "wav_pcm";
 		if (path.StartsWith("data\\global\\palette\\") && path.EndsWith("\\pal.dat")) return "palette";
 		if (path.StartsWith("data\\local\\lng\\") && path.EndsWith(".tbl")) return "text_tbl";
 		return null;
@@ -22,6 +23,7 @@ public static class AssetDecoders
 		switch (kind)
 		{
 			case "excel_txt": ExcelTextTable.Parse(data); break;
+			case "wav_pcm": PcmWave.Parse(data); break;
 			case "ds1": Ds1Map.Parse(data); break;
 			case "dt1":
 				var tiles = Dt1Tileset.Parse(data);
