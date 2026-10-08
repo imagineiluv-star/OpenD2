@@ -110,10 +110,10 @@ internal static class WorldContracts
 			var game = Game(); Complete(game);
 			Check(game.ActiveRegion == Town && game.Quest == new QuestProgress(QuestStage.Completed, 1, 1));
 			Check(game.GetEntity(Player.Id).Health == 100 && !game.GetEntity(Monster.Id).IsAlive && game.RandomState == 270369);
-			// Independent Python struct.pack encoding of the definitions and completed v3 state.
+			// Independent Python struct.pack encoding of the definitions and completed v4 state.
 			Check(game.World!.ContentHash == "85e4863a4455df1930320c2618a7fba6b2271f61dbcd1b8a81d640086a4e0f3b");
-			const string golden = "a42bbb7993e65ccf5f0aef9587ac8ceb18ea5030a981ad94d7f8f9dcada77856";
-			Check(game.ComputeStateHash() == golden); Console.WriteLine("WORLD_V3_GOLDEN " + golden);
+			const string golden = "192d612c930b24a03404a3b7b6da266cd3ebf395f014e6784b60d3ca65f84bcd";
+			Check(game.ComputeStateHash() == golden); Console.WriteLine("WORLD_V4_GOLDEN " + golden);
 			Act(game, CommandKind.Interact, Npc.Id);
 			Check(game.Events.Length == 1 && game.Events[0].Kind == SimulationEventKind.NpcTalked && game.QuestState == QuestStage.Completed);
 		});

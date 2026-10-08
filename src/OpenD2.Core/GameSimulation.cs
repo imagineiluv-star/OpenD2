@@ -13,21 +13,21 @@ public readonly record struct EntityState(EntityId Id, RegionId Region, GamePosi
 {
 	public bool IsAlive => Health > 0;
 }
-public enum CommandKind { SetMove, Signal, Attack, Interact }
-public readonly record struct GameCommand(long Tick, ulong Sequence, EntityId Actor, RegionId Region, CommandKind Kind, int X = 0, int Y = 0, EntityId Target = default);
+public enum CommandKind { SetMove, Signal, Attack, Interact, Pickup, Equip, Unequip, DropItem }
+public readonly record struct GameCommand(long Tick, ulong Sequence, EntityId Actor, RegionId Region, CommandKind Kind, int X = 0, int Y = 0, EntityId Target = default, ItemId Item = default);
 public enum CommandResult { Accepted, InvalidCommand, UnknownActor, WrongRegion, ExpiredTick, TooFarAhead, StaleSequence, OutOfOrderTick, TickFull, QueueFull, DeadActor, NotPlayerControlled, InvalidTarget }
-public enum SimulationEventKind { Moved, Signaled, Blocked, AttackStarted, Hit, Died, AttackFailed, MonsterChanged, RegionChanged, NpcTalked, QuestChanged, InteractionFailed }
+public enum SimulationEventKind { Moved, Signaled, Blocked, AttackStarted, Hit, Died, AttackFailed, MonsterChanged, RegionChanged, NpcTalked, QuestChanged, InteractionFailed, ItemDropped, ItemChanged, ItemFailed }
 public enum AttackFailure { Cooldown, OutOfRange, Obstructed, DeadTarget, Interrupted }
-public readonly record struct SimulationEvent(long Tick, SimulationEventKind Kind, EntityId Actor, RegionId Region, GamePosition From, GamePosition To, int Value = 0, EntityId Target = default, RegionId Destination = default);
+public readonly record struct SimulationEvent(long Tick, SimulationEventKind Kind, EntityId Actor, RegionId Region, GamePosition From, GamePosition To, int Value = 0, EntityId Target = default, RegionId Destination = default, ItemId Item = default);
 public readonly record struct CommandCursor(EntityId Actor, ulong Sequence, long Tick);
 public readonly record struct RecordedCommand(long SubmittedAfterTick, GameCommand Command);
 public sealed record SimulationSnapshot(int RulesVersion, long Tick, uint RandomState, IReadOnlyList<EntityState> Entities,
-	IReadOnlyList<CommandCursor> Inputs, IReadOnlyList<GameCommand> PendingCommands, CollisionGrid? Collision, WorldDefinition? World, EntityId WorldPlayer, QuestStage QuestState);
+	IReadOnlyList<CommandCursor> Inputs, IReadOnlyList<GameCommand> PendingCommands, CollisionGrid? Collision, WorldDefinition? World, EntityId WorldPlayer, QuestStage QuestState, IReadOnlyList<ItemState> Items);
 
 // A single owner advances authoritative state. No wall clock, rendering, I/O or callbacks in Step.
 public sealed partial class GameSimulation
 {
-	public const int RulesVersion = 3, UnitsPerTile = 256, PositionLimit = 16777216;
+	public const int RulesVersion = 4, UnitsPerTile = 256, PositionLimit = 16777216;
 	public const int MaxEntities = 1024, MaxPendingCommands = 4096, MaxCommandsPerTick = 128, CommandHorizon = 250;
 	public const int MaxReplayCommands = 16384, MaxReplayTicks = 100000;
 	private readonly EntityState[] entities;
@@ -68,7 +68,8 @@ public sealed partial class GameSimulation
 		}
 		else Collision = collision;
 		if (world is null && collision is not null && entities.Length > MaxCombatEntities) throw new ArgumentException("Combat entity budget exceeded.");
-		inputs = new CommandCursor[entities.Length]; events = new SimulationEvent[6 * entities.Length + MaxCommandsPerTick + (world is null ? 0 : 4)];
+		items = new ItemState[entities.Length];
+		inputs = new CommandCursor[entities.Length]; events = new SimulationEvent[7 * entities.Length + MaxCommandsPerTick + (world is null ? 0 : 4)];
 		attacks = new EntityId[entities.Length]; canAct = new bool[entities.Length]; attacked = new bool[entities.Length];
 		for (int i = 0; i < entities.Length; i++)
 		{
@@ -93,13 +94,15 @@ public sealed partial class GameSimulation
 	{
 		if (command.Sequence == 0 || !Enum.IsDefined(command.Kind) ||
 			(command.Kind == CommandKind.SetMove ? !ValidDirection(command.X, command.Y) : command.X != 0 || command.Y != 0) ||
-			(command.Kind is not (CommandKind.Attack or CommandKind.Interact) && command.Target != default)) return CommandResult.InvalidCommand;
+			(command.Kind is not (CommandKind.Attack or CommandKind.Interact) && command.Target != default) ||
+			(IsItemCommand(command.Kind) ? command.Item == default : command.Item != default)) return CommandResult.InvalidCommand;
 		if (!indices.TryGetValue(command.Actor, out int index)) return CommandResult.UnknownActor;
 		if (command.Region != entities[index].Region) return CommandResult.WrongRegion;
 		if (!entities[index].IsAlive) return CommandResult.DeadActor;
 		if (entities[index].Kind != EntityKind.Player) return CommandResult.NotPlayerControlled;
 		if (command.Kind == CommandKind.Attack && (Collision is null || !indices.TryGetValue(command.Target, out int target) || entities[target].Kind == entities[index].Kind || entities[target].Region != command.Region)) return CommandResult.InvalidTarget;
 		if (command.Kind == CommandKind.Interact && (World is null || !World.TryGetInteraction(command.Target, out var region, out _) || region != command.Region)) return CommandResult.InvalidTarget;
+		if (IsItemCommand(command.Kind) && FindItem(command.Item) < 0) return CommandResult.InvalidTarget;
 		if (command.Tick <= Tick) return CommandResult.ExpiredTick;
 		if (command.Tick - Tick > CommandHorizon) return CommandResult.TooFarAhead;
 		if (command.Sequence <= inputs[index].Sequence) return CommandResult.StaleSequence;
@@ -125,6 +128,7 @@ public sealed partial class GameSimulation
 			if (command.Kind == CommandKind.SetMove) entities[index] = entity with { MoveX = command.X, MoveY = command.Y };
 			else if (command.Kind == CommandKind.Attack) attacks[index] = command.Target;
 			else if (command.Kind == CommandKind.Interact) interaction = command.Target;
+			else if (IsItemCommand(command.Kind)) ApplyItemCommand(index, command, nextTick);
 			else Emit(nextTick, SimulationEventKind.Signaled, entity, entity.Position, random.NextInt(6));
 		}
 		counts.Remove(nextTick);
@@ -154,7 +158,7 @@ public sealed partial class GameSimulation
 		Tick = nextTick;
 	}
 	public SimulationSnapshot CaptureSnapshot() => new(RulesVersion, Tick, random.State, Array.AsReadOnly((EntityState[])entities.Clone()),
-		Array.AsReadOnly((CommandCursor[])inputs.Clone()), Array.AsReadOnly(OrderedCommands()), Collision, World, WorldPlayer, QuestState);
+		Array.AsReadOnly((CommandCursor[])inputs.Clone()), Array.AsReadOnly(OrderedCommands()), Collision, World, WorldPlayer, QuestState, Array.AsReadOnly(Items.ToArray()));
 	public static GameSimulation Replay(uint seed, IEnumerable<EntityState> initialEntities, IReadOnlyList<RecordedCommand> trace, long targetTick, CollisionGrid? collision = null, WorldDefinition? world = null)
 	{
 		ArgumentNullException.ThrowIfNull(trace);
@@ -171,7 +175,7 @@ public sealed partial class GameSimulation
 		return result;
 	}
 	private GameCommand[] OrderedCommands() => commands.UnorderedItems.OrderBy(p => p.Priority).Select(p => p.Element).ToArray();
-	// Canonical little-endian v3 state, including scheduling, world content and quest state.
+	// Canonical little-endian v4 state, including scheduling, world content, quest and item ownership.
 	// Explicit diagnostic operation: allocates, so callers must not invoke it for every render frame.
 	public string ComputeStateHash()
 	{
@@ -192,10 +196,11 @@ public sealed partial class GameSimulation
 		writer.Write(commands.Count);
 		foreach (var c in OrderedCommands())
 		{
-			writer.Write(c.Tick); writer.Write(c.Sequence); writer.Write(c.Actor.Value); writer.Write(c.Region.Value); writer.Write((int)c.Kind); writer.Write(c.X); writer.Write(c.Y); writer.Write(c.Target.Value);
+			writer.Write(c.Tick); writer.Write(c.Sequence); writer.Write(c.Actor.Value); writer.Write(c.Region.Value); writer.Write((int)c.Kind); writer.Write(c.X); writer.Write(c.Y); writer.Write(c.Target.Value); writer.Write(c.Item.Value);
 		}
 		writer.Write(World is not null);
 		if (World is { } world) { writer.Write(world.ContentHash); writer.Write(WorldPlayer.Value); writer.Write(ActiveRegion.Value); writer.Write((int)QuestState); }
+		WriteItems(writer);
 		writer.Flush(); return Convert.ToHexStringLower(SHA256.HashData(stream.GetBuffer().AsSpan(0, (int)stream.Length)));
 	}
 	private static bool ValidDirection(int x, int y) => x is >= -1 and <= 1 && y is >= -1 and <= 1;
