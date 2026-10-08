@@ -9,7 +9,7 @@ public sealed partial class GameSimulation
 	{
 		if (!Collision!.CanOccupy(position)) return false;
 		for (int i = 0; i < entities.Length; i++)
-			if (i != index && entities[i].IsAlive && Overlaps(position, entities[i].Position)) return false;
+			if (i != index && entities[i].Region == entities[index].Region && entities[i].IsAlive && Overlaps(position, entities[i].Position)) return false;
 		return true;
 	}
 	private void Emit(long tick, SimulationEventKind kind, EntityState actor, GamePosition to, int value = 0, EntityId target = default)
@@ -52,6 +52,10 @@ public sealed partial class GameSimulation
 		canAct[targetIndex] = false;
 		Emit(tick, SimulationEventKind.AttackStarted, e, target.Position, 0, target.Id);
 		Emit(tick, SimulationEventKind.Hit, e, target.Position, Math.Min(damage, target.Health), target.Id);
-		if (health == 0) Emit(tick, SimulationEventKind.Died, target, target.Position, 0, e.Id);
+		if (health == 0)
+		{
+			Emit(tick, SimulationEventKind.Died, target, target.Position, 0, e.Id);
+			UpdateQuest(tick);
+		}
 	}
 }
