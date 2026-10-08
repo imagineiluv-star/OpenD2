@@ -50,3 +50,15 @@ NPC-02에서 실제 로컬 어댑터·모델 선택/다운로드·해시·라이
 ## 원격에서 발견한 실행 환경 문제
 
 초기 코드 `01015d6`의 CI #37776417349 / #37776456137에서 Linux는 통과했다. Windows는 `eng/verify.py`가 한글 C# 파일을 cp1252로 읽다가 실패해 UTF-8을 명시했다. macOS는 211개 계약 통과 후 Godot import 종료 시 `export/android/android_sdk_path`의 EditorSettings 수명 오류를 보고했다. Godot [관련 수정 #116515](https://github.com/godotengine/godot/pull/116515)와 [고정 버전 소스](https://github.com/godotengine/godot/blob/4.6.3-stable/platform/android/export/export_plugin.cpp)의 별도 장치 확인 스레드를 조사했다. 빠른 초기화/종료와의 경합으로 판단해 import를 120프레임/최대 60fps로 종료하게 조정한다. 리소스 스캔 완료 대기와 모든 ERROR 실패 처리는 유지한다. 이 변경의 원격 결과는 아래 최종 검증으로 확인한다.
+
+
+`bd27d41` 기능 브랜치 CI #37777178855는 세 OS에서 통과했으나 PR CI #37777187171의 macOS에서 동일한 종료 오류가 다시 발생했다. 따라서 종료 지연은 엔진 경합의 완전한 수정이 아니다. 같은 코드의 실패한 macOS 작업만 재실행하며, 오류 필터를 약화하거나 NPC/게임 계약 실패를 무시하지 않는다. 고정 Godot 버전의 편집기 종료 경합은 후속 도구체인 업데이트에서 재검증할 잔여 위험이다. 현재 관측 위치는 편집기 import 종료이며, 통과한 macOS run의 게임 smoke와 export는 성공했다.
+
+
+## 최종 검증 기록
+
+- 검증 코드: `bd27d41fdb436552228bca0a9ea9a60459843823`.
+- [기능 브랜치 CI #37777178855](https://github.com/imagineiluv-star/OpenD2/actions/runs/37777178855): Linux x64·Windows x64·macOS universal 모두 성공. 각 로그에서 211/211 계약, NPC 대화 marker, export 완료를 확인했다.
+- [PR CI #37777187171](https://github.com/imagineiluv-star/OpenD2/actions/runs/37777187171): 최종 세 OS 성공. macOS의 편집기 import 종료 경합으로 실패 작업을 1회 재실행했으며 성공했다. 위 잔여 위험이 해결됐다고 간주하지 않는다.
+- 로컬 Linux: 동일 코드의 전체 검증과 export 성공; NPC 런타임의 SDK 없는 독립 실행도 확인했다.
+- [PR #8](https://github.com/imagineiluv-star/OpenD2/pull/8). 이 기록 추가 커밋은 문서만 변경하며 런타임/테스트/빌드 스크립트는 검증된 코드와 동일하다. 병합 뒤 master CI도 확인한다.
