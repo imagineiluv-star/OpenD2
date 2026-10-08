@@ -3,8 +3,9 @@ using OpenD2.Core;
 namespace OpenD2.Assets;
 
 public sealed record PlaySceneReadiness(string ContentId, int Regions, int Actors, int ActorsWithArtwork,
-	bool QuestLoopReachable, bool ReadyForSceneGuiCheck, bool OriginalRulesValidated, string GuiQa, IReadOnlyList<string> Issues)
+	bool QuestLoopReachable, bool ReadyForSceneGuiCheck, bool OriginalRulesValidated, string GuiQa, IReadOnlyList<string> Issues, bool NpcArtworkConfigured = false)
 {
+	public bool ReadyForAllSpritesGuiCheck => ReadyForSceneGuiCheck && NpcArtworkConfigured;
 	public static PlaySceneReadiness Check(LegacyPlayScene scene)
 	{
 		ArgumentNullException.ThrowIfNull(scene);
@@ -12,7 +13,7 @@ public sealed record PlaySceneReadiness(string ContentId, int Regions, int Actor
 		bool loop = CheckQuestLoop(world, scene.Actors, issues);
 		foreach (var actor in scene.Actors) if (!scene.Artwork.ContainsKey(actor.Id)) issues.Add($"actor_artwork_missing:{actor.Id.Value}");
 		return new(scene.ContentId, world.Regions.Length, scene.Actors.Count, scene.Artwork.Count, loop,
-			loop && scene.Artwork.Count == scene.Actors.Count, false, "NOT_RUN", issues.AsReadOnly());
+			loop && scene.Artwork.Count == scene.Actors.Count, false, "NOT_RUN", issues.AsReadOnly(), scene.NpcArtwork is not null);
 	}
 	// Static terrain/portal connectivity only. Dynamic bodies, combat and actual GUI actions still need testing.
 	public static bool CheckQuestLoop(WorldDefinition world, IReadOnlyList<EntityState> actors, ICollection<string> issues)

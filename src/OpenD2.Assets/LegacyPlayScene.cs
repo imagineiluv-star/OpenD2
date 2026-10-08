@@ -12,7 +12,7 @@ public sealed record PlaySpawn(uint Id, uint Region, int X, int Y, bool Player, 
 public sealed record PlayNpc(uint Id, uint Region, int X, int Y, string Name);
 public sealed record PlayPortal(uint Id, uint Region, int X, int Y, uint Destination, int ArrivalX, int ArrivalY);
 public sealed record LegacySceneRequest(int SchemaVersion, string Title, PlayRegion[] Regions, PlaySpawn[] Actors,
-	PlayNpc Npc, PlayPortal[] Portals, uint[] QuestTargets, LegacyActorRequest[]? Artwork = null, bool NavigateWalls = false, LegacyAudioRequest? Audio = null)
+	PlayNpc Npc, PlayPortal[] Portals, uint[] QuestTargets, LegacyActorRequest[]? Artwork = null, bool NavigateWalls = false, LegacyAudioRequest? Audio = null, LegacyNpcRequest? NpcArtwork = null)
 {
 	public static LegacySceneRequest Read(string file)
 	{
@@ -33,8 +33,11 @@ public sealed class LegacyPlayScene
 	public IReadOnlyDictionary<EntityId, LegacyActorArt> Artwork { get; }
 	public IReadOnlyList<LegacyAssetSource> ArtworkSources { get; }
 	public LegacyAudioBank? Audio { get; }
-	private LegacyPlayScene(WorldDefinition world, EntityState[] actors, Dictionary<RegionId, LegacyMapAsset> terrain, Dictionary<EntityId, LegacyActorArt> artwork, LegacyAssetSource[] artworkSources, string id, LegacyAudioBank? audio)
-	{ World = world; Actors = Array.AsReadOnly(actors); Terrain = new ReadOnlyDictionary<RegionId, LegacyMapAsset>(terrain); Artwork = new ReadOnlyDictionary<EntityId, LegacyActorArt>(artwork); ArtworkSources = Array.AsReadOnly(artworkSources); ContentId = id; Audio = audio; }
+	public LegacyActorArt? NpcArtwork { get; }
+	public int NpcFacing { get; }
+	public IReadOnlyList<LegacyAssetSource> NpcArtworkSources { get; }
+	private LegacyPlayScene(WorldDefinition world, EntityState[] actors, Dictionary<RegionId, LegacyMapAsset> terrain, Dictionary<EntityId, LegacyActorArt> artwork, LegacyAssetSource[] artworkSources, string id, LegacyAudioBank? audio, LegacyActorArt? npcArtwork, int npcFacing, LegacyAssetSource[] npcSources)
+	{ World = world; Actors = Array.AsReadOnly(actors); Terrain = new ReadOnlyDictionary<RegionId, LegacyMapAsset>(terrain); Artwork = new ReadOnlyDictionary<EntityId, LegacyActorArt>(artwork); ArtworkSources = Array.AsReadOnly(artworkSources); ContentId = id; Audio = audio; NpcArtwork = npcArtwork; NpcFacing = npcFacing; NpcArtworkSources = Array.AsReadOnly(npcSources); }
 	public GameSimulation Create(uint seed) => new(seed, Actors, world: World);
 	public static LegacyPlayScene Load(string directory, LegacySceneRequest request) => Load(request, path => AssetDecoders.ReadFromInstall(directory, path));
 	public static LegacyPlayScene Load(LegacySceneRequest request, Func<string, byte[]> read)
@@ -46,6 +49,13 @@ public sealed class LegacyPlayScene
 			request.Npc is null || request.Portals is null || request.Portals.Length > WorldDefinition.MaxPortals || request.Portals.Any(p => p is null) ||
 			request.QuestTargets is null || request.QuestTargets.Length is < 1 or > WorldDefinition.MaxQuestTargets)
 			throw new InvalidDataException("Invalid scene schema, title or content counts.");
+		var npcRequest = request.NpcArtwork;
+		if (npcRequest is not null)
+		{
+			if (npcRequest.Entity != request.Npc.Id || npcRequest.Idle is null) throw new InvalidDataException("NPC artwork must reference the scene quest giver and define Idle.");
+			var idle = npcRequest.Idle;
+			npcRequest = npcRequest with { Idle = idle with { Directions = idle.Directions?.ToArray()!, Layers = idle.Layers is null ? null : new(idle.Layers) } };
+		}
 		var regions = request.Regions.Select(r => r with { Terrain = r.Terrain with { Tilesets = r.Terrain.Tilesets?.ToArray()! } }).OrderBy(r => r.Id).ToArray();
 		var artworkRequests = request.Artwork ?? [];
 		if (artworkRequests.Length > 32 || artworkRequests.Any(a => a is null) || artworkRequests.Select(a => a.Entity).Distinct().Count() != artworkRequests.Length)
@@ -87,14 +97,29 @@ public sealed class LegacyPlayScene
 			if (pixels > Dt1Tileset.MaxPixels) throw new InvalidDataException("Combined terrain/artwork pixel budget exceeded.");
 			artwork.Add(new(art.Entity), loaded);
 		}
+		LegacyActorArt? npcArtwork = null; var npcSources = new List<LegacyAssetSource>();
+		if (npcRequest is not null)
+		{
+			npcArtwork = LegacyActorArt.LoadNpc(npcRequest, path =>
+			{
+				var bytes = Read(path); npcSources.Add(new(path, bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes)))); return bytes;
+			});
+			pixels += npcArtwork.PixelCount;
+			if (pixels > Dt1Tileset.MaxPixels) throw new InvalidDataException("Combined terrain/actor/NPC pixel budget exceeded.");
+		}
 		using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 		hash.AppendData(Encoding.UTF8.GetBytes(world.ContentHash)); hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(actors));
 		foreach (var pair in terrain.OrderBy(p => p.Key.Value)) foreach (var source in pair.Value.Check.Sources)
 		{ hash.AppendData(Encoding.UTF8.GetBytes(source.Path + "\n" + source.Sha256 + "\n")); }
 		if (artworkRequests.Length > 0) hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(artworkRequests));
 		foreach (var source in artworkSources) hash.AppendData(Encoding.UTF8.GetBytes(source.Path + "\n" + source.Sha256 + "\n"));
+		if (npcRequest is not null)
+		{
+			hash.AppendData(Encoding.UTF8.GetBytes("npc-artwork-v1\n")); hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(npcRequest));
+			foreach (var source in npcSources) hash.AppendData(Encoding.UTF8.GetBytes(source.Path + "\n" + source.Sha256 + "\n"));
+		}
 		var audio = request.Audio is null ? null : LegacyAudioBank.Load(request.Audio, regions.Select(r => new RegionId(r.Id)), Read);
-		return new(world, actors, terrain, artwork, artworkSources.ToArray(), Convert.ToHexStringLower(hash.GetHashAndReset()), audio);
+		return new(world, actors, terrain, artwork, artworkSources.ToArray(), Convert.ToHexStringLower(hash.GetHashAndReset()), audio, npcArtwork, npcRequest?.Facing ?? 0, npcSources.ToArray());
 	}
 }
 

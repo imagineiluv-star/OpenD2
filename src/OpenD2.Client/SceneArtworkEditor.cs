@@ -6,7 +6,7 @@ namespace OpenD2.Client;
 public partial class SceneArtworkEditor : VBoxContainer
 {
 	private sealed record MotionDraft(string Path, string Layers, string Directions, double Fps);
-	private sealed record ActorDraft(bool Enabled, string Palette, MotionDraft[] Motions);
+	private sealed record ActorDraft(bool Enabled, string Palette, MotionDraft[] Motions, int Facing = 0);
 	private sealed class MotionForm
 	{
 		public readonly LineEdit Path = new() { PlaceholderText = "MPQ DCC or COF path", MaxLength = 1023 };
@@ -33,6 +33,9 @@ public partial class SceneArtworkEditor : VBoxContainer
 	private readonly CheckButton enabled = new() { Text = "Use artwork for this actor" };
 	private readonly LineEdit palette = new() { PlaceholderText = "MPQ palette path", MaxLength = 1023 };
 	private readonly OptionButton facing = new();
+	private readonly OptionButton npcFacing = new() { Visible = false };
+	private readonly TabContainer tabs = new();
+	private uint SelectedId => selectedActor == source!.Actors.Length ? source.Npc.Id : source.Actors[selectedActor].Id;
 	private readonly MotionForm[] motions = Enum.GetValues<ActorMotion>().Select(_ => new MotionForm()).ToArray();
 	private readonly ConfirmationDialog replace = new() { Title = "Replace artwork form?", DialogText = "Unsaved form edits will be discarded if the new scene loads. Saved files and current gameplay are kept.", Exclusive = true };
 	private Dictionary<uint, ActorDraft> drafts = new();
@@ -46,11 +49,11 @@ public partial class SceneArtworkEditor : VBoxContainer
 	public override void _Ready()
 	{
 		AddChild(new Label { Text = "Scene actor artwork" }); AddChild(choose); AddChild(sourceInfo);
-		AddChild(new Label { Text = "Open a scene or use Map → Edit generated artwork. Configure each actor's five motions, then save a new copy.\nThe original scene and running game are kept. Unconfigured actors and the guide use placeholders. Resource paths, direction indices and FPS must be verified in your owned data.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		AddChild(new Label { Text = "Open a scene or use Map → Edit generated artwork. Configure combat actors' five motions or the guide's Idle, then save a new copy.\nThe original scene and running game are kept. Unconfigured artwork uses placeholders. Resource paths, direction indices and FPS must be verified in your owned data.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		AddChild(form); form.AddChild(actor); form.AddChild(enabled); form.AddChild(new Label { Text = "Actor palette" }); form.AddChild(palette);
 		form.AddChild(new Label { Text = "Direction order: (-1,-1), (0,-1), (1,-1), (1,0), (1,1), (0,1), (-1,1), (-1,0)\nThese are world movement vectors. Values are source animation indices; inspect each facing.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
-		foreach (string vector in new[] { "(-1,-1)", "(0,-1)", "(1,-1)", "(1,0)", "(1,1)", "(0,1)", "(-1,1)", "(-1,0)" }) facing.AddItem("Inspect facing " + vector);
-		form.AddChild(facing); var tabs = new TabContainer(); form.AddChild(tabs);
+		foreach (string vector in new[] { "(-1,-1)", "(0,-1)", "(1,-1)", "(1,0)", "(1,1)", "(0,1)", "(-1,1)", "(-1,0)" }) { facing.AddItem("Inspect facing " + vector); npcFacing.AddItem("Guide fixed facing " + vector); }
+		form.AddChild(facing); form.AddChild(npcFacing); form.AddChild(tabs);
 		for (int i = 0; i < motions.Length; i++)
 		{
 			int index = i; var fields = motions[i]; var panel = new VBoxContainer { Name = ((ActorMotion)i).ToString() }; tabs.AddChild(panel);
@@ -75,18 +78,20 @@ public partial class SceneArtworkEditor : VBoxContainer
 	}
 	private void SetBusy(bool value)
 	{
-		busy = value; choose.Disabled = value; actor.Disabled = value; enabled.Disabled = value; palette.Editable = !value; facing.Disabled = value;
+		busy = value; choose.Disabled = value; actor.Disabled = value; enabled.Disabled = value; palette.Editable = !value; facing.Disabled = value; npcFacing.Disabled = value;
 		foreach (var motion in motions) motion.SetBusy(value);
 		save.Disabled = value || source is null; loadSaved.Disabled = value || savedFile.Length == 0;
 	}
 	private void CaptureActor()
 	{
-		if (source is not null && selectedActor >= 0) drafts[source.Actors[selectedActor].Id] = new(enabled.ButtonPressed, palette.Text, motions.Select(m => m.Capture()).ToArray());
+		if (source is not null && selectedActor >= 0) drafts[SelectedId] = new(enabled.ButtonPressed, palette.Text, motions.Select(m => m.Capture()).ToArray(), npcFacing.Selected);
 	}
 	private void ShowActor(int index)
 	{
 		CaptureActor(); selectedActor = index; actor.Select(index);
-		var draft = drafts[source!.Actors[index].Id]; enabled.SetPressedNoSignal(draft.Enabled); palette.Text = draft.Palette;
+		bool isNpc = index == source!.Actors.Length; npcFacing.Visible = isNpc; tabs.CurrentTab = 0;
+		for (int i = 1; i < motions.Length; i++) tabs.SetTabHidden(i, isNpc);
+		var draft = drafts[SelectedId]; npcFacing.Select(draft.Facing); enabled.SetPressedNoSignal(draft.Enabled); palette.Text = draft.Palette;
 		for (int i = 0; i < motions.Length; i++) motions[i].Show(draft.Motions[i]);
 	}
 	private async Task<bool> ReadScene(string file, Func<string, byte[]>? read = null)
@@ -113,8 +118,16 @@ public partial class SceneArtworkEditor : VBoxContainer
 						return new MotionDraft(m?.Path ?? "", m?.Layers is null ? "" : string.Join('\n', m.Layers.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}")), m is null ? "" : string.Join(',', m.Directions), m?.Fps ?? 12);
 					}).ToArray());
 			});
+			var npcArt = request.NpcArtwork;
+			nextDrafts.Add(request.Npc.Id, new(npcArt is not null, npcArt?.PalettePath ?? request.Regions.Single(r => r.Id == request.Npc.Region).Terrain.PalettePath,
+				Enum.GetNames<ActorMotion>().Select(name =>
+				{
+					var m = name == "Idle" ? npcArt?.Idle : null;
+					return new MotionDraft(m?.Path ?? "", m?.Layers is null ? "" : string.Join('\n', m.Layers.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}")), m is null ? "" : string.Join(',', m.Directions), m?.Fps ?? 12);
+				}).ToArray(), npcArt?.Facing ?? 0));
 			source = request; sourceDirectory = directory; drafts = nextDrafts; selectedActor = -1; savedFile = ""; actor.Clear();
 			foreach (var spawn in request.Actors) actor.AddItem($"{(spawn.Player ? "Player" : "Monster")} {spawn.Id} · region {spawn.Region}");
+			actor.AddItem($"Guide {request.Npc.Id} · {request.Npc.Name} · Idle only");
 			ShowActor(0); form.Show(); sourceInfo.Text = "Source: " + Path.GetFullPath(file);
 			status.Text = "Scene opened. Existing artwork is preserved. Palette defaults to the actor's region; verify it for each actor. Saving always creates a new file.";
 			return true;
@@ -141,15 +154,18 @@ public partial class SceneArtworkEditor : VBoxContainer
 		{
 			if (gameDirectory() != sourceDirectory) throw new InvalidDataException("Data directory changed. Reopen the scene before saving.");
 			CaptureActor();
-			var artwork = drafts.Where(p => p.Value.Enabled).OrderBy(p => p.Key).Select(p => new LegacyActorRequest(p.Key, p.Value.Palette,
+			var artwork = drafts.Where(p => p.Value.Enabled && p.Key != source.Npc.Id).OrderBy(p => p.Key).Select(p => new LegacyActorRequest(p.Key, p.Value.Palette,
 				p.Value.Motions.Select((m, i) => LegacyArtworkSetup.ParseMotion(((ActorMotion)i).ToString(), m.Path, m.Layers, m.Directions, m.Fps)).ToArray())).ToArray();
-			var request = source with { Artwork = artwork }; string directory = sourceDirectory;
+			var npcDraft = drafts[source.Npc.Id]; var idle = npcDraft.Motions[0];
+			LegacyNpcRequest? npcArt = npcDraft.Enabled ? new(source.Npc.Id, npcDraft.Palette,
+				LegacyArtworkSetup.ParseMotion("Idle", idle.Path, idle.Layers, idle.Directions, idle.Fps), npcDraft.Facing) : null;
+			var request = source with { Artwork = artwork, NpcArtwork = npcArt }; string directory = sourceDirectory;
 			file ??= Path.Combine(sceneDirectory, "artwork-" + Guid.NewGuid().ToString("N") + ".json");
 			await Task.Yield();
 			var ready = await Task.Run(() => LegacySceneSetup.SaveNew(file, request, read ?? (path => AssetDecoders.ReadFromInstall(directory, path))));
 			if (!IsInstanceValid(this) || !IsInsideTree()) return false;
 			savedFile = file;
-			status.Text = $"Saved copy: {file}\nCombat actor artwork: {ready.ActorsWithArtwork}/{ready.Actors}; static quest loop: {ready.QuestLoopReachable}. GUI QA: NOT_RUN.\nLoad saved copy uses this snapshot. Later edits require saving another copy. Artwork changes use a separate checkpoint slot. Guide art, original rules and visual accuracy remain unverified.";
+			status.Text = $"Saved copy: {file}\nCombat actor artwork: {ready.ActorsWithArtwork}/{ready.Actors}; guide artwork: {ready.NpcArtworkConfigured}; static quest loop: {ready.QuestLoopReachable}. GUI QA: NOT_RUN.\nLoad saved copy uses this snapshot. Later edits require saving another copy. Artwork changes use a separate checkpoint slot. Guide walking/talking motions, original rules and visual accuracy remain unverified.";
 			return true;
 		}
 		catch (Exception error) { if (IsInstanceValid(this) && IsInsideTree()) status.Text = "Save failed; original scene, previous copies and current game retained. " + error.Message; return false; }

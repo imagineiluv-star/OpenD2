@@ -69,6 +69,8 @@ New run과 장면 교체는 확인 후 실행한다. 취소하면 이전 일시�
 
 원본 캐릭터/몬스터 아트는 **Map → Edit generated artwork** 또는 **Scene art → Open scene JSON for artwork**에서 설정한다. 배우별 다섯 동작의 DCC/COF 경로·레이어·8방향·FPS를 입력하고 기존 DCC-COF 탭에서 미리본다. 검증 후 새 장면 복사본으로 저장하며 원본 파일은 유지한다. [PLAY-09 절차](docs/migration/PLAY_INTEGRATION.md#play-09-캐릭터몬스터-아트-연결-화면).
 
+PLAY-10 이후 같은 목록의 **Guide**는 **Idle** 한 동작과 **Guide fixed facing**을 설정한다. NPC는 정해진 위치에서 대기 애니메이션을 반복하며 Pause에서 멈춘다. 새 복사본을 저장하고 Load saved copy로 연결한다. 설정하지 않으면 원형 표시를 유지한다. [NPC 설정·JSON·준비 상태](docs/migration/PLAY_INTEGRATION.md#play-10-guide-npc-대기-아트). 공개 v0.2.0-rc.3에는 PLAY-08/09/10이 없다.
+
 ## 실행과 배포
 
 출시 후보는 Actions의 **Release candidate and QA handoff** (`release.yml`)를 사용한다.

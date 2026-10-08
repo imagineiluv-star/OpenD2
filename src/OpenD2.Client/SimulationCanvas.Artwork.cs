@@ -22,7 +22,12 @@ public partial class SimulationCanvas
 		public void Reset() { Clock = new(); frame = -1; }
 		public void Update(EntityState state, long tick)
 		{
-			int nextFrame = Clock.Frame(state, tick, Art); var nextClip = Art.Motions[Clock.Motion].Directions[Clock.Facing];
+			int nextFrame = Clock.Frame(state, tick, Art);
+			UpdateFrame(Art.Motions[Clock.Motion].Directions[Clock.Facing], nextFrame);
+		}
+		public void UpdateIdle(long tick, int facing) => UpdateFrame(Art.Motions[ActorMotion.Idle].Directions[facing], Art.IdleFrame(tick, facing));
+		private void UpdateFrame(AnimationClip nextClip, int nextFrame)
+		{
 			if (nextFrame == frame && ReferenceEquals(nextClip, Clip)) return;
 			using var image = Image.CreateFromData(nextClip.Width, nextClip.Height, false, Image.Format.Rgba8, nextClip.ToRgba(nextFrame, Art.Palette));
 			if (nextClip.Width == Clip.Width && nextClip.Height == Clip.Height) Texture.Update(image);
@@ -32,6 +37,7 @@ public partial class SimulationCanvas
 		public void Dispose() { Texture.Dispose(); }
 	}
 	private Dictionary<EntityId, ActorSprite> actorSprites = new();
+	private ActorSprite? npcSprite;
 	private static Dictionary<EntityId, ActorSprite> PrepareArtwork(LegacyPlayScene? content)
 	{
 		var prepared = new Dictionary<EntityId, ActorSprite>();
@@ -51,8 +57,22 @@ public partial class SimulationCanvas
 		sprite.Update(actor, simulation.Tick);
 		DrawTexture(sprite.Texture, point + new Vector2(sprite.Clip.Left, sprite.Clip.Top)); return true;
 	}
+	private bool DrawNpcArtwork(Vector2 point)
+	{
+		if (npcSprite is null || simulation is null || terrainContent is null) return false;
+		npcSprite.UpdateIdle(simulation.Tick, terrainContent.NpcFacing);
+		DrawTexture(npcSprite.Texture, point + new Vector2(npcSprite.Clip.Left, npcSprite.Clip.Top)); return true;
+	}
+	public bool CheckNpcTexture()
+	{
+		if (npcSprite is null || simulation is null || terrainContent is null) return false;
+		npcSprite.UpdateIdle(simulation.Tick, terrainContent.NpcFacing);
+		using var image = npcSprite.Texture.GetImage();
+		return image.GetWidth() == npcSprite.Clip.Width && image.GetHeight() == npcSprite.Clip.Height && image.GetData().Where((_, index) => index % 4 == 3).Any(alpha => alpha != 0);
+	}
 	private void ClearArtwork()
 	{
+		npcSprite?.Dispose(); npcSprite = null;
 		foreach (var sprite in actorSprites.Values) sprite.Dispose(); actorSprites.Clear();
 	}
 	public bool CheckActorTexture()

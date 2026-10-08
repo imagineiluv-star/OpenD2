@@ -37,14 +37,17 @@ public partial class SimulationPreview
 		var request = new LegacySceneRequest(1, "Synthetic integration check", [new(1, "Sample map", map)],
 			[new(1, 1, 384, 384, true), new(2, 1, 1664, 1664, false)], new(10, 1, 640, 384, "Guide"), [], [2],
 			[new(1, map.PalettePath, Enum.GetNames<ActorMotion>().Select(m => new LegacyMotionRequest(m, "sample.dcc", null, new int[8], 10)).ToArray())]);
+		request = request with { NpcArtwork = new(10, map.PalettePath, new("Idle", "sample.dcc", null, [0, 0, 0, 0, 1, 1, 1, 1], 10), 4) };
 		var content = LegacyPlayScene.Load(request, p => p.EndsWith(".ds1") ? bytes.Ds1 : p.EndsWith(".dt1") ? bytes.Dt1 : p.EndsWith(".dcc") ? Convert.FromHexString(AnimationPreview.SampleDcc) : bytes.Colors);
 		view.SetTerrain(content); legacyScene = content; NewRun();
-		if (simulation.World != content.World || simulation.Collision!.Width != 10 || !view.CheckTerrainTexture() || !view.CheckActorTexture() || ActiveSavePath == savePath)
+		if (simulation.World != content.World || simulation.Collision!.Width != 10 || !view.CheckTerrainTexture() || !view.CheckActorTexture() || !view.CheckNpcTexture() || ActiveSavePath == savePath)
 			throw new InvalidDataException("Legacy terrain/session integration smoke failed.");
 		Submit(CommandKind.SetMove, 1, 0); RunTick();
 		if (simulation.GetEntity(Player).Position.X <= 384) throw new InvalidDataException("Legacy terrain movement smoke failed.");
 		NavigationSmoke();
 		view.SetTerrain(null); legacyScene = null; NewRun();
+		if (view.CheckNpcTexture()) throw new InvalidDataException("NPC texture survived scene teardown.");
+		GD.Print("OPEND2_PLAY10_NPC_READY");
 		GD.Print("OPEND2_PLAY02_TERRAIN_READY");
 		GD.Print("OPEND2_PLAY03_ACTOR_READY");
 	}
@@ -96,7 +99,7 @@ public partial class SimulationPreview
 			view.SetTerrain(next); legacyScene = next; NewRun();
 			SetScenePath(Path.GetFullPath(file));
 			if (menuOpen) { SetPaused(true); menuWasPaused = false; }
-			contentInfo.Text = $"Legacy terrain: {next.World.Regions.Length} region(s). Content {next.ContentId[..16]}.\nExplicit placements and preview game rules; original campaign compatibility is not validated. Artwork profiles: {next.Artwork.Count}/{next.Actors.Count}.";
+			contentInfo.Text = $"Legacy terrain: {next.World.Regions.Length} region(s). Content {next.ContentId[..16]}.\nExplicit placements and preview game rules; original campaign compatibility is not validated. Artwork profiles: {next.Artwork.Count}/{next.Actors.Count}; NPC art: {next.NpcArtwork is not null}.";
 			contentInfo.Text += $"\nStatic quest loop: {checkedScene.Readiness.QuestLoopReachable}; GUI QA: NOT_RUN. " + string.Join(", ", checkedScene.Readiness.Issues.Take(8));
 			contentInfo.Text += $"\nAudio: {next.Audio?.Effects.Count ?? 0} effects, {next.Audio?.Music.Count ?? 0} region tracks. Listening QA: NOT_RUN.";
 			if (menuOpen) menuStatus.Text = contentInfo.Text + "\nSelect Continue current session to play, or Load checkpoint for this scene.";
@@ -128,7 +131,7 @@ public partial class SimulationCanvas
 	public void SetTerrain(LegacyPlayScene? content)
 	{
 		var prepared = new Dictionary<RegionId, ImageTexture[]>(); var owned = new List<ImageTexture>();
-		Dictionary<EntityId, ActorSprite>? preparedActors = null; var preparedWalls = new Dictionary<RegionId, MapPlacement[]>();
+		Dictionary<EntityId, ActorSprite>? preparedActors = null; ActorSprite? preparedNpc = null; var preparedWalls = new Dictionary<RegionId, MapPlacement[]>();
 		try
 		{
 			if (content is not null) foreach (var pair in content.Terrain)
@@ -145,9 +148,10 @@ public partial class SimulationCanvas
 				preparedWalls.Add(pair.Key, pair.Value.Scene.Placements.Where(p => IsForeground(pair.Value.Scene, p) && p.Key.Orientation != 15).OrderBy(Depth).ThenBy(p => p.X).ThenBy(p => p.Layer).ToArray());
 			}
 			preparedActors = PrepareArtwork(content);
+			if (content?.NpcArtwork is { } npcArt) preparedNpc = new(npcArt);
 		}
-		catch { foreach (var texture in owned) texture.Dispose(); if (preparedActors is not null) foreach (var sprite in preparedActors.Values) sprite.Dispose(); throw; }
-		ClearTerrain(); terrainContent = content; terrainTextures = prepared; actorSprites = preparedActors; foregroundWalls = preparedWalls; QueueRedraw();
+		catch { preparedNpc?.Dispose(); foreach (var texture in owned) texture.Dispose(); if (preparedActors is not null) foreach (var sprite in preparedActors.Values) sprite.Dispose(); throw; }
+		ClearTerrain(); terrainContent = content; terrainTextures = prepared; actorSprites = preparedActors; npcSprite = preparedNpc; foregroundWalls = preparedWalls; QueueRedraw();
 	}
 	private static Vector2 Iso(double x, double y) { var p = LegacyProjection.Project(x, y); return new((float)p.X, (float)p.Y); }
 	private void DrawTerrain()
