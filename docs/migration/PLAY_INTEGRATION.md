@@ -12,6 +12,36 @@
 | 5 | `feat/play-05-content` | 대표 지역·생성 위치·NPC/포털·콘텐츠 연결 | 연결 인수 도구 구현; 원본 콘텐츠 지정/규칙 대기 |
 | 6 | `feat/play-06-continuous-session` | 기록 예산과 플레이 진행 분리 | 코드·합성 검증 완료; 실제 장시간 GUI 대기 |
 | 7 | `feat/play-07-acceptance` | 배포·실제 GUI·증거/인수 | 인수 자료 구현; 원본/GUI/2시간 실제 시험 대기 |
+| 8 | `feat/play-08-scene-setup` | 데이터 폴더 점검·지도에서 장면 생성·시작 메뉴 연결 | 구현; 실제 자료/GUI 인수 대기 |
+
+## PLAY-08: JSON 수동 작성 없는 첫 지형 장면
+
+이 기능은 PLAY-08 이후 빌드에 포함된다. 기존 **v0.2.0-rc.3에는 포함되지 않는다**.
+원본 MPQ는 제공하지 않으며 사용자가 보유한 LoD 설치 폴더를 읽는다.
+
+1. 왼쪽 **Choose directory → Check data directory**로 폴더와 누락 아카이브 목록을 확인한다.
+   파일명 존재 검사이며 패치 버전/내용 호환 판정이 아니다. **Save settings**로 경로를 저장한다.
+2. **Map** 탭에서 확인한 Level ID / Preset Def / File slot으로 **Resolve table paths**를 실행하거나
+   DS1와 DT1 경로를 직접 입력한다. 실제 지역의 Act 팔레트를 확인한 뒤 **Load map**을 누른다.
+   BIN 모드는 LoD 1.10f 전용이다. 기본 Act 1 팔레트와 ID 값은 추천 콘텐츠가 아니며 다른 지역에 자동 적용하지 않는다.
+3. **Collision**을 켜고 지도를 가리켜 `Cell X,Y`를 읽는다. 장면 이름과 Player / Monster / Guide의 X,Y를 지정한다.
+   좌표는 0부터 시작하는 **이동 셀**이며 DS1 타일 하나가 5×5 셀이다. 셀 중앙으로 생성한다.
+   기본 위치는 예시이며 원본 생성 위치가 아니다. 서로 다른 이동 가능 셀과 연결된 왕복 경로가 필요하다.
+4. **Validate and create scene**은 리소스·충돌·배치·퀘스트 연결을 재검사하고 사용자 데이터의
+   `scenes/preview-<unique-id>.json`을 새로 만든다. 기존 장면/세이브/원본 MPQ를 덮어쓰지 않는다.
+   경로나 데이터 폴더를 바꿨으면 지도를 다시 읽는다. 실패 시 현재 게임과 기존 파일은 유지한다.
+5. **Load generated scene**으로 Simulation으로 이동한다. 기존 세션이 있으면 교체 확인을 받는다.
+   시작 메뉴에서 로드하면 일시정지 상태로 결과를 보여주며 **Continue current session**으로 진행한다.
+   이 장면의 저장 슬롯으로 **Load checkpoint**도 가능하다. 성공 후 **Save settings**로 최근 경로를 저장한다.
+6. 다음 실행에서는 시작 메뉴의 **Load remembered scene**으로 직접 읽는다.
+   이미 작성한 아트·오디오 포함 JSON은 **Load original scene JSON**으로 읽는다.
+
+생성 장면은 **원본 지형 + 임시 캐릭터/몬스터/NPC 표시 + 미리보기 규칙**이다.
+한 지역·플레이어 1명·몬스터 1마리·Guide 1명·처치 퀘스트이며 포털은 없다.
+캐릭터 아트/오디오/원본 오브젝트 배치/캠페인/원작 UI를 자동 추정하지 않는다.
+따라서 생성된 장면은 지형 플레이 준비용이며 `--check-play-ready`는 아트 누락으로 미완료를 보고한다.
+전체 QA-09 통과를 위해서는 아래 아트/오디오 설정과 실제 원본 자료/GUI 검증이 추가로 필요하다.
+검증 범위는 [PLAY_08_RESULTS](PLAY_08_RESULTS.md)에 기록한다.
 
 ## PLAY-01: 선택 지도 사전검사
 

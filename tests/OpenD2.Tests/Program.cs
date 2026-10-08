@@ -26,6 +26,7 @@ try
 	TableContracts.Run(root, Test);
 	PlayAssetContracts.Run(root, Test);
 	PlaySceneContracts.Run(root, Test);
+	SceneSetupContracts.Run(root, Test);
 	ActorArtContracts.Run(Test);
 	AudioContracts.Run(Test);
 	NavigationContracts.Run(Test);
