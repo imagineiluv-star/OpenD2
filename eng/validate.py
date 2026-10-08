@@ -14,7 +14,7 @@ args = parser.parse_args()
 godot = args.godot or (root / ".local-tools/godot-path.txt").read_text(encoding="utf-8").strip()
 
 def run(*command, capture=False):
-    result = subprocess.run(command, cwd=root, text=True, stdout=subprocess.PIPE if capture else None, stderr=subprocess.STDOUT if capture else None)
+    result = subprocess.run(command, cwd=root, text=True, encoding="utf-8", stdout=subprocess.PIPE if capture else None, stderr=subprocess.STDOUT if capture else None)
     if capture:
         print(result.stdout)
     result.check_returncode()
@@ -29,7 +29,9 @@ assert version.strip().startswith("4.6.3.stable.mono."), version
 run("dotnet", "restore", "OpenD2.sln", "--locked-mode", "-m:1", "-p:BuildInParallel=false")
 run("dotnet", "build", "OpenD2.sln", "-c", "Debug", "--no-restore", "-m:1", "-p:BuildInParallel=false")
 run("dotnet", "run", "--project", "tests/OpenD2.Tests", "-c", "Debug", "--no-build")
-run(godot, "--headless", "--path", "src/OpenD2.Client", "--editor", "--import", "--quit", capture=True)
+# Let editor initialization settle before teardown (4.6.3 Android export polling race).
+# --import still waits for the resource scan; do not suppress any engine errors.
+run(godot, "--headless", "--path", "src/OpenD2.Client", "--import", "--quit-after", "120", "--max-fps", "60", capture=True)
 output = run(godot, "--headless", "--path", "src/OpenD2.Client", "--quit-after", "120", "--", "--smoke-test", capture=True)
 assert "OPEND2_M0_READY" in output, "Startup marker missing"
 assert "OPEND2_M104_PREVIEW_READY" in output, "DC6 preview marker missing"

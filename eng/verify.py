@@ -13,7 +13,7 @@ for name in ("Core", "Assets", "Npc"):
     assert refs == ([] if name == "Core" else ["../OpenD2.Core/OpenD2.Core.csproj"]), refs
     assert not list(project.iter("Reference")), "Direct DLL reference requires review"
     for source in folder.glob("*.cs"):
-        assert "Godot" not in source.read_text(), f"Engine dependency: {source}"
+        assert "Godot" not in source.read_text(encoding="utf-8"), f"Engine dependency: {source}"
 # Restrict only NEW migration trees; inherited C++ native binaries remain recorded debt.
 paths = subprocess.check_output(["git", "ls-files", "--cached", "--others", "--exclude-standard"], cwd=root, text=True).splitlines()
 for item in paths:

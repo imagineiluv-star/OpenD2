@@ -45,3 +45,8 @@ CI는 Linux x64·Windows x64·macOS universal의 전체 계약·헤드리스 시
 NPC-02에서 실제 로컬 어댑터·모델 선택/다운로드·해시·라이선스·한국어 품질·토큰 한도·취소/프로세스 복구를 구현하고 목표 PC에서 CPU/GPU/RAM/VRAM·첫 응답/완료 시간·렌더링 병행 성능을 측정한다. 자유 문장 출력을 허용할 경우 사실 모순과 비밀 노출 검증도 추가해야 한다. 모델이 더 똑똑하다는 이유만으로 게임 권한을 넓히지 않는다.
 
 실제 원본 리소스/세이브 변환, Windows/macOS 사용자 GUI·설치, NPC 수백 명·1시간 부하·다중 플레이어는 이번 검증에 포함하지 않았다. 목표 성능 수치는 측정값이 아니며 전체 M1/M2 인수를 완료한 것은 아니다.
+
+
+## 원격에서 발견한 실행 환경 문제
+
+초기 코드 `01015d6`의 CI #37776417349 / #37776456137에서 Linux는 통과했다. Windows는 `eng/verify.py`가 한글 C# 파일을 cp1252로 읽다가 실패해 UTF-8을 명시했다. macOS는 211개 계약 통과 후 Godot import 종료 시 `export/android/android_sdk_path`의 EditorSettings 수명 오류를 보고했다. Godot [관련 수정 #116515](https://github.com/godotengine/godot/pull/116515)와 [고정 버전 소스](https://github.com/godotengine/godot/blob/4.6.3-stable/platform/android/export/export_plugin.cpp)의 별도 장치 확인 스레드를 조사했다. 빠른 초기화/종료와의 경합으로 판단해 import를 120프레임/최대 60fps로 종료하게 조정한다. 리소스 스캔 완료 대기와 모든 ERROR 실패 처리는 유지한다. 이 변경의 원격 결과는 아래 최종 검증으로 확인한다.
