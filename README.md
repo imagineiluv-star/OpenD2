@@ -18,6 +18,8 @@ The historical image and CMake/TCP-IP instructions below describe the original C
 
 [M2-06b1](docs/migration/M2_06B_RESULTS.md) adds optional scene PCM WAV effects/region music, bounded voices and saved audio levels/mute. The synthetic preview uses short generated effect tones; original audio listening acceptance is pending.
 
+[M2-06d](docs/migration/M2_06D_RESULTS.md) adds a paused startup/session menu, in-memory continue and validated checkpoint loading. Choose **New game** to begin; **Menu (Esc)** returns to the menu.
+
 [M2-06c](docs/migration/M2_06C_RESULTS.md) adds eight bag slots, weapon/body slots, item details, restart confirmation and an explicitly loaded remembered scene path. Save settings to retain the path.
 
 ![Diablo II Main Menu in OpenD2](https://i.imgur.com/RFNbRiT.png)

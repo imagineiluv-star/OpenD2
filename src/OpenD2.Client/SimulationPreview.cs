@@ -83,35 +83,37 @@ public partial class SimulationPreview : VBoxContainer
 	public override void _Ready()
 	{
 		smokeTest = OS.GetCmdlineUserArgs().Contains("--smoke-test");
-		AddChild(audio);
-		AddChild(new Label { Text = "Camp / Cellar — offline play" });
-		BuildHud(); AddChild(questInfo); AddChild(view); AddChild(status);
+		AddChild(audio); BuildMenu(); AddChild(playPanel);
+		playPanel.AddChild(new Label { Text = "Camp / Cellar — offline play" });
+		BuildHud(); playPanel.AddChild(questInfo); playPanel.AddChild(view); playPanel.AddChild(status);
 		view.MoveRequested += ClickMove; view.AttackRequested += ClickAttack;
-		var controls = new HFlowContainer(); AddChild(controls);
-		foreach (var button in new[] { restart, pause, attack, interact, save, load }) controls.AddChild(button);
-		AddChild(new Label { Text = "Click ground to move; click a monster to attack. Arrows move · Space attacks · E talks / uses a portal · F picks up loot.\nGreen: NPC · Gold: portal · Gray / purple: blocked cells. Click the game view to use the keyboard.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		var controls = new HFlowContainer(); playPanel.AddChild(controls);
+		foreach (var button in new[] { menuButton, restart, pause, attack, interact, save, load }) controls.AddChild(button);
+		playPanel.AddChild(new Label { Text = "Click ground to move; click a monster to attack. Arrows move · Space attacks · E talks / uses a portal · F picks up loot.\nGreen: NPC · Gold: portal · Gray / purple: blocked cells. Click the game view to use the keyboard.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		BuildInventory();
 		BuildContentControls();
-		AddChild(diagnosticControls);
+		playPanel.AddChild(diagnosticControls);
 		diagnosticControls.AddChild(new Label { Text = "Seed" }); diagnosticControls.AddChild(seedInput);
 		foreach (var button in new[] { singleStep, signal, replay }) diagnosticControls.AddChild(button);
-		AddChild(details); SetDiagnosticsVisible(false);
-		AddChild(new Label { Text = "Camp Guide — 기본 대사 / 선택형 로컬 AI", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		playPanel.AddChild(details); SetDiagnosticsVisible(false);
+		playPanel.AddChild(new Label { Text = "Camp Guide — 기본 대사 / 선택형 로컬 AI", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		BuildNpcSettings();
-		AddChild(dialogueInput); var conversation = new HFlowContainer(); AddChild(conversation);
-		conversation.AddChild(dialogueSend); conversation.AddChild(dialogueConfirm); AddChild(dialogue);
+		playPanel.AddChild(dialogueInput); var conversation = new HFlowContainer(); playPanel.AddChild(conversation);
+		conversation.AddChild(dialogueSend); conversation.AddChild(dialogueConfirm); playPanel.AddChild(dialogue);
 		dialogueSend.Pressed += SendDialogue; dialogueInput.TextSubmitted += _ => SendDialogue(); dialogueConfirm.Pressed += ConfirmDialogue;
 		restart.Pressed += () => ConfirmRestart(NewRun); pause.Pressed += () => { SetPaused(!paused); StopInput(); Refresh(); };
 		singleStep.Pressed += () => { SetPaused(true); StopInput(); if (!verifying) { RunTick(); ShowFrame(); Refresh(); } };
 		signal.Pressed += () => Submit(CommandKind.Signal); attack.Pressed += AttackNearest; interact.Pressed += InteractNearest;
-		replay.Pressed += VerifyReplay; save.Pressed += () => CheckpointFile(false); load.Pressed += () => CheckpointFile(true);
+		replay.Pressed += VerifyReplay; save.Pressed += async () => await CheckpointFile(false, ActiveSavePath);
+		load.Pressed += () => ConfirmRestart(() => _ = CheckpointFile(true, ActiveSavePath));
 		Smoke(); CombatSmoke(); WorldSmoke(); ItemSmoke(); SaveSmoke(); NewRun();
 		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); HudSmoke(); AudioSmoke(); InventorySmoke(); }
-		if (smokeTest) { npcSmokePending = true; dialogueInput.Text = "안녕"; SendDialogue(); }
+		OpenMenu(initial: true);
+		if (smokeTest) Callable.From(() => { _ = MenuSmoke(); }).CallDeferred();
 	}
 	private void NewRun()
 	{
-		ResetDialogue(); ClearRoute(); lastHud = null; selectedItem = default;
+		ResetDialogue(); ClearRoute(); lastHud = null; selectedItem = default; sessionStarted = true;
 		audio.SetBank(legacyScene?.Audio, legacyScene is null);
 		seed = (uint)seedInput.Value; simulation = new(seed, ActiveActors, world: ActiveWorld); view.SetSimulation(simulation);
 		recording = new(simulation); sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
@@ -121,10 +123,10 @@ public partial class SimulationPreview : VBoxContainer
 	}
 	private void SetPaused(bool value) { paused = value; previous = current; pause.Text = paused ? "Resume" : "Pause"; RefreshHud(); SyncAudio(); }
 	public void SetAudioVolume(int master, int effects, int music, bool mute) => audio.SetVolume(master, effects, music, mute);
-	private void SyncAudio() => audio.Sync(current.Region, paused || verifying || !IsVisibleInTree() || !GetWindow().HasFocus());
+	private void SyncAudio() => audio.Sync(current.Region, paused || menuOpen || verifying || !IsVisibleInTree() || !GetWindow().HasFocus());
 	private bool Submit(CommandKind kind, int x = 0, int y = 0, EntityId target = default, ItemId item = default)
 	{
-		if (verifying) return false;
+		if (verifying || menuOpen) return false;
 		var command = new GameCommand(simulation.Tick + 1, sequence + 1, Player, simulation.ActiveRegion, kind, x, y, target, item);
 		var result = recording.Submit(command);
 		if (result != CommandResult.Accepted) { status.Text = $"Command rejected: {result}"; return false; }
@@ -180,7 +182,7 @@ public partial class SimulationPreview : VBoxContainer
 		PollNpcSettings();
 		PollDialogue();
 		SyncAudio();
-		if (verifying) return;
+		if (verifying || menuOpen) return;
 		bool active = current.IsAlive && IsVisibleInTree() && view.HasFocus() && GetWindow().HasFocus();
 		int x = active && !paused ? (Input.IsKeyPressed(Key.Right) ? 1 : 0) - (Input.IsKeyPressed(Key.Left) ? 1 : 0) : 0;
 		int y = active && !paused ? (Input.IsKeyPressed(Key.Down) ? 1 : 0) - (Input.IsKeyPressed(Key.Up) ? 1 : 0) : 0;
@@ -242,7 +244,7 @@ public partial class SimulationPreview : VBoxContainer
 	}
 	private void SendDialogue()
 	{
-		if (verifying || npcOperation is not null) return;
+		if (verifying || menuOpen || npcOperation is not null) return;
 		var facts = NpcDecisionGate.Capture(simulation);
 		var result = npcMind.Request(facts, dialogueInput.Text);
 		if (result == NpcStart.Accepted) { dialogueFacts = facts; dialogueOffer = null; dialogueConfirm.Disabled = true; dialogueInput.Text = ""; }
@@ -310,6 +312,7 @@ public partial class SimulationPreview : VBoxContainer
 	}
 	private async void VerifyReplay()
 	{
+		if (verifying || menuOpen) return;
 		ResetDialogue();
 		SetPaused(true); StopInput(); verifying = true;
 		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop, save, load }) button.Disabled = true;
@@ -331,41 +334,46 @@ public partial class SimulationPreview : VBoxContainer
 			{ verifying = false; foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop, save, load }) button.Disabled = false; Refresh(); }
 		}
 	}
-	private async void CheckpointFile(bool loading)
+	private async Task<bool> CheckpointFile(bool loading, string file)
 	{
-		if (verifying) return;
+		if (verifying) return false;
 		ResetDialogue();
-		SetPaused(true); StopInput(); verifying = true;
+		SetPaused(true); StopInput(); verifying = true; RefreshMenu();
 		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop, save, load }) button.Disabled = true;
-		var checkpoint = simulation.CaptureSnapshot(); status.Text = loading ? "Loading checkpoint..." : "Saving checkpoint...";
+		var checkpoint = simulation.CaptureSnapshot(); var world = ActiveWorld; status.Text = loading ? "Loading checkpoint..." : "Saving checkpoint...";
 		try
 		{
+			// Let the disabled controls/loading message appear even for a tiny local file.
+			await Task.Yield();
+			if (!IsInstanceValid(this) || !IsInsideTree()) return false;
 			if (loading)
 			{
-				var result = await Task.Run(() => GameSave.Load(ActiveSavePath, world: ActiveWorld));
-				if (!IsInstanceValid(this) || !IsInsideTree()) return;
+				var result = await Task.Run(() => GameSave.Load(file, world: world));
+				if (!IsInstanceValid(this) || !IsInsideTree()) return false;
 				if (result.Simulation.WorldPlayer != Player) throw new InvalidDataException("Checkpoint belongs to an unsupported player identity.");
-				simulation = result.Simulation; view.SetSimulation(simulation);
+				simulation = result.Simulation; selectedItem = default; sessionStarted = true; view.SetSimulation(simulation);
 				recording = new(simulation);
 				sequence = recording.Baseline.Inputs.First(c => c.Actor == Player).Sequence;
 				previous = current = simulation.GetEntity(Player); requestedX = current.MoveX; requestedY = current.MoveY;
 				lastAttackTick = simulation.Tick - GameSimulation.PlayerAttackInterval; interactDown = pickupDown = false;
 				clock.Reset(); tickMetrics = new(); view.SignalValue = -1; audio.SetBank(legacyScene?.Audio, legacyScene is null); SyncAudio(); ShowFrame();
-				status.Text = result.RecoveredFromBackup ? "Recovered the previous valid backup. Files preserved; paused for review." : "Checkpoint loaded. Press Resume to continue.";
+				status.Text = result.RecoveredFromBackup ? "Recovered the previous valid backup. Files preserved; paused for review." :
+					menuOpen ? "Checkpoint loaded; paused for review." : "Checkpoint loaded. Press Resume to continue.";
 				log("game_loaded", $"tick={simulation.Tick}, backup={result.RecoveredFromBackup}");
 			}
 			else
 			{
-				await Task.Run(() => GameSave.Save(ActiveSavePath, checkpoint));
-				if (!IsInstanceValid(this) || !IsInsideTree()) return;
-				status.Text = "Checkpoint saved: " + ActiveSavePath; log("game_saved", $"tick={checkpoint.Tick}");
+				await Task.Run(() => GameSave.Save(file, checkpoint));
+				if (!IsInstanceValid(this) || !IsInsideTree()) return false;
+				status.Text = "Checkpoint saved: " + file; log("game_saved", $"tick={checkpoint.Tick}");
 			}
+			return true;
 		}
-		catch (Exception error) { if (IsInstanceValid(this) && IsInsideTree()) { status.Text = "Checkpoint failed: " + error.Message; log("checkpoint_error", error.ToString()); } }
+		catch (Exception error) { if (IsInstanceValid(this) && IsInsideTree()) { status.Text = "Checkpoint failed: " + error.Message; log("checkpoint_error", error.ToString()); } return false; }
 		finally
 		{
 			if (IsInstanceValid(this) && IsInsideTree())
-			{ verifying = false; foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop, save, load }) button.Disabled = false; Refresh(); }
+			{ verifying = false; foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop, save, load }) button.Disabled = false; Refresh(); RefreshMenu(); }
 		}
 	}
 	private static void SaveSmoke()

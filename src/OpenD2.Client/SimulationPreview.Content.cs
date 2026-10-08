@@ -12,7 +12,7 @@ public partial class SimulationPreview
 	private readonly Button demoScene = new() { Text = "Use synthetic scene" };
 	private readonly Button reloadScene = new() { Text = "Load remembered scene", Disabled = true };
 	private readonly Label scenePathInfo = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-	private readonly ConfirmationDialog restartDialog = new() { Exclusive = true, Title = "Start a new session?", DialogText = "Unsaved session progress will be lost. Existing checkpoint files are kept." };
+	private readonly ConfirmationDialog restartDialog = new() { Exclusive = true, Title = "Replace the current session?", DialogText = "Unsaved session progress will be lost. Existing checkpoint files are kept." };
 	private Action? pendingRestart;
 	private bool restartWasPaused;
 	public string ScenePath { get; private set; } = "";
@@ -50,7 +50,7 @@ public partial class SimulationPreview
 	}
 	private void BuildContentControls()
 	{
-		var row = new HFlowContainer(); AddChild(row); row.AddChild(loadScene); row.AddChild(reloadScene); row.AddChild(demoScene); AddChild(scenePathInfo); AddChild(contentInfo);
+		var row = new HFlowContainer(); playPanel.AddChild(row); row.AddChild(loadScene); row.AddChild(reloadScene); row.AddChild(demoScene); playPanel.AddChild(scenePathInfo); playPanel.AddChild(contentInfo);
 		SetScenePath(ScenePath); AddChild(restartDialog);
 		restartDialog.Confirmed += () => { var action = pendingRestart; pendingRestart = null; SetPaused(restartWasPaused); action?.Invoke(); };
 		restartDialog.Canceled += () => { pendingRestart = null; SetPaused(restartWasPaused); };

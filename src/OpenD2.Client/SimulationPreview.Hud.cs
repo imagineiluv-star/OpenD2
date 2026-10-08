@@ -11,7 +11,7 @@ public partial class SimulationPreview
 	private (int Health, int Maximum, bool Paused, RegionId Region)? lastHud;
 	private void BuildHud()
 	{
-		var row = new HBoxContainer(); AddChild(row); row.AddChild(playerStatus); row.AddChild(healthBar);
+		var row = new HBoxContainer(); playPanel.AddChild(row); row.AddChild(playerStatus); row.AddChild(healthBar);
 		healthBar.AddThemeStyleboxOverride("fill", new StyleBoxFlat { BgColor = new Color(0.65f, 0.12f, 0.17f) });
 		healthBar.AddThemeStyleboxOverride("background", new StyleBoxFlat { BgColor = new Color(0.15f, 0.06f, 0.07f) });
 	}
