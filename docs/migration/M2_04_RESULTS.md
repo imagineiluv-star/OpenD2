@@ -35,7 +35,7 @@ Simulation 탭에서 몬스터를 처치한 후 청록색 아이템 표식에 �
 - 준비된 100회의 장착/해제 tick에서 관리 메모리 할당 0바이트를 확인했다. 기존 다지역/전투 무할당 계약도 통과했다. UI·진단·명령 제출까지 무할당이라는 뜻은 아니다.
 - `eng/check-state-vectors.py`의 독립 Python little-endian 인코딩과 C# 이동·전투·퀘스트의 세 고정 hash가 일치한다. 전체 검증과 CI에서 이 스크립트를 실행한다.
 - Godot import·헤드리스 시작·Linux self-contained export 성공. SDK 환경변수와 개발 도구 PATH를 제거한 배포 실행도 종료 코드 0으로 모든 준비 마커를 출력했다.
-- 원격 Linux/Windows/macOS CI 결과는 실행 완료 후 기록한다.
+- 원격 기능 브랜치와 PR의 Linux/Windows/macOS CI가 모두 성공했다. 각 OS에서 164개 계약·Godot 시작·self-contained export를 검증했다.
 
 실행 명령:
 
@@ -55,3 +55,15 @@ git diff --check
 2. **M1/M4**: 실제 1.10f 데이터 없음. 원본 아이템 테이블 의미 해석·드롭 확률·옵션·요구 능력치·내구도·세트·소켓·스택·상점·거래·클래스 능력치와 레벨 성장 등은 미구현이다.
 3. **M2-06/M3**: 음향·완성 HUD·3D 장비 아트·실제 사용자 GUI와 장시간 성능 인수.
 4. **M5/M6**: 네트워크 권한 판정, 영속 경제의 중복 거래 방지, 재접속, 다중 플레이어/지역 인덱스·스트리밍. 현재는 오프라인 메모리 상태다.
+
+## 원격 CI 및 병합
+
+코드 커밋 `a4bc0e343bfb0b62f6a22e18ef2e4f4230d009c6`의 [기능 브랜치 CI #37749752356](https://github.com/imagineiluv-star/OpenD2/actions/runs/37749752356)와 [PR CI #37749794764](https://github.com/imagineiluv-star/OpenD2/actions/runs/37749794764)가 모두 성공했다.
+
+| 환경 | 결과 | 산출물 |
+|---|---|---|
+| ubuntu-24.04 / Linux x64 | 성공 | `OpenD2-M2-Linux` |
+| windows-2025 / Windows x64 | 성공 | `OpenD2-M2-Windows` |
+| macos-15 / macOS universal | 성공 | `OpenD2-M2-macOS` |
+
+병합 검토: [PR #6](https://github.com/imagineiluv-star/OpenD2/pull/6). 코드 CI 이후에는 이 문서와 작업계획의 검증 결과만 갱신한다. master 병합에도 동일 CI를 실행한다. 산출물 보존 기간은 14일이며 실제 사용자 GUI/설치 인수는 별도다.

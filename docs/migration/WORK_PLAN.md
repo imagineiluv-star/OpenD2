@@ -93,9 +93,9 @@ M1 1차 구현: [M1_RESULTS.md](M1_RESULTS.md). 01~03 코드와 합성 검증을
 
 - 엔진 없는 Core/Assets 빌드 및 164개 계약 테스트 통과.
 - M2-04 Godot 헤드리스 시작·Linux 내보내기와 SDK 없는 독립 실행 확인.
-- M2-03 Linux x64·Windows x64·macOS universal의 최종 147개 계약 테스트·헤드리스 시작·내보내기 성공. 로컬 Linux SDK 없는 독립 실행도 확인했다.
+- M2-04 Linux x64·Windows x64·macOS universal의 최종 164개 계약 테스트·헤드리스 시작·내보내기 성공. 로컬 Linux SDK 없는 독립 실행도 확인했다.
 - Windows/macOS 실제 사용자 설치·GUI 실행과 성능 목표 인수는 별도 수행.
-- M2-04 원격 CI는 실행 결과 확인 후 기록한다. [현재 검증 기록](M2_04_RESULTS.md).
+- 기능 브랜치 CI #37749752356와 PR #6 CI #37749794764 모두 성공. [현재 검증 기록](M2_04_RESULTS.md).
 
 ## 다음 구현 순서
 
