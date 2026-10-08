@@ -14,7 +14,7 @@ try
 		var installation = GameInstall.Probe(args[1]);
 		var scene = LegacyPlayScene.Load(args[1], LegacySceneRequest.Read(args[2]));
 		Console.WriteLine(JsonSerializer.Serialize(new { Installation = installation, scene.ContentId, VersionStatus = "unverified", GameplayValidated = false,
-			Maps = scene.Terrain.Select(p => new { Region = p.Key.Value, p.Value.Check }) }, new JsonSerializerOptions { WriteIndented = true }));
+			scene.ArtworkSources, ArtworkActors = scene.Artwork.Keys.Select(id => id.Value), Maps = scene.Terrain.Select(p => new { Region = p.Key.Value, p.Value.Check }) }, new JsonSerializerOptions { WriteIndented = true }));
 		return installation.MissingArchives.Count == 0 ? 0 : 3;
 	}
 	if (args[0] == "--check-map")

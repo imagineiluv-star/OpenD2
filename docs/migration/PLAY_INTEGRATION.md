@@ -7,7 +7,7 @@
 |---|---|---|---|
 | 1 | `feat/play-01-data-check` | 선택 원본 지도 사전검사·출처 해시·공통 로더 | 코드·합성 검증 완료; 실데이터 대기 |
 | 2 | `feat/play-02-map-integration` | 지도/충돌/게임 상태와 화면 연결 | 코드·합성 검증 완료; 실데이터/GUI 대기 |
-| 3 | `feat/play-03-actor-animation` | 게임 상태→캐릭터/몬스터 애니메이션 | 대기 |
+| 3 | `feat/play-03-actor-animation` | 게임 상태→캐릭터/몬스터 애니메이션 | 코드·합성 검증 완료; 실데이터/GUI 대기 |
 | 4 | `feat/play-04-navigation` | 화면 좌표·마우스 이동·벽 우회 | 대기 |
 | 5 | `feat/play-05-content` | 대표 지역·생성 위치·NPC/포털·콘텐츠 연결 | 대기 |
 | 6 | `feat/play-06-continuous-session` | 기록 예산과 플레이 진행 분리 | 대기 |
@@ -108,3 +108,37 @@ ContentId는 지도/팔레트/DT1 파일 해시, 월드와 초기 객체 상태�
 PLAY-01은 [PR #11](https://github.com/imagineiluv-star/OpenD2/pull/11),
 [3개 OS CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37806969136) 성공 후
 master `ca40b9f`에 병합했다. PLAY-02 브랜치는 이 병합 커밋에서 시작했다.
+
+## PLAY-03: 상태별 원본 캐릭터 표현
+
+scene JSON에 선택 `Artwork` 배열을 추가한다. 각 항목은 `Entity`(Actors에 존재하는 ID),
+`PalettePath`, `Motions`다. 각 motion은 아래 형태이며 Idle, Walk, Attack, Hit, Death를 모두 명시한다.
+원본의 클래스/장비 파일명, DCC 방향 번호, 애니메이션 속도를 추정하지 않는다.
+
+```json
+{
+  "Motion": "Walk", "Path": "data/global/chars/YOUR_WALK.dcc",
+  "Layers": null, "Directions": [0, 1, 2, 3, 4, 5, 6, 7], "Fps": 10
+}
+```
+
+`Directions`의 순서는 Core 이동 벡터 `(-1,-1),(0,-1),(1,-1),(1,0),(1,1),(0,1),(-1,1),(-1,0)`다.
+값은 파일 내부 방향 인덱스이며 원본 파일에서 확인해야 한다. 위 번호는 예시다.
+단일 방향 파일은 명시적으로 같은 값을 반복할 수 있지만 다방향 호환을 검증한 것으로 표시하지 않는다.
+COF는 `Path`에 COF를 넣고 `Layers`를 `{"0":"...head.dcc","1":"...torso.dcc"}`처럼 지정한다.
+기존 COF/DCC의 프레임 수·레이어·투명 효과 제한을 그대로 적용한다.
+
+- 원본 파일 읽기/디코딩은 로딩 작업에서 완료한다. 실행 중에는 변경된 프레임의 텍스처만 갱신한다.
+- 동작 우선순위는 Death → Hit → Attack → Walk → Idle. 25Hz 게임 tick으로 진행하고 일시정지 시 정지한다.
+  Death/Attack/Hit는 마지막 프레임을 유지하고 Idle/Walk만 반복한다. 전투 판정이나 RNG에는 영향이 없다.
+- 지역 지형과 캐릭터의 기본 깊이 정렬을 추가했다. 특수 벽·지붕 투명 처리·PL2·그림자·장비 교체별 아트는 아직 미구현/미검증이다.
+- 프로필이 없는 객체는 기존 도형으로 표시한다. 현재 최대 32개 combat actor artwork 프로필이며 NPC 스프라이트는 별도다.
+- 전체 scene 입력 예산 128MiB에 artwork도 포함하고, 지형+캐릭터 indexed pixels 합계를 16,777,216으로 제한한다.
+  같은 motion 안의 반복 방향은 clip을 공유한다. 전체 클래스/장비 아틀라스나 스트리밍 구현은 아니다.
+- artwork의 원본 해시·방향/FPS 설정은 ContentId에 포함된다. artwork가 없는 기존 scene의 ID는 유지한다.
+- 합성 DCC/COF 계약과 배포본 `OPEND2_PLAY03_ACTOR_READY`로 실제 텍스처 생성·게임 상태 연결을 확인한다.
+  실제 LoD 캐릭터의 방향/프레임/색상/가림은 원본 자료와 GUI 대조 전까지 미검증이다.
+
+PLAY-02는 [PR #12](https://github.com/imagineiluv-star/OpenD2/pull/12)의
+[3개 OS CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37808493991) 성공 후 master `cc3b38e`에 병합했다.
+PLAY-03 로컬 최종 검증: 계약 **244/244**, Linux export·배포본 smoke 성공.
