@@ -31,6 +31,7 @@ try
 	ItemContracts.Run(Test);
 	SaveContracts.Run(root, Test);
 	LegacySaveContracts.Run(root, Test);
+	NpcContracts.Run(Test);
 	Test("paths create separate directories", () =>
 	{
 		var paths = new AppPaths(Path.Combine(root, "user")); paths.EnsureCreated();

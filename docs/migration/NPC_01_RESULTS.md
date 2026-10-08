@@ -1,0 +1,64 @@
+# NPC-01 — Camp Guide 비동기 대화 경계
+
+구현일: 2026-10-08 UTC. 작업 브랜치: `feat/m2-playable-slice`, 독립 저장소 `imagineiluv-star/OpenD2`.
+
+## 목적과 실제 범위
+
+NPC 추론을 게임 tick과 분리하고 모델 오류가 게임 상태를 바꾸지 못하는 경계를 먼저 만든다. Camp Guide 한 명의 입력 UI, 3개 허용 의도, 호스트 사실 기반 대사와 플레이어 확인을 연결했다. **현재 응답기는 스크립트이며 실제 LLM·자유 문장 생성·기억·자율 계획은 없다.** 사용자에게 모델/SDK/API 키/서버 설치를 요구하지 않는다.
+
+| 구성 | 책임 |
+|---|---|
+| `OpenD2.Npc/INpcModel` | 불변 요청/사실과 취소 토큰을 받는 교체 가능한 비동기 계약 |
+| `ScriptedNpcModel` | 인사·퀘스트 안내·상호작용 제안의 오프라인 예제 |
+| `NpcMindService` | 소유 스레드 Request/Poll, 작업자 호출, 만료·세대·중복·취소 관리 |
+| `NpcDecisionGate` | 엄격한 JSON, NPC 정체성·세계 사실·거리/벽/생존/피격 검사, 호스트 대사 |
+| Client | 입력/대사/확인 UI, 수명 관리, 기존 Interact 제출 및 trace 기록 |
+
+Core에 엔진·추론 의존성을 추가하지 않았다. 새 Npc 프로젝트는 Core만 참조한다. 소스·솔루션 두 개·lock 파일을 저장소에서 관리하며 새 패키지나 외부 DLL 참조는 없다. 게임 rules v4와 저장 schema v1을 유지한다.
+
+## 실행 계약
+
+- 입력은 최대 512 UTF-16 코드 단위, 공백 전용/제어 문자 거부. 응답은 최대 256 코드 단위 JSON이며 `intent`와 `targetId`만 허용한다. 중복 키·추가 필드·숫자 enum·다른 NPC ID는 거부한다. token 상한은 실제 모델 어댑터의 후속 작업이다.
+- 의도는 `Greeting`, `QuestStatus`, `OfferInteraction`이다. 모델 원문 대사는 표시하지 않는다. 처치 수·임무 단계·보상 횟수 설명은 현재 Core 사실로 생성한다. 플레이어 채팅을 보상 근거나 실행 명령으로 취급하지 않는다.
+- 작업자 1개, 대기 0개. 동기적으로 느린 어댑터 시작도 작업자에서 실행한다. 소유 스레드는 완료된 Task만 읽는다. 기본 8초 단조 시간 만료, 오류/잘못된 응답 시 상호작용 없는 기본 안내를 한 번 표시한다.
+- 취소를 무시하는 어댑터가 끝나지 않으면 슬롯을 계속 차지한다. 새 요청은 Busy지만 게임의 tick은 계속된다. 취소 콜백도 비동기로 처리하고 작업과 콜백이 종료된 뒤 토큰을 정리한다. 인프로세스 코드는 강제 종료할 수 없으므로 실제 런타임의 프로세스 종료/복구는 NPC-02 과제다.
+- 현재 사실·요청 세대가 달라지면 늦은 결과를 폐기한다. 클라이언트는 새 게임·지역 전환·사망·저장/로드·재생 검사·종료 시 무효화한다. 로드가 실패해도 대화는 취소한 상태를 유지한다.
+- 수락/완료 제안은 확인 버튼에서 다시 검증한 후 기존 `Interact`를 제출한다. 실제 tick의 전투·피격·이동·퀘스트 판정은 Core가 수행한다. 한 제안의 확인 버튼은 제출 전에 지운다. 같은 tick 또는 이미 완료된 퀘스트의 중복 보상은 기존 Core 규칙이 막는다.
+- 대기 요청·대사·제안은 저장하지 않는다. 확인한 게임 명령은 기존 trace로 재생한다. 대화 원문은 구조화 로그에 남기지 않으며 요청 ID/결과/의도만 기록한다. 영속 기억·대사 재생은 NPC-03 범위다.
+
+## 검증
+
+`dotnet run --project tests/OpenD2.Tests --no-build`의 실행형 계약 테스트를 사용한다. 전체 211개 중 NPC 23개를 추가했다. 정상 3의도, 위조/중복/길이 제한, 생존·지역·거리·벽·피격 조건, 1,000 tick 무대기/상태 동일성, 동기/비동기 오류, 만료 후 1,000회 재시도 상한, 취소 콜백 지연/예외, 동일 상태 로드·지역 왕복·퀘스트 변경·범위 이탈, 확인 재검증·명령 재생, 100회 반복 요청·중복 차단·종료를 검사한다. 수동 시간 공급자를 사용해 8초 테스트에 실제 8초를 기다리지 않는다.
+
+로컬 최종 명령:
+
+```sh
+python3 eng/validate.py --export Linux
+env -u DOTNET_ROOT -u DOTNET_ROOT_X64 PATH=/usr/bin:/bin \
+  ./artifacts/Linux/OpenD2.x86_64 --headless --quit-after 120 -- --smoke-test
+```
+
+CI는 Linux x64·Windows x64·macOS universal의 전체 계약·헤드리스 시작·내보내기를 검사한다. `OPEND2_NPC01_DIALOGUE_READY`는 실제 클라이언트 입력→작업자→Poll→표시 경로가 완료된 경우 출력한다. 로컬 전체 211/211 계약, Godot import·대화 헤드리스 smoke, Linux export와 SDK 없는 실행이 통과했다. 초기 지역 왕복 fixture는 입구 몬스터의 피격으로 포털이 정상 거부되어 실패했으며, 전투와 독립적인 수명 검사를 위해 몬스터를 인식 범위 밖에 배치한 뒤 다시 통과했다. 원격 3개 OS CI는 PR에서 확인 후 run ID를 추가한다.
+
+## 남은 작업
+
+NPC-02에서 실제 로컬 어댑터·모델 선택/다운로드·해시·라이선스·한국어 품질·토큰 한도·취소/프로세스 복구를 구현하고 목표 PC에서 CPU/GPU/RAM/VRAM·첫 응답/완료 시간·렌더링 병행 성능을 측정한다. 자유 문장 출력을 허용할 경우 사실 모순과 비밀 노출 검증도 추가해야 한다. 모델이 더 똑똑하다는 이유만으로 게임 권한을 넓히지 않는다.
+
+실제 원본 리소스/세이브 변환, Windows/macOS 사용자 GUI·설치, NPC 수백 명·1시간 부하·다중 플레이어는 이번 검증에 포함하지 않았다. 목표 성능 수치는 측정값이 아니며 전체 M1/M2 인수를 완료한 것은 아니다.
+
+
+## 원격에서 발견한 실행 환경 문제
+
+초기 코드 `01015d6`의 CI #37776417349 / #37776456137에서 Linux는 통과했다. Windows는 `eng/verify.py`가 한글 C# 파일을 cp1252로 읽다가 실패해 UTF-8을 명시했다. macOS는 211개 계약 통과 후 Godot import 종료 시 `export/android/android_sdk_path`의 EditorSettings 수명 오류를 보고했다. Godot [관련 수정 #116515](https://github.com/godotengine/godot/pull/116515)와 [고정 버전 소스](https://github.com/godotengine/godot/blob/4.6.3-stable/platform/android/export/export_plugin.cpp)의 별도 장치 확인 스레드를 조사했다. 빠른 초기화/종료와의 경합으로 판단해 import를 120프레임/최대 60fps로 종료하게 조정한다. 리소스 스캔 완료 대기와 모든 ERROR 실패 처리는 유지한다. 이 변경의 원격 결과는 아래 최종 검증으로 확인한다.
+
+
+`bd27d41` 기능 브랜치 CI #37777178855는 세 OS에서 통과했으나 PR CI #37777187171의 macOS에서 동일한 종료 오류가 다시 발생했다. 따라서 종료 지연은 엔진 경합의 완전한 수정이 아니다. 같은 코드의 실패한 macOS 작업만 재실행하며, 오류 필터를 약화하거나 NPC/게임 계약 실패를 무시하지 않는다. 고정 Godot 버전의 편집기 종료 경합은 후속 도구체인 업데이트에서 재검증할 잔여 위험이다. 현재 관측 위치는 편집기 import 종료이며, 통과한 macOS run의 게임 smoke와 export는 성공했다.
+
+
+## 최종 검증 기록
+
+- 검증 코드: `bd27d41fdb436552228bca0a9ea9a60459843823`.
+- [기능 브랜치 CI #37777178855](https://github.com/imagineiluv-star/OpenD2/actions/runs/37777178855): Linux x64·Windows x64·macOS universal 모두 성공. 각 로그에서 211/211 계약, NPC 대화 marker, export 완료를 확인했다.
+- [PR CI #37777187171](https://github.com/imagineiluv-star/OpenD2/actions/runs/37777187171): 최종 세 OS 성공. macOS의 편집기 import 종료 경합으로 실패 작업을 1회 재실행했으며 성공했다. 위 잔여 위험이 해결됐다고 간주하지 않는다.
+- 로컬 Linux: 동일 코드의 전체 검증과 export 성공; NPC 런타임의 SDK 없는 독립 실행도 확인했다.
+- [PR #8](https://github.com/imagineiluv-star/OpenD2/pull/8). 이 기록 추가 커밋은 문서만 변경하며 런타임/테스트/빌드 스크립트는 검증된 코드와 동일하다. 병합 뒤 master CI도 확인한다.

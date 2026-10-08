@@ -16,13 +16,14 @@ Godot 4 계열 안정판 .NET 에디션을 사용한다. 정확한 Godot 버전,
 |---|---|---|
 | `src/OpenD2.Core` | 게임 상태, 전투, 아이템, 퀘스트, 지역 상태, 저장 DTO와 버전 변환 | 없음 |
 | `src/OpenD2.Assets` | MPQ 접근, 포맷 해독, 테이블·콘텐츠 매핑 | Core |
-| `src/OpenD2.Client` | Godot 프로젝트, 입력, 2D/3D 표현, UI, 로컬 저장 I/O | Core, Assets |
+| `src/OpenD2.Npc` | 비동기 모델 계약·대화 검증·기본 대사 | Core |
+| `src/OpenD2.Client` | Godot 프로젝트, 입력, 2D/3D 표현, UI, 로컬 저장 I/O | Core, Assets, Npc |
 | `tools/OpenD2.AssetAudit` | 자산 목록·해시·디코딩 결과 점검 CLI | Core, Assets |
-| `tests/OpenD2.Tests` | 파서 경계·규칙·저장·콘텐츠 계약 시험 | Core, Assets |
+| `tests/OpenD2.Tests` | 파서 경계·규칙·저장·콘텐츠·NPC 계약 시험 | Core, Assets, Npc |
 
 초기부터 Abstractions/Services/Managers 프로젝트를 나누지 않는다. 별도 호스트가 필요해지는 M5에서만 `OpenD2.Server`를 추가한다. 인터페이스는 자산 접근·저장·전송처럼 실제 교체 경계에만 둔다. 게임 내부 객체마다 인터페이스나 DI 등록을 만들지 않는다.
 
-Core와 Assets에는 `Godot`, `UnityEngine`, GPU 텍스처, 장면 노드 참조를 두지 않는다. 디코더는 픽셀·팔레트·프레임 시간·타일 셀·충돌 정보 등 엔진 독립 결과를 반환하고 Client가 이를 Godot 리소스로 변환한다. 좌표 변환은 Client 경계에서 수행한다.
+Core·Assets·Npc에는 `Godot`, `UnityEngine`, GPU 텍스처, 장면 노드 참조를 두지 않는다. 디코더는 픽셀·팔레트·프레임 시간·타일 셀·충돌 정보 등 엔진 독립 결과를 반환하고 Client가 이를 Godot 리소스로 변환한다. 좌표 변환은 Client 경계에서 수행한다.
 
 ## 시뮬레이션 및 화면 갱신
 
@@ -131,4 +132,6 @@ Core의 `GameItems`가 아이템 단일 소유권과 장착 능력치를 관리�
 
 ## 선택형 NPC 지능
 
-LLM은 Core 바깥의 비동기 제안자이며 전투/이동/경제/퀘스트 권한을 갖지 않는다. 기본 AI + 선택형 로컬 추론을 우선 검토하고 서버 추론은 M5 요구와 비용 실측 후 추가한다. NPC 기억/요약, 관심 영역별 호출, 요청 세대/만료/중복 검사, 저장/재생 경계와 구현 단계는 [NPC_LLM_DESIGN](NPC_LLM_DESIGN.md)에 정의했다. 현재 모델 호출 및 NPC 기억 코드는 미구현이다.
+LLM은 Core 바깥의 비동기 제안자이며 전투/이동/경제/퀘스트 권한을 갖지 않는다. 기본 AI + 선택형 로컬 추론을 우선 검토하고 서버 추론은 M5 요구와 비용 실측 후 추가한다. NPC 기억/요약, 관심 영역별 호출, 요청 세대/만료/중복 검사, 저장/재생 경계와 구현 단계는 [NPC_LLM_DESIGN](NPC_LLM_DESIGN.md)에 정의했다. NPC-01은 `OpenD2.Npc`의 `INpcModel`·`NpcMindService`·`NpcDecisionGate`와 Camp Guide UI를 구현했다. 어댑터는 불변 사실 값만 받고 작업자에서 실행되며, 소유 스레드는 Poll로 완료를 처리한다. 실행 슬롯 1개/대기 0개, 단조 시간 8초 만료와 세대 무효화로 늦은 응답을 차단한다. 취소를 무시하는 작업도 끝날 때까지 슬롯을 차지하므로 재시도가 작업자를 누적시키지 않는다.
+
+응답은 허용된 intent와 요청 NPC의 targetId만 받는다. 대사·처치 수·퀘스트 단계는 호스트가 만들며 모델 원문을 표시하지 않는다. 제안은 플레이어 확인 시 사전조건을 다시 검사하고 기존 Interact 명령으로 기록한다. Core는 실제 실행 tick의 거리·피격·공격·지역을 최종 판정한다. 게임 규칙 v4와 저장 스키마 v1은 그대로다. 현재 대화·제안·진행 요청은 저장하지 않고 게임 명령만 재생한다. 실제 LLM·영속 기억·대사 재생은 후속 작업이다. [검증과 제한](NPC_01_RESULTS.md).
