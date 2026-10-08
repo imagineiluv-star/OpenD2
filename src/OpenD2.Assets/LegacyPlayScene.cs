@@ -12,7 +12,7 @@ public sealed record PlaySpawn(uint Id, uint Region, int X, int Y, bool Player, 
 public sealed record PlayNpc(uint Id, uint Region, int X, int Y, string Name);
 public sealed record PlayPortal(uint Id, uint Region, int X, int Y, uint Destination, int ArrivalX, int ArrivalY);
 public sealed record LegacySceneRequest(int SchemaVersion, string Title, PlayRegion[] Regions, PlaySpawn[] Actors,
-	PlayNpc Npc, PlayPortal[] Portals, uint[] QuestTargets, LegacyActorRequest[]? Artwork = null)
+	PlayNpc Npc, PlayPortal[] Portals, uint[] QuestTargets, LegacyActorRequest[]? Artwork = null, bool NavigateWalls = false)
 {
 	public static LegacySceneRequest Read(string file)
 	{
@@ -71,7 +71,7 @@ public sealed class LegacyPlayScene
 		}
 		var world = new WorldDefinition(regions.Select(r => new WorldRegion(r.Name, terrain[new(r.Id)].Scene.ToCollisionGrid(new(r.Id)))),
 			portals.Select(p => new WorldPortal(new(p.Id), new(p.Region), new(p.X, p.Y), new(p.Destination), new(p.ArrivalX, p.ArrivalY))),
-			new(new(npc.Id), new(npc.Region), new(npc.X, npc.Y), npc.Name), targets.Select(id => new EntityId(id)), title);
+			new(new(npc.Id), new(npc.Region), new(npc.X, npc.Y), npc.Name), targets.Select(id => new EntityId(id)), title, request.NavigateWalls);
 		var actors = spawns.Select(a => new EntityState(new(a.Id), new(a.Region), new(a.X, a.Y), Kind: a.Player ? EntityKind.Player : EntityKind.Monster, Health: a.Health, MaxHealth: a.Health)).OrderBy(a => a.Id.Value).ToArray();
 		_ = new GameSimulation(1, actors, world: world); // Validate IDs, ownership, spawns, quest targets and portal references before exposing content.
 		var artwork = new Dictionary<EntityId, LegacyActorArt>(); var artworkSources = new List<LegacyAssetSource>();

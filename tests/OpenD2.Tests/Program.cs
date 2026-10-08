@@ -27,6 +27,7 @@ try
 	PlayAssetContracts.Run(root, Test);
 	PlaySceneContracts.Run(root, Test);
 	ActorArtContracts.Run(Test);
+	NavigationContracts.Run(Test);
 	MpqContracts.Run(root, Test);
 	SimulationContracts.Run(Test);
 	CombatContracts.Run(Test);

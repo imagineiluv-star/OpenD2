@@ -8,7 +8,7 @@
 | 1 | `feat/play-01-data-check` | 선택 원본 지도 사전검사·출처 해시·공통 로더 | 코드·합성 검증 완료; 실데이터 대기 |
 | 2 | `feat/play-02-map-integration` | 지도/충돌/게임 상태와 화면 연결 | 코드·합성 검증 완료; 실데이터/GUI 대기 |
 | 3 | `feat/play-03-actor-animation` | 게임 상태→캐릭터/몬스터 애니메이션 | 코드·합성 검증 완료; 실데이터/GUI 대기 |
-| 4 | `feat/play-04-navigation` | 화면 좌표·마우스 이동·벽 우회 | 대기 |
+| 4 | `feat/play-04-navigation` | 화면 좌표·마우스 이동·벽 우회 | 코드·합성 검증 완료; GUI 대기 |
 | 5 | `feat/play-05-content` | 대표 지역·생성 위치·NPC/포털·콘텐츠 연결 | 대기 |
 | 6 | `feat/play-06-continuous-session` | 기록 예산과 플레이 진행 분리 | 대기 |
 | 7 | `feat/play-07-acceptance` | 배포·실제 GUI·증거/인수 | 대기 |
@@ -142,3 +142,25 @@ COF는 `Path`에 COF를 넣고 `Layers`를 `{"0":"...head.dcc","1":"...torso.dcc
 PLAY-02는 [PR #12](https://github.com/imagineiluv-star/OpenD2/pull/12)의
 [3개 OS CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37808493991) 성공 후 master `cc3b38e`에 병합했다.
 PLAY-03 로컬 최종 검증: 계약 **244/244**, Linux export·배포본 smoke 성공.
+
+## PLAY-04: 클릭 이동과 제한된 탐색
+
+지면 클릭은 알려진 이동 가능 셀의 중심으로 이동한다. 몬스터 클릭은 근접 거리/시야가 확보되면
+한 번 공격하고, 멀면 클릭 당시 위치까지 경로를 계산해 접근 후 공격한다. 움직이는 목표를 무한 추적하거나
+자동 공격을 반복하지 않는다. 방향키, 포커스 상실, 일시정지, 지역 전환, 사망, 저장/로드는 경로를 취소한다.
+정지 장애물이 25 tick 동안 진행을 막으면 새 목적지를 클릭하라는 안내를 표시한다.
+
+- A*는 8방향, 대각선 코너 통과 금지, 미확인 셀 차단, 고정 동률 순서, 최대 4,096개 탐색 노드다.
+  예산 초과/도달 불가는 부분 경로를 성공으로 반환하지 않는다. 동적 객체 충돌은 기존 Core가 최종 판정한다.
+- scene JSON의 `NavigateWalls: true`는 몬스터 벽 우회를 활성화한다. 기본값 false는 기존 규칙/세이브의 동작을 보존한다.
+  켜진 모드는 월드 콘텐츠 해시에 포함되므로 다른 모드의 저장 파일을 잘못 불러오지 않는다.
+- 몬스터 탐색은 tick당 합계 최대 512개 확장 노드다. 직선 통행이 되면 경로 검색을 생략한다.
+  예산이 소진된 객체는 이번 tick에 정지한다. 복잡한 군집의 공정성·공간 인덱스·대형 월드 성능은 별도 인수다.
+- 플레이어 경로는 입력 명령으로만 Core에 전달한다. NPC 경로 결정은 상태/tick/지도에서 재계산하며 숨은 저장 상태나 RNG를 추가하지 않는다.
+  기존 rules-v4 독립 상태 벡터를 유지하고, 옵션이 켜진 미로의 이동·공격·snapshot 이후 결정성을 별도로 시험한다.
+- 합성 headless `OPEND2_PLAY04_NAVIGATION_READY`는 클라이언트 경로 진행을 검사한다.
+  실제 마우스/키보드 GUI 검증은 여전히 미실행이다.
+
+PLAY-03은 [PR #13](https://github.com/imagineiluv-star/OpenD2/pull/13),
+[3개 OS CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37809879059) 성공 후 master `a29becf`에 병합했다.
+PLAY-04 로컬 검증: **249/249**, 기존 rules-v4 독립 벡터, Linux export·배포 smoke 통과.
