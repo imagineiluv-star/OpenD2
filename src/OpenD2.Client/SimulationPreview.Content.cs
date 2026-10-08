@@ -27,6 +27,7 @@ public partial class SimulationPreview
 			throw new InvalidDataException("Legacy terrain/session integration smoke failed.");
 		Submit(CommandKind.SetMove, 1, 0); RunTick();
 		if (simulation.GetEntity(Player).Position.X <= 384) throw new InvalidDataException("Legacy terrain movement smoke failed.");
+		NavigationSmoke();
 		view.SetTerrain(null); legacyScene = null; NewRun();
 		GD.Print("OPEND2_PLAY02_TERRAIN_READY");
 		GD.Print("OPEND2_PLAY03_ACTOR_READY");

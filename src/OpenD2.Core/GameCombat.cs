@@ -16,6 +16,7 @@ public sealed partial class GameSimulation
 	{ events[eventCount++] = new(tick, kind, actor.Id, actor.Region, actor.Position, to, value, target); }
 	private void Think(long tick)
 	{
+		int navigationBudget = 512;
 		for (int i = 0; i < entities.Length; i++)
 		{
 			var e = entities[i]; if (e.Kind != EntityKind.Monster || !e.IsAlive || !canAct[i]) continue;
@@ -30,6 +31,17 @@ public sealed partial class GameSimulation
 			var mode = target < 0 ? MonsterMode.Idle : nearest <= (long)AttackRange * AttackRange && Collision!.HasMeleeLine(e.Position, entities[target].Position) ? MonsterMode.Attacking : MonsterMode.Chasing;
 			int x = mode == MonsterMode.Chasing ? Math.Sign(entities[target].Position.X - e.Position.X) : 0;
 			int y = mode == MonsterMode.Chasing ? Math.Sign(entities[target].Position.Y - e.Position.Y) : 0;
+			if (mode == MonsterMode.Chasing && World?.NavigateWalls == true && !GridPathfinder.HasWalkLine(Collision!, e.Position, entities[target].Position))
+			{
+				x = y = 0;
+				if (navigationBudget > 0)
+				{
+					var route = GridPathfinder.Find(Collision!, e.Position, entities[target].Position, navigationBudget);
+					navigationBudget -= Math.Max(1, route.Expanded);
+					if (route.Status == PathStatus.Found && route.Points.Count > 0)
+					{ x = Math.Sign(route.Points[0].X - e.Position.X); y = Math.Sign(route.Points[0].Y - e.Position.Y); }
+				}
+			}
 			entities[i] = e with { Target = id, Mode = mode, MoveX = x, MoveY = y };
 			if (e.Mode != mode || e.Target != id) Emit(tick, SimulationEventKind.MonsterChanged, e, e.Position, (int)mode, id);
 			if (mode == MonsterMode.Attacking && e.AttackCooldown == 0) attacks[i] = id;

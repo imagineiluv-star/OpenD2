@@ -25,8 +25,9 @@ public sealed class WorldDefinition
 	public WorldNpc QuestGiver { get; }
 	public string QuestTitle { get; }
 	public string ContentHash { get; }
+	public bool NavigateWalls { get; }
 	public WorldDefinition(IEnumerable<WorldRegion> regions, IEnumerable<WorldPortal> portals, WorldNpc questGiver,
-		IEnumerable<EntityId> questTargets, string questTitle)
+		IEnumerable<EntityId> questTargets, string questTitle, bool navigateWalls = false)
 	{
 		ArgumentNullException.ThrowIfNull(regions); ArgumentNullException.ThrowIfNull(portals); ArgumentNullException.ThrowIfNull(questTargets);
 		this.regions = regions.Take(MaxRegions + 1).ToArray();
@@ -45,7 +46,7 @@ public sealed class WorldDefinition
 		this.questTargets = questTargets.Take(MaxQuestTargets + 1).OrderBy(id => id.Value).ToArray();
 		if (this.questTargets.Length is < 1 or > MaxQuestTargets) throw new ArgumentException("Invalid quest target count.");
 		foreach (var id in this.questTargets) if (id.Value == 0 || !ids.Add(id)) throw new ArgumentException("Invalid or duplicate quest target.");
-		QuestGiver = questGiver; QuestTitle = questTitle;
+		QuestGiver = questGiver; QuestTitle = questTitle; NavigateWalls = navigateWalls;
 		ContentHash = HashContent();
 	}
 	public WorldRegion GetRegion(RegionId id)
@@ -85,6 +86,7 @@ public sealed class WorldDefinition
 		writer.Write(QuestGiver.Id.Value); writer.Write(QuestGiver.Region.Value); writer.Write(QuestGiver.Position.X); writer.Write(QuestGiver.Position.Y);
 		writer.Write(QuestGiver.Name); writer.Write(QuestTitle); writer.Write(questTargets.Length);
 		foreach (var id in questTargets) writer.Write(id.Value);
+		if (NavigateWalls) writer.Write("bounded-navigation-v1"); // Default worlds preserve their existing content hash.
 		writer.Flush(); return Convert.ToHexStringLower(SHA256.HashData(stream.GetBuffer().AsSpan(0, (int)stream.Length)));
 	}
 }

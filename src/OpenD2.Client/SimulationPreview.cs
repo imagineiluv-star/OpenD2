@@ -88,8 +88,9 @@ public partial class SimulationPreview : VBoxContainer
 	{
 		smokeTest = OS.GetCmdlineUserArgs().Contains("--smoke-test");
 		AddChild(new Label { Text = "Town / dungeon slice — 25 ticks per second" });
-		AddChild(new Label { Text = "Click the grid: arrows move, Space attacks, E talks / uses a portal, F picks up nearby loot.\nGreen: NPC. Gold: portal. Gray walls and purple unknown cells block movement.\nDefault: synthetic maps and rules. Load a checked legacy scene below for original terrain.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		AddChild(new Label { Text = "Click ground to move / click a monster to attack. Arrows move, Space attacks, E talks / uses a portal, F picks up nearby loot.\nGreen: NPC. Gold: portal. Gray walls and purple unknown cells block movement.\nDefault: synthetic maps and rules. Load a checked legacy scene below for original terrain.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		BuildContentControls();
+		view.MoveRequested += ClickMove; view.AttackRequested += ClickAttack;
 		var controls = new HFlowContainer(); AddChild(controls);
 		controls.AddChild(new Label { Text = "Seed" }); controls.AddChild(seedInput);
 		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, save, load }) controls.AddChild(button);
@@ -116,7 +117,7 @@ public partial class SimulationPreview : VBoxContainer
 	}
 	private void NewRun()
 	{
-		ResetDialogue();
+		ResetDialogue(); ClearRoute();
 		seed = (uint)seedInput.Value; simulation = new(seed, ActiveActors, world: ActiveWorld); view.SetSimulation(simulation);
 		trace.Clear(); replayCheckpoint = null; recordingStart = 0; sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
 		previous = current = simulation.GetEntity(Player); view.SignalValue = -1; interactDown = pickupDown = false; SetPaused(false);
@@ -195,6 +196,7 @@ public partial class SimulationPreview : VBoxContainer
 	}
 	private void StopInput()
 	{
+		ClearRoute();
 		if ((requestedX != 0 || requestedY != 0) && Submit(CommandKind.SetMove)) requestedX = requestedY = 0;
 	}
 	public override void _Process(double delta)
@@ -206,6 +208,7 @@ public partial class SimulationPreview : VBoxContainer
 		bool active = current.IsAlive && IsVisibleInTree() && view.HasFocus() && GetWindow().HasFocus();
 		int x = active && !paused ? (Input.IsKeyPressed(Key.Right) ? 1 : 0) - (Input.IsKeyPressed(Key.Left) ? 1 : 0) : 0;
 		int y = active && !paused ? (Input.IsKeyPressed(Key.Down) ? 1 : 0) - (Input.IsKeyPressed(Key.Up) ? 1 : 0) : 0;
+		(x, y) = FollowRoute(active, x, y);
 		if ((x != requestedX || y != requestedY) && Submit(CommandKind.SetMove, x, y)) { requestedX = x; requestedY = y; }
 		if (active && !paused && Input.IsKeyPressed(Key.Space) && simulation.Tick - lastAttackTick >= GameSimulation.PlayerAttackInterval) AttackNearest();
 		bool pressed = active && !paused && Input.IsKeyPressed(Key.E);
@@ -222,8 +225,9 @@ public partial class SimulationPreview : VBoxContainer
 		if (simulation.Tick - recordingStart >= MaxRecordingTicks) { SetPaused(true); status.Text = "Ten-minute recording limit reached. Start a new run."; return; }
 		previous = current; long start = Stopwatch.GetTimestamp(); simulation.Step();
 		tickMetrics.Record(Stopwatch.GetElapsedTime(start).TotalSeconds); current = simulation.GetEntity(Player);
+		ObserveRouteTick();
 		bool worldChanged = previous.Region != current.Region;
-		if (worldChanged || (previous.IsAlive && !current.IsAlive)) ResetDialogue();
+		if (worldChanged || (previous.IsAlive && !current.IsAlive)) { ResetDialogue(); ClearRoute(); }
 		if (worldChanged) { previous = current; requestedX = requestedY = 0; }
 		if (!current.IsAlive) requestedX = requestedY = 0;
 		foreach (var item in simulation.Events)
@@ -480,7 +484,7 @@ public partial class SimulationCanvas : Control
 	}
 	public override void _GuiInput(InputEvent input)
 	{
-		if (input is InputEventMouseButton { Pressed: true }) GrabFocus();
+		if (input is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } mouse) { GrabFocus(); ClickWorld(mouse.Position); AcceptEvent(); }
 		if (input is InputEventKey { Keycode: Key.Up or Key.Down or Key.Left or Key.Right or Key.Space or Key.E or Key.F }) AcceptEvent();
 	}
 	public override void _Draw()
