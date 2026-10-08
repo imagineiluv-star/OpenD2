@@ -25,9 +25,7 @@ public partial class SimulationPreview : VBoxContainer
 	private readonly Button equip = new() { Text = "Equip selected" };
 	private readonly Button unequip = new() { Text = "Unequip selected" };
 	private readonly Button drop = new() { Text = "Drop selected" };
-	private readonly OptionButton ownedItems = new();
 	private readonly Label gearInfo = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-	private readonly List<ItemId> itemChoices = new();
 	private readonly Button save = new() { Text = "Save checkpoint" };
 	private readonly Button load = new() { Text = "Load checkpoint" };
 	private readonly NpcMindService npcMind;
@@ -92,14 +90,7 @@ public partial class SimulationPreview : VBoxContainer
 		var controls = new HFlowContainer(); AddChild(controls);
 		foreach (var button in new[] { restart, pause, attack, interact, save, load }) controls.AddChild(button);
 		AddChild(new Label { Text = "Click ground to move; click a monster to attack. Arrows move · Space attacks · E talks / uses a portal · F picks up loot.\nGreen: NPC · Gold: portal · Gray / purple: blocked cells. Click the game view to use the keyboard.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
-		var inventory = new HFlowContainer(); AddChild(inventory);
-		inventory.AddChild(ownedItems);
-		foreach (var button in new[] { pickup, equip, unequip, drop }) inventory.AddChild(button);
-		pickup.Pressed += PickupNearest;
-		equip.Pressed += () => UseSelected(CommandKind.Equip);
-		unequip.Pressed += () => UseSelected(CommandKind.Unequip);
-		drop.Pressed += () => UseSelected(CommandKind.DropItem);
-		AddChild(gearInfo);
+		BuildInventory();
 		BuildContentControls();
 		AddChild(diagnosticControls);
 		diagnosticControls.AddChild(new Label { Text = "Seed" }); diagnosticControls.AddChild(seedInput);
@@ -110,17 +101,17 @@ public partial class SimulationPreview : VBoxContainer
 		AddChild(dialogueInput); var conversation = new HFlowContainer(); AddChild(conversation);
 		conversation.AddChild(dialogueSend); conversation.AddChild(dialogueConfirm); AddChild(dialogue);
 		dialogueSend.Pressed += SendDialogue; dialogueInput.TextSubmitted += _ => SendDialogue(); dialogueConfirm.Pressed += ConfirmDialogue;
-		restart.Pressed += NewRun; pause.Pressed += () => { SetPaused(!paused); StopInput(); Refresh(); };
+		restart.Pressed += () => ConfirmRestart(NewRun); pause.Pressed += () => { SetPaused(!paused); StopInput(); Refresh(); };
 		singleStep.Pressed += () => { SetPaused(true); StopInput(); if (!verifying) { RunTick(); ShowFrame(); Refresh(); } };
 		signal.Pressed += () => Submit(CommandKind.Signal); attack.Pressed += AttackNearest; interact.Pressed += InteractNearest;
 		replay.Pressed += VerifyReplay; save.Pressed += () => CheckpointFile(false); load.Pressed += () => CheckpointFile(true);
 		Smoke(); CombatSmoke(); WorldSmoke(); ItemSmoke(); SaveSmoke(); NewRun();
-		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); HudSmoke(); AudioSmoke(); }
+		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); HudSmoke(); AudioSmoke(); InventorySmoke(); }
 		if (smokeTest) { npcSmokePending = true; dialogueInput.Text = "안녕"; SendDialogue(); }
 	}
 	private void NewRun()
 	{
-		ResetDialogue(); ClearRoute(); lastHud = null;
+		ResetDialogue(); ClearRoute(); lastHud = null; selectedItem = default;
 		audio.SetBank(legacyScene?.Audio, legacyScene is null);
 		seed = (uint)seedInput.Value; simulation = new(seed, ActiveActors, world: ActiveWorld); view.SetSimulation(simulation);
 		recording = new(simulation); sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
@@ -177,27 +168,6 @@ public partial class SimulationPreview : VBoxContainer
 		}
 		if (nearest == default) { status.Text = "No loot in this region."; return; }
 		Submit(CommandKind.Pickup, item: nearest);
-	}
-	private void UseSelected(CommandKind kind)
-	{
-		int selected = ownedItems.Selected;
-		if (selected >= 0 && selected < itemChoices.Count) Submit(kind, item: itemChoices[selected]);
-	}
-	private void RefreshItems()
-	{
-		ItemId selected = ownedItems.Selected >= 0 && ownedItems.Selected < itemChoices.Count ? itemChoices[ownedItems.Selected] : default;
-		itemChoices.Clear(); ownedItems.Clear(); int bagCount = 0;
-		foreach (var item in simulation.Items)
-		{
-			if (item.Owner != Player) continue;
-			if (item.Location == ItemLocation.Inventory) bagCount++;
-			var spec = ItemCatalog.Get(item.Definition);
-			ownedItems.AddItem($"{(item.Location == ItemLocation.Equipped ? spec.Slot.ToString() : $"Bag {item.Slot + 1}")}: {spec.Name} #{item.Id.Value}");
-			itemChoices.Add(item.Id);
-			if (item.Id == selected) ownedItems.Select(itemChoices.Count - 1);
-		}
-		var stats = simulation.GetStats(Player);
-		gearInfo.Text = $"Bag {bagCount}/{GameSimulation.InventoryCapacity} | Damage {stats.MinimumDamage}–{stats.MaximumDamage} | Armor {stats.Armor} (flat reduction, minimum hit 1)";
 	}
 	private void StopInput()
 	{

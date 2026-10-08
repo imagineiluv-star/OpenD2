@@ -10,6 +10,22 @@ public partial class SimulationPreview
 	private readonly Func<string> gameDirectory;
 	private readonly Button loadScene = new() { Text = "Load legacy scene JSON" };
 	private readonly Button demoScene = new() { Text = "Use synthetic scene" };
+	private readonly Button reloadScene = new() { Text = "Load remembered scene", Disabled = true };
+	private readonly Label scenePathInfo = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
+	private readonly ConfirmationDialog restartDialog = new() { Exclusive = true, Title = "Start a new session?", DialogText = "Unsaved session progress will be lost. Existing checkpoint files are kept." };
+	private Action? pendingRestart;
+	private bool restartWasPaused;
+	public string ScenePath { get; private set; } = "";
+	public void SetScenePath(string path)
+	{
+		ScenePath = path; reloadScene.Disabled = verifying || path.Length == 0;
+		scenePathInfo.Text = path.Length == 0 ? "No remembered scene. Choose a scene JSON once to reuse it." : "Remembered scene: " + path + "\nSave settings to keep this path. Loading remains an explicit action.";
+	}
+	private void ConfirmRestart(Action action)
+	{
+		if (verifying || pendingRestart is not null) return;
+		restartWasPaused = paused; SetPaused(true); StopInput(); pendingRestart = action; restartDialog.PopupCentered();
+	}
 	private readonly Label contentInfo = new() { Text = "Synthetic Camp / Cellar. Original resources are not loaded.", AutowrapMode = TextServer.AutowrapMode.WordSmart };
 	private string ActiveSavePath => legacyScene is null ? savePath : Path.Combine(Path.GetDirectoryName(savePath)!, "legacy-" + legacyScene.ContentId + ".json");
 	private WorldDefinition ActiveWorld => legacyScene?.World ?? DemoWorld();
@@ -34,21 +50,25 @@ public partial class SimulationPreview
 	}
 	private void BuildContentControls()
 	{
-		var row = new HFlowContainer(); AddChild(row); row.AddChild(loadScene); row.AddChild(demoScene); AddChild(contentInfo);
+		var row = new HFlowContainer(); AddChild(row); row.AddChild(loadScene); row.AddChild(reloadScene); row.AddChild(demoScene); AddChild(scenePathInfo); AddChild(contentInfo);
+		SetScenePath(ScenePath); AddChild(restartDialog);
+		restartDialog.Confirmed += () => { var action = pendingRestart; pendingRestart = null; SetPaused(restartWasPaused); action?.Invoke(); };
+		restartDialog.Canceled += () => { pendingRestart = null; SetPaused(restartWasPaused); };
 		var dialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.json ; Legacy scene request"] };
 		AddChild(dialog); loadScene.Pressed += () => { if (!verifying) dialog.PopupCenteredRatio(0.7f); };
-		dialog.FileSelected += LoadLegacyScene;
-		demoScene.Pressed += () =>
+		dialog.FileSelected += file => ConfirmRestart(() => LoadLegacyScene(file));
+		reloadScene.Pressed += () => { string file = ScenePath; if (file.Length > 0) ConfirmRestart(() => LoadLegacyScene(file)); };
+		demoScene.Pressed += () => ConfirmRestart(() =>
 		{
 			if (verifying) return;
 			view.SetTerrain(null); legacyScene = null; NewRun(); contentInfo.Text = "Synthetic Camp / Cellar. Original resources are not loaded.";
-		};
+		});
 	}
 	private async void LoadLegacyScene(string file)
 	{
 		if (verifying) return;
 		bool wasPaused = paused; SetPaused(true); StopInput(); ResetDialogue(); verifying = true;
-		loadScene.Disabled = true; demoScene.Disabled = true; restart.Disabled = true;
+		loadScene.Disabled = true; reloadScene.Disabled = true; demoScene.Disabled = true; restart.Disabled = true;
 		contentInfo.Text = "Checking selected resources and gameplay placements...";
 		try
 		{
@@ -62,6 +82,7 @@ public partial class SimulationPreview
 			if (!IsInstanceValid(this) || !IsInsideTree()) return;
 			// Prepare GPU resources before replacing the live session; failure retains old textures/state.
 			view.SetTerrain(next); legacyScene = next; NewRun();
+			SetScenePath(Path.GetFullPath(file));
 			contentInfo.Text = $"Legacy terrain: {next.World.Regions.Length} region(s). Content {next.ContentId[..16]}.\nExplicit placements and preview game rules; original campaign compatibility is not validated. Artwork profiles: {next.Artwork.Count}/{next.Actors.Count}.";
 			contentInfo.Text += $"\nStatic quest loop: {checkedScene.Readiness.QuestLoopReachable}; GUI QA: NOT_RUN. " + string.Join(", ", checkedScene.Readiness.Issues.Take(8));
 			contentInfo.Text += $"\nAudio: {next.Audio?.Effects.Count ?? 0} effects, {next.Audio?.Music.Count ?? 0} region tracks. Listening QA: NOT_RUN.";
@@ -75,7 +96,7 @@ public partial class SimulationPreview
 		}
 		finally
 		{
-			if (IsInstanceValid(this) && IsInsideTree()) { verifying = false; loadScene.Disabled = false; demoScene.Disabled = false; restart.Disabled = false; }
+			if (IsInstanceValid(this) && IsInsideTree()) { verifying = false; loadScene.Disabled = false; demoScene.Disabled = false; restart.Disabled = false; SetScenePath(ScenePath); RefreshItems(); }
 		}
 	}
 }
