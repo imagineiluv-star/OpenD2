@@ -29,12 +29,12 @@ public partial class SimulationPreview
 	{
 		// Godot's editor loads managed assemblies from bytes, so Assembly.Location is empty there.
 		npcExecutable = LocalNpcRuntime.ExecutableIn(OS.HasFeature("editor") ? ProjectSettings.GlobalizePath("res://.godot/mono/temp/bin/Debug") : AppContext.BaseDirectory);
-		AddChild(new Label { Text = "로컬 AI는 선택 기능입니다. 아래 용량을 인터넷으로 내려받으며 Apache-2.0 모델을 사용합니다.\n의도 오분류가 가능한 실험입니다. 대사와 보상은 게임 규칙이 결정합니다. 모델을 실행하면 CPU와 RAM을 사용합니다.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		playPanel.AddChild(new Label { Text = "로컬 AI는 선택 기능입니다. 아래 용량을 인터넷으로 내려받으며 Apache-2.0 모델을 사용합니다.\n의도 오분류가 가능한 실험입니다. 대사와 보상은 게임 규칙이 결정합니다. 모델을 실행하면 CPU와 RAM을 사용합니다.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		foreach (var model in NpcModelCatalog.All) npcModels.AddItem($"{model.Name} — {model.Bytes / 1000000.0:F0} MB");
-		npcModels.Selected = 0; AddChild(npcModels);
-		var actions = new HFlowContainer(); AddChild(actions);
+		npcModels.Selected = 0; playPanel.AddChild(npcModels);
+		var actions = new HFlowContainer(); playPanel.AddChild(actions);
 		foreach (var button in new[] { npcDownload, npcStart, npcStop, npcRemove, npcCancel }) actions.AddChild(button);
-		AddChild(npcMode); AddChild(npcStatus);
+		playPanel.AddChild(npcMode); playPanel.AddChild(npcStatus);
 		npcDownload.Pressed += () => BeginNpcOperation("download");
 		npcStart.Pressed += () => BeginNpcOperation("start");
 		npcStop.Pressed += () => BeginNpcOperation("stop");

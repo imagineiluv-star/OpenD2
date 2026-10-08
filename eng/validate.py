@@ -53,6 +53,7 @@ assert "OPEND2_PLAY06_CONTINUOUS_READY" in output, "Continuous session marker mi
 assert "OPEND2_M206_HUD_READY" in output, "Player HUD/diagnostics marker missing"
 assert "OPEND2_M206_AUDIO_READY" in output, "Scene audio controls/stream marker missing"
 assert "OPEND2_M206_PANELS_READY" in output, "Inventory/equipment panel marker missing"
+assert "OPEND2_M206_MENU_READY" in output, "Start menu/continue/checkpoint marker missing"
 if args.export:
     names = {"Linux": "OpenD2.x86_64", "Windows": "OpenD2.exe", "macOS": "OpenD2.zip"}
     destination = root / "artifacts" / args.export / names[args.export]

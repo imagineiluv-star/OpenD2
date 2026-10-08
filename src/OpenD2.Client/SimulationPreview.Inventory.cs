@@ -12,15 +12,15 @@ public partial class SimulationPreview
 	private ItemId selectedItem;
 	private void BuildInventory()
 	{
-		AddChild(new Label { Text = "Inventory & equipment — preview rules" });
-		var grid = new GridContainer { Columns = 2, SizeFlagsHorizontal = SizeFlags.ExpandFill }; AddChild(grid);
+		playPanel.AddChild(new Label { Text = "Inventory & equipment — preview rules" });
+		var grid = new GridContainer { Columns = 2, SizeFlagsHorizontal = SizeFlags.ExpandFill }; playPanel.AddChild(grid);
 		for (int i = 0; i < itemSlots.Length; i++)
 		{
 			int slot = i; grid.AddChild(itemSlots[i]);
 			itemSlots[i].Pressed += () => { selectedItem = slotItems[slot]; RefreshItems(); };
 		}
-		AddChild(itemDetails); AddChild(gearInfo);
-		var actions = new HFlowContainer(); AddChild(actions);
+		playPanel.AddChild(itemDetails); playPanel.AddChild(gearInfo);
+		var actions = new HFlowContainer(); playPanel.AddChild(actions);
 		foreach (var button in new[] { pickup, equip, unequip, drop }) actions.AddChild(button);
 		pickup.Pressed += PickupNearest; equip.Pressed += () => UseSelected(CommandKind.Equip);
 		unequip.Pressed += () => UseSelected(CommandKind.Unequip); drop.Pressed += () => UseSelected(CommandKind.DropItem);
