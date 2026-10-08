@@ -14,6 +14,7 @@
 ```sh
 python eng/bootstrap.py
 python eng/build-native.py
+python eng/build-npc.py
 python eng/validate.py --export Linux
 # Windows x64: --export Windows
 # macOS arm64: --export macOS
@@ -21,7 +22,7 @@ python eng/validate.py --export Linux
 
 bootstrap은 공식 Godot 배포본을 내려받아 `eng/toolchain.json`의 SHA-512로 검사한다. SDK는 별도 설치한다. bootstrap 출력의 실행 파일로 `src/OpenD2.Client/project.godot`를 열면 된다. 기존 Godot 설치를 사용하려면 `python eng/validate.py --godot <실행파일경로> --export Linux`를 사용한다.
 
-`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 211개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
+`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 228개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export·SDK 검색 경로를 제거한 배포본 실행 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
 
 Godot 없이 코어를 검증할 수 있다:
 
@@ -69,9 +70,10 @@ dotnet run --project tools/OpenD2.AssetAudit -- --tables-bin-110f /path/to/game
 |---|---|
 | OpenD2.Core | 설정·계측·고정 tick·전투·AI·지역·퀘스트·재생, 엔진 미참조 |
 | OpenD2.Assets | 읽기 전용 MPQ·포맷 파서·캐시·충돌 변환, Core만 참조 |
-| OpenD2.Npc | 비동기 대화 계약·검증·기본 대사, Core만 참조 |
+| OpenD2.Npc | 비동기 대화·검증·기본 대사·로컬 추론·선택 모델 설치, Core만 참조 |
 | OpenD2.Client | Godot 표현·입력·뷰어·합성 마을/던전·오프라인 실행 |
 | OpenD2.AssetAudit | 엔진 없는 리소스 점검 CLI 기반 |
+| OpenD2.NpcEval | 실제 모델 선택 다운로드·한국어 의도 평가 CLI |
 | OpenD2.Tests | 파일 손상·백업·경로·계측·로그 계약 검증 |
 
 루트 `OpenD2.sln`은 전체 개발용이다. 클라이언트 폴더의 `OpenD2.Client.sln`은 Godot export가 요구하는 솔루션이다. 프로젝트 참조를 바꿀 때 두 솔루션을 함께 갱신한다. `TargetFramework`는 클라이언트 csproj에도 명시해 Godot 자동 마이그레이션이 net8.0을 추가하지 않도록 한다.
@@ -82,4 +84,21 @@ dotnet run --project tools/OpenD2.AssetAudit -- --tables-bin-110f /path/to/game
 
 원본 세이브 사전검사: `dotnet run --project tools/OpenD2.AssetAudit -- --inspect-save /path/to/character.d2s`. v96 헤더/전체 checksum을 읽기 전용으로 검사하며 원본 캐릭터 가져오기나 본문 검증은 지원하지 않는다. 자체 체크포인트와는 별개 형식이다.
 
-Simulation 탭 하단에서 Camp Guide에게 **안녕 / 퀘스트 / 수락 / 완료** 또는 **hello / quest / accept / turn in**을 입력하고 **Talk to Guide**를 누른다. 수락/완료 제안은 **Confirm quest action**으로 확인한 뒤 다음 tick에 판정한다. Pause 상태에서는 Resume 또는 Step이 필요하다. NPC-01은 고정 대사·3개 의도를 사용하는 오프라인 프리뷰이며 LLM은 연결하지 않았다. 대화는 저장되지 않고, 새 게임·지역 이동·사망·저장/로드·재생 검사 때 대기 응답과 제안을 취소한다. [구현/검증 기록](docs/migration/NPC_01_RESULTS.md), [후속 모델 도입 계획](docs/migration/NPC_LLM_DESIGN.md). 모델·API 키·추론 서버 설치는 현재 필요 없다.
+Simulation 탭 하단에서 Camp Guide에게 **안녕 / 퀘스트 / 수락 / 완료** 또는 **hello / quest / accept / turn in**을 입력하고 **Talk to Guide**를 누른다. 수락/완료 제안은 **Confirm quest action**으로 확인한 뒤 다음 tick에 판정한다. Pause 상태에서는 Resume 또는 Step이 필요하다. 기본 모드는 고정 대사·3개 의도를 사용하는 오프라인 프리뷰다. NPC-02a는 선택형 로컬 모델로 한국어 의도를 해석하지만 대사는 계속 게임 사실로 만든다. 대화는 저장되지 않고, 새 게임·지역 이동·사망·저장/로드·재생 검사 때 대기 응답과 제안을 취소한다. [구현/검증 기록](docs/migration/NPC_01_RESULTS.md), [후속 모델 도입 계획](docs/migration/NPC_LLM_DESIGN.md). 기본 플레이에 모델·API 키·추론 서버 수동 설치는 필요 없다.
+
+
+## 선택형 로컬 NPC AI (NPC-02a 실험)
+
+`eng/build-npc.py`는 고정 llama.cpp v0.6.0 소스를 CPU 전용 실행 파일로 빌드한다. CI/export에 실행 파일과 라이선스를 포함하고 모델 가중치는 넣지 않는다. Windows/Linux x64는 AVX2·FMA·F16C, macOS AI는 Apple Silicon을 대상으로 한다. 기본 macOS 게임 패키지는 universal이지만 Intel Mac AI 런타임은 포함하지 않는다. 지원하지 않는 PC도 기본 대사를 쓸 수 있다. GPU 가속과 서명·공증은 별도 인수다.
+
+Simulation 탭 하단에서 모델/용량을 확인하고 **Download model → Start local AI**를 누른다. Qwen3 0.6B Q4는 약 397 MB, 비교용 1.7B Q8은 약 1,834 MB를 다운로드한다(10진 바이트 기준). 인터넷은 설치 시에만 필요하다. 다운로드와 실행은 별도 선택이며 앱을 다시 열면 항상 기본 대사로 시작한다. **Cancel**은 다운로드를 중단하고, 다시 다운로드하면 이어받는다. **Use basic dialogue**는 추론 프로세스를 종료한다. **Remove model**은 선택한 모델/부분 다운로드를 지운다. 모델은 사용자 데이터 루트의 `npc-models/`에 보관한다.
+
+해시/크기 검증을 통과한 모델만 실행한다. 추론은 임시 키로 보호한 `127.0.0.1` 프로세스에 한 요청씩 보내며 외부 API로 대화를 전송하지 않는다. 실패·8초 만료에는 사실 기반 대사를 사용한다. Start 실패나 모델 프로세스 종료 후에는 다시 실행할 수 있다. 이 기능은 의도 오분류가 가능한 실험이며 자유 대화·영속 기억·자율 계획 구현이 아니다. [실측 결과와 남은 인수](docs/migration/NPC_02_RESULTS.md).
+
+개발자가 합성 한국어 100문장을 재현하려면 런타임을 먼저 빌드한다. 아래 `install` 명령은 명시적으로 모델을 다운로드한다. 기본 계약/CI는 모델을 받지 않는다.
+
+```sh
+dotnet run --project tools/OpenD2.NpcEval -- install qwen3-06b-q4 .local-tools/npc/models
+dotnet run --project tools/OpenD2.NpcEval -- evaluate qwen3-06b-q4 .local-tools/npc/models tools/OpenD2.NpcEval/korean-intents-v1.json artifacts/npc06-evaluation.json
+# 비교: 두 명령의 model-id를 qwen3-17b-q8로 변경
+```

@@ -32,6 +32,8 @@ jobs:
         run: python eng/bootstrap.py
       - name: Build pinned MPQ backend from source
         run: python eng/build-native.py
+      - name: Build pinned optional NPC runtime from source
+        run: python eng/build-npc.py
       - name: Build, contracts, headless smoke and export
         run: python eng/validate.py --export ${{ matrix.preset }}
       - uses: actions/upload-artifact@v4

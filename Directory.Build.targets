@@ -2,4 +2,7 @@
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'OpenD2.Client' Or '$(MSBuildProjectName)' == 'OpenD2.Tests' Or '$(MSBuildProjectName)' == 'OpenD2.AssetAudit'">
     <Content Include="$(MSBuildThisFileDirectory).local-tools/native/dist/*" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'OpenD2.Client' Or '$(MSBuildProjectName)' == 'OpenD2.Tests' Or '$(MSBuildProjectName)' == 'OpenD2.NpcEval'">
+    <Content Include="$(MSBuildThisFileDirectory).local-tools/llama/dist/**/*" Link="npc-runtime/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

@@ -32,7 +32,7 @@ run("dotnet", "run", "--project", "tests/OpenD2.Tests", "-c", "Debug", "--no-bui
 # Let editor initialization settle before teardown (4.6.3 Android export polling race).
 # --import still waits for the resource scan; do not suppress any engine errors.
 run(godot, "--headless", "--path", "src/OpenD2.Client", "--import", "--quit-after", "120", "--max-fps", "60", capture=True)
-output = run(godot, "--headless", "--path", "src/OpenD2.Client", "--quit-after", "120", "--", "--smoke-test", capture=True)
+output = run(godot, "--headless", "--path", "src/OpenD2.Client", "--quit-after", "600", "--max-fps", "60", "--", "--smoke-test", capture=True)
 assert "OPEND2_M0_READY" in output, "Startup marker missing"
 assert "OPEND2_M104_PREVIEW_READY" in output, "DC6 preview marker missing"
 assert "OPEND2_M105_ANIMATION_READY" in output, "DCC/COF animation marker missing"
@@ -45,6 +45,7 @@ assert "OPEND2_M203_WORLD_READY" in output, "Town/dungeon/quest/replay marker mi
 assert "OPEND2_M204_ITEMS_READY" in output, "Loot/inventory/equipment/replay marker missing"
 assert "OPEND2_M205_SAVE_READY" in output, "Checkpoint/backup recovery marker missing"
 assert "OPEND2_NPC01_DIALOGUE_READY" in output, "Asynchronous NPC dialogue marker missing"
+assert "OPEND2_NPC02_RUNTIME_READY" in output, "Bundled NPC runtime execution marker missing"
 if args.export:
     names = {"Linux": "OpenD2.x86_64", "Windows": "OpenD2.exe", "macOS": "OpenD2.zip"}
     destination = root / "artifacts" / args.export / names[args.export]
@@ -52,3 +53,4 @@ if args.export:
     run(godot, "--headless", "--path", "src/OpenD2.Client", "--export-release", args.export, str(destination), capture=True)
     assert destination.is_file(), destination
     print(f"EXPORT OK: {destination}")
+    run(sys.executable, "eng/smoke-export.py", args.export)

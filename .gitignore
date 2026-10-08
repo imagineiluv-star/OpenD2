@@ -65,5 +65,6 @@ artifacts/
 *.MPQ
 *.d2s
 *.d2i
+*.gguf
 /user-data/
 /asset-cache/

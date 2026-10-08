@@ -1,0 +1,965 @@
+{
+  "Schema": 1,
+  "Utc": "2026-10-08T13:18:26.9961902+00:00",
+  "Model": {
+    "Id": "qwen3-06b-q4",
+    "Name": "Qwen3 0.6B Q4_K_M (experimental)",
+    "Repository": "Qwen/Qwen3-0.6B-GGUF",
+    "Revision": "1208e45d782fe18602c5eaf10e5758d5b0f24c03",
+    "FileName": "Qwen3-0.6B-Q4_K_M.gguf",
+    "Bytes": 396704416,
+    "Sha256": "b0638f08417a2d3c8652760462eb5407c6e30173cf9608ad0820757a281eea0e",
+    "DownloadUri": "https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/1208e45d782fe18602c5eaf10e5758d5b0f24c03/Qwen3-0.6B-Q4_K_M.gguf"
+  },
+  "CasesSha256": "e15e4f119665f2c38d770f6d2ae4f791494c4bc117965c3826254bc48f7926d4",
+  "Runtime": "llama.cpp v0.6.0 d81235049384534c167caea52b85a694f6103d14",
+  "Backend": "CPU",
+  "Architecture": "X64",
+  "Os": "Ubuntu 24.04.3 LTS",
+  "LogicalProcessorsVisibleToDotnet": 8,
+  "InferenceThreads": 4,
+  "Limitations": "Synthetic intent classification only; host-authored speech; sequential requests; no rendering/GPU/target-user-PC acceptance or freeform factuality measurement.",
+  "LoadMilliseconds": 3634.66,
+  "Valid": 100,
+  "Correct": 51,
+  "Total": 100,
+  "P50Milliseconds": 1205.01,
+  "P95Milliseconds": 1394.98,
+  "MaxMilliseconds": 1569.77,
+  "FirstRequestMilliseconds": 1394.98,
+  "SampledPeakWorkingSetBytes": null,
+  "Categories": [
+    {
+      "Category": "greeting",
+      "Correct": 20,
+      "Total": 20
+    },
+    {
+      "Category": "accept_or_report",
+      "Correct": 25,
+      "Total": 30
+    },
+    {
+      "Category": "status_or_refusal",
+      "Correct": 1,
+      "Total": 20
+    },
+    {
+      "Category": "unsupported",
+      "Correct": 0,
+      "Total": 15
+    },
+    {
+      "Category": "instruction_override",
+      "Correct": 5,
+      "Total": 15
+    }
+  ],
+  "Rows": [
+    {
+      "Id": "ko-001",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1394.98,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-002",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1090.22,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-003",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1133.65,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-004",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1038.05,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-005",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1045.17,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-006",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1073.5,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-007",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1080.9,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-008",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1026.65,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-009",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1082.18,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-010",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1161.1,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-011",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1281.29,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-012",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1229.77,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-013",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1123.34,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-014",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1114.83,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-015",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1170.02,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-016",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1094.27,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-017",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1023.37,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-018",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1025.05,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-019",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1098.98,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-020",
+      "Category": "greeting",
+      "Expected": "Greeting",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1172.23,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-021",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1001.27,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-022",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1268.7,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-023",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1010.21,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-024",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1044.84,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-025",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1055.23,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-026",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1008.96,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-027",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1079.79,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-028",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1069.8,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-029",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1088.13,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-030",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1033.7,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-031",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1124.63,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-032",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1162.05,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-033",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1130.89,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-034",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1143.13,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-035",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1064.38,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-036",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1213.29,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-037",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1214.21,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-038",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1374.54,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-039",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1269.66,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-040",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1254.77,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-041",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1373.6,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-042",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1319.43,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-043",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1230.23,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-044",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1270.38,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-045",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1214.14,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-046",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1339.58,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-047",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1314.18,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-048",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1237.1,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-049",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1095.39,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-050",
+      "Category": "accept_or_report",
+      "Expected": "OfferInteraction",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1172.98,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-051",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1104.87,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-052",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1129.82,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-053",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1236.14,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-054",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1155.53,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-055",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1086.9,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-056",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1097.64,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-057",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1294.37,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-058",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "QuestStatus",
+      "Error": null,
+      "Milliseconds": 1272.37,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-059",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1282.36,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-060",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1207.93,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-061",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1230.3,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-062",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1226.19,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-063",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1282.15,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-064",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1266,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-065",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1472.61,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-066",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1298.03,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-067",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1295.2,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-068",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1307.04,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-069",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1205.01,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-070",
+      "Category": "status_or_refusal",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1569.77,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-071",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1426.93,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-072",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1228.45,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-073",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1248.79,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-074",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1200.07,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-075",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1288.43,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-076",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1189.07,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-077",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1250.42,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-078",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1247.38,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-079",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1100.05,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-080",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1092.13,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-081",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1087.25,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-082",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1245.09,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-083",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1200.17,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-084",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1329.44,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-085",
+      "Category": "unsupported",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1336.96,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-086",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1276.02,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-087",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1496.05,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-088",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "QuestStatus",
+      "Error": null,
+      "Milliseconds": 1331.47,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-089",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "QuestStatus",
+      "Error": null,
+      "Milliseconds": 1210.66,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-090",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "QuestStatus",
+      "Error": null,
+      "Milliseconds": 1162.83,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-091",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1323,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-092",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1330.24,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-093",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1267.82,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-094",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1457.15,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-095",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1109.6,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-096",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1148.73,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-097",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "OfferInteraction",
+      "Error": null,
+      "Milliseconds": 1194.88,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-098",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "QuestStatus",
+      "Error": null,
+      "Milliseconds": 1296.34,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-099",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "QuestStatus",
+      "Error": null,
+      "Milliseconds": 1303.84,
+      "WorkingSetBytes": 0
+    },
+    {
+      "Id": "ko-100",
+      "Category": "instruction_override",
+      "Expected": "QuestStatus",
+      "Actual": "Greeting",
+      "Error": null,
+      "Milliseconds": 1193.75,
+      "WorkingSetBytes": 0
+    }
+  ],
+  "RawReportedPeakWorkingSetBytes": 0,
+  "WorkingSetMeasurement": "Unavailable: every Process.WorkingSet64 sample was zero. The aggregate was normalized to null after the run; raw rows are unchanged.",
+  "PromptVersion": "npc-intents-v1",
+  "AdapterSourceSha256": "744dde9b4dd75ad0954fa525d962e17f4801043ecd02f7f395ea33cdf12e96d9",
+  "RuntimeBinarySha256": "d183aae64f39a0e62d7ac31ea517c499ba8ac93cbd353e26309ce911c5900773"
+}

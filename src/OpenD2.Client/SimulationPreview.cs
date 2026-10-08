@@ -31,7 +31,7 @@ public partial class SimulationPreview : VBoxContainer
 	private readonly List<ItemId> itemChoices = new();
 	private readonly Button save = new() { Text = "Save checkpoint" };
 	private readonly Button load = new() { Text = "Load checkpoint" };
-	private readonly NpcMindService npcMind = new(new ScriptedNpcModel());
+	private readonly NpcMindService npcMind;
 	private readonly LineEdit dialogueInput = new() { PlaceholderText = "안녕 / 퀘스트 / 수락 / 완료", MaxLength = NpcDecisionGate.MaxInputChars, SizeFlagsHorizontal = SizeFlags.ExpandFill };
 	private readonly Button dialogueSend = new() { Text = "Talk to Guide" };
 	private readonly Button dialogueConfirm = new() { Text = "Confirm quest action", Disabled = true };
@@ -58,7 +58,8 @@ public partial class SimulationPreview : VBoxContainer
 	private bool paused, verifying, interactDown, pickupDown;
 	private bool smokeTest;
 	private double elapsed;
-	public SimulationPreview(Action<string, string> log, string saveDirectory) { this.log = log; savePath = Path.Combine(saveDirectory, "simulation-v1.json"); advanceTick = RunTick; }
+	public SimulationPreview(Action<string, string> log, string saveDirectory, string modelDirectory)
+	{ this.log = log; savePath = Path.Combine(saveDirectory, "simulation-v1.json"); advanceTick = RunTick; npcMind = new(npcRuntime); npcStore = new(modelDirectory); }
 	private static EntityState[] InitialEntities() =>
 	[
 		new(Player, Region, new(384, 384)),
@@ -99,7 +100,8 @@ public partial class SimulationPreview : VBoxContainer
 		unequip.Pressed += () => UseSelected(CommandKind.Unequip);
 		drop.Pressed += () => UseSelected(CommandKind.DropItem);
 		AddChild(gearInfo); AddChild(questInfo); AddChild(view); AddChild(details); AddChild(status);
-		AddChild(new Label { Text = "Camp Guide — offline scripted preview; LLM not connected", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		AddChild(new Label { Text = "Camp Guide — 기본 대사 / 선택형 로컬 AI", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		BuildNpcSettings();
 		AddChild(dialogueInput); var conversation = new HFlowContainer(); AddChild(conversation);
 		conversation.AddChild(dialogueSend); conversation.AddChild(dialogueConfirm); AddChild(dialogue);
 		dialogueSend.Pressed += SendDialogue; dialogueInput.TextSubmitted += _ => SendDialogue(); dialogueConfirm.Pressed += ConfirmDialogue;
@@ -196,6 +198,7 @@ public partial class SimulationPreview : VBoxContainer
 	public override void _Process(double delta)
 	{
 		if (simulation is null) return;
+		PollNpcSettings();
 		PollDialogue();
 		if (verifying) return;
 		bool active = current.IsAlive && IsVisibleInTree() && view.HasFocus() && GetWindow().HasFocus();
@@ -257,7 +260,7 @@ public partial class SimulationPreview : VBoxContainer
 	}
 	private void SendDialogue()
 	{
-		if (verifying) return;
+		if (verifying || npcOperation is not null) return;
 		var facts = NpcDecisionGate.Capture(simulation);
 		var result = npcMind.Request(facts, dialogueInput.Text);
 		if (result == NpcStart.Accepted) { dialogueFacts = facts; dialogueOffer = null; dialogueConfirm.Disabled = true; dialogueInput.Text = ""; }
@@ -291,20 +294,29 @@ public partial class SimulationPreview : VBoxContainer
 			}
 		}
 		if (dialogueOffer is { } offer && !NpcDecisionGate.CanConfirm(offer, npcMind.Generation, facts)) dialogueOffer = null;
-		dialogueSend.Disabled = verifying || npcMind.IsBusy;
-		dialogueInput.Editable = !verifying;
-		dialogueConfirm.Disabled = verifying || dialogueOffer is null;
+		dialogueSend.Disabled = verifying || npcMind.IsBusy || npcOperation is not null;
+		dialogueInput.Editable = !verifying && npcOperation is null;
+		dialogueConfirm.Disabled = verifying || dialogueOffer is null || npcOperation is not null;
 	}
 	private void ConfirmDialogue()
 	{
-		if (verifying || dialogueOffer is not { } offer) return;
+		if (verifying || npcOperation is not null || dialogueOffer is not { } offer) return;
 		dialogueOffer = null; dialogueConfirm.Disabled = true;
 		if (!NpcDecisionGate.CanConfirm(offer, npcMind.Generation, NpcDecisionGate.Capture(simulation)))
 		{ dialogue.Text = "The situation changed. Ask the guide again."; return; }
 		if (Submit(CommandKind.Interact, target: offer.Request.Facts.Npc))
 			dialogue.Text = paused ? "Action queued. Resume or step to resolve it." : "Action queued; the game rules will resolve it.";
 	}
-	public override void _ExitTree() => npcMind.Dispose();
+	public override void _ExitTree()
+	{
+		var cancelled = npcCancellation?.CancelAsync() ?? Task.CompletedTask;
+		npcMind.Dispose(); npcRuntime.Dispose(); npcStore.Dispose();
+		if (npcOperation is { } pending)
+		{
+			var cancellation = npcCancellation;
+			_ = Task.WhenAll(pending, cancelled).ContinueWith(task => { _ = task.Exception; cancellation?.Dispose(); }, TaskScheduler.Default);
+		}
+	}
 	private void Refresh()
 	{
 		RefreshItems();

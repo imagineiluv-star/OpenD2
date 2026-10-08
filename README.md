@@ -91,3 +91,6 @@ The serverside is responsible for quest management, AI, and more. Ideally, this 
 The clientside is responsible for client logic, mostly with drawing the menus and sprites.
 
 The [NPC-01 Camp Guide preview](docs/migration/NPC_01_RESULTS.md) adds three scripted dialogue intents, bounded asynchronous inference, grounded responses and player-confirmed quest actions. It runs offline without a model. Actual LLM inference, persistent memory and open-world NPC planning remain in the [NPC roadmap](docs/migration/NPC_LLM_DESIGN.md).
+
+
+[NPC-02a](docs/migration/NPC_02_RESULTS.md) adds an optional, source-built llama.cpp CPU runtime, verified/resumable Qwen model downloads, and Korean intent evaluation. Basic play stays model-free. This experimental adapter classifies intent; host-authored dialogue and explicit quest confirmation remain in control. Target-PC/GPU acceptance, freeform speech and persistent NPC memory remain open. See [BUILDING](BUILDING.md) for install/run/remove controls.
