@@ -471,7 +471,8 @@ public partial class SimulationCanvas : Control
 	public Vector2 DisplayPosition { get; private set; }
 	public int SignalValue { get; set; } = -1;
 	private GameSimulation? simulation;
-	public void SetSimulation(GameSimulation value) { simulation = value; QueueRedraw(); }
+	private readonly List<EntityState> depthActors = new(GameSimulation.MaxCombatEntities);
+	public void SetSimulation(GameSimulation value) { simulation = value; foreach (var sprite in actorSprites.Values) sprite.Reset(); QueueRedraw(); }
 	public SimulationCanvas() { FocusMode = FocusModeEnum.All; MouseFilter = MouseFilterEnum.Stop; ClipContents = true; }
 	public void SetPositions(GamePosition previous, GamePosition current, double alpha)
 	{
@@ -513,19 +514,24 @@ public partial class SimulationCanvas : Control
 				DrawString(GetThemeDefaultFont(), point + new Vector2(16, 5), npc.Name, fontSize: 14, modulate: Colors.MediumSeaGreen);
 			}
 		}
-		foreach (var e in simulation.Entities)
+		depthActors.Clear();
+		foreach (var actor in simulation.Entities) if (actor.Region == simulation.ActiveRegion) depthActors.Add(actor);
+		depthActors.Sort(static (a, b) => { int order = (a.Position.X + a.Position.Y).CompareTo(b.Position.X + b.Position.Y); return order != 0 ? order : a.Id.Value.CompareTo(b.Id.Value); });
+		foreach (var e in depthActors)
 		{
-			if (e.Region != simulation.ActiveRegion) continue;
+			DrawForeground(e.Position.X + e.Position.Y);
 			Vector2 point = e.Kind == EntityKind.Player ? center : Project(e.Position);
 			Color color = !e.IsAlive ? Colors.DimGray : e.Kind == EntityKind.Monster ? Colors.IndianRed : SignalValue < 0 ? Colors.CornflowerBlue : Color.FromHsv(SignalValue / 6f, 0.7f, 0.95f);
-			DrawCircle(point, 9, color);
+			bool hasArtwork = DrawActor(e, point);
+			if (!hasArtwork) DrawCircle(point, 9, color);
 			if (e.IsAlive)
 			{
 				DrawRect(new Rect2(point + new Vector2(-14, -18), new Vector2(28, 4)), Colors.DarkRed);
 				DrawRect(new Rect2(point + new Vector2(-14, -18), new Vector2(28f * e.Health / e.MaxHealth, 4)), Colors.LimeGreen);
 			}
-			else { DrawLine(point + new Vector2(-7, -7), point + new Vector2(7, 7), Colors.Gray, 2); DrawLine(point + new Vector2(-7, 7), point + new Vector2(7, -7), Colors.Gray, 2); }
+			else if (!hasArtwork) { DrawLine(point + new Vector2(-7, -7), point + new Vector2(7, 7), Colors.Gray, 2); DrawLine(point + new Vector2(-7, 7), point + new Vector2(7, -7), Colors.Gray, 2); }
 		}
+		DrawForeground(int.MaxValue, roofs: true);
 		foreach (var item in simulation.Items)
 		{
 			if (item.Location != ItemLocation.Ground || item.Region != simulation.ActiveRegion) continue;

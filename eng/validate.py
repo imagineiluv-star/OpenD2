@@ -47,6 +47,7 @@ assert "OPEND2_M205_SAVE_READY" in output, "Checkpoint/backup recovery marker mi
 assert "OPEND2_NPC01_DIALOGUE_READY" in output, "Asynchronous NPC dialogue marker missing"
 assert "OPEND2_NPC02_RUNTIME_READY" in output, "Bundled NPC runtime execution marker missing"
 assert "OPEND2_PLAY02_TERRAIN_READY" in output, "Legacy terrain/session integration marker missing"
+assert "OPEND2_PLAY03_ACTOR_READY" in output, "Legacy actor texture/session integration marker missing"
 if args.export:
     names = {"Linux": "OpenD2.x86_64", "Windows": "OpenD2.exe", "macOS": "OpenD2.zip"}
     destination = root / "artifacts" / args.export / names[args.export]

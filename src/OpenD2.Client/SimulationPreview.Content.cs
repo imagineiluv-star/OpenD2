@@ -19,15 +19,17 @@ public partial class SimulationPreview
 		var bytes = MapPreview.SampleData();
 		var map = new LegacyMapRequest(1, "lod-1.10f", "sample.ds1", "data/global/palette/act1/pal.dat", ["sample.dt1"]);
 		var request = new LegacySceneRequest(1, "Synthetic integration check", [new(1, "Sample map", map)],
-			[new(1, 1, 384, 384, true), new(2, 1, 1664, 1664, false)], new(10, 1, 640, 384, "Guide"), [], [2]);
-		var content = LegacyPlayScene.Load(request, p => p.EndsWith(".ds1") ? bytes.Ds1 : p.EndsWith(".dt1") ? bytes.Dt1 : bytes.Colors);
+			[new(1, 1, 384, 384, true), new(2, 1, 1664, 1664, false)], new(10, 1, 640, 384, "Guide"), [], [2],
+			[new(1, map.PalettePath, Enum.GetNames<ActorMotion>().Select(m => new LegacyMotionRequest(m, "sample.dcc", null, new int[8], 10)).ToArray())]);
+		var content = LegacyPlayScene.Load(request, p => p.EndsWith(".ds1") ? bytes.Ds1 : p.EndsWith(".dt1") ? bytes.Dt1 : p.EndsWith(".dcc") ? Convert.FromHexString(AnimationPreview.SampleDcc) : bytes.Colors);
 		view.SetTerrain(content); legacyScene = content; NewRun();
-		if (simulation.World != content.World || simulation.Collision!.Width != 10 || !view.CheckTerrainTexture() || ActiveSavePath == savePath)
+		if (simulation.World != content.World || simulation.Collision!.Width != 10 || !view.CheckTerrainTexture() || !view.CheckActorTexture() || ActiveSavePath == savePath)
 			throw new InvalidDataException("Legacy terrain/session integration smoke failed.");
 		Submit(CommandKind.SetMove, 1, 0); RunTick();
 		if (simulation.GetEntity(Player).Position.X <= 384) throw new InvalidDataException("Legacy terrain movement smoke failed.");
 		view.SetTerrain(null); legacyScene = null; NewRun();
 		GD.Print("OPEND2_PLAY02_TERRAIN_READY");
+		GD.Print("OPEND2_PLAY03_ACTOR_READY");
 	}
 	private void BuildContentControls()
 	{
@@ -54,7 +56,7 @@ public partial class SimulationPreview
 			if (!IsInstanceValid(this) || !IsInsideTree()) return;
 			// Prepare GPU resources before replacing the live session; failure retains old textures/state.
 			view.SetTerrain(next); legacyScene = next; NewRun();
-			contentInfo.Text = $"Legacy terrain: {next.World.Regions.Length} region(s). Content {next.ContentId[..16]}.\nExplicit placements and preview game rules; original campaign compatibility and actor artwork are not validated.";
+			contentInfo.Text = $"Legacy terrain: {next.World.Regions.Length} region(s). Content {next.ContentId[..16]}.\nExplicit placements and preview game rules; original campaign compatibility is not validated. Artwork profiles: {next.Artwork.Count}/{next.Actors.Count}.";
 			log("legacy_scene_loaded", $"content={next.ContentId}, regions={next.World.Regions.Length}");
 		}
 		catch (Exception error)
@@ -74,9 +76,15 @@ public partial class SimulationCanvas
 {
 	private LegacyPlayScene? terrainContent;
 	private Dictionary<RegionId, ImageTexture[]> terrainTextures = new();
+	private Dictionary<RegionId, MapPlacement[]> foregroundWalls = new();
+	private int wallCursor;
+	private static bool IsForeground(MapScene scene, MapPlacement p) => scene.Map.Layers[p.Layer].Kind != MapLayerKind.Floor &&
+		p.Key.Orientation < 16 && scene.Map.Layers[p.Layer].Kind != MapLayerKind.Shadow;
+	private static int Depth(MapPlacement p) => (p.X + p.Y + 1) * 1280;
 	public void SetTerrain(LegacyPlayScene? content)
 	{
 		var prepared = new Dictionary<RegionId, ImageTexture[]>(); var owned = new List<ImageTexture>();
+		Dictionary<EntityId, ActorSprite>? preparedActors = null; var preparedWalls = new Dictionary<RegionId, MapPlacement[]>();
 		try
 		{
 			if (content is not null) foreach (var pair in content.Terrain)
@@ -90,28 +98,40 @@ public partial class SimulationCanvas
 					var texture = ImageTexture.CreateFromImage(image); textures.Add(texture); owned.Add(texture);
 				}
 				prepared.Add(pair.Key, textures.ToArray());
+				preparedWalls.Add(pair.Key, pair.Value.Scene.Placements.Where(p => IsForeground(pair.Value.Scene, p) && p.Key.Orientation != 15).OrderBy(Depth).ThenBy(p => p.X).ThenBy(p => p.Layer).ToArray());
 			}
+			preparedActors = PrepareArtwork(content);
 		}
-		catch { foreach (var texture in owned) texture.Dispose(); throw; }
-		ClearTerrain(); terrainContent = content; terrainTextures = prepared; QueueRedraw();
+		catch { foreach (var texture in owned) texture.Dispose(); if (preparedActors is not null) foreach (var sprite in preparedActors.Values) sprite.Dispose(); throw; }
+		ClearTerrain(); terrainContent = content; terrainTextures = prepared; actorSprites = preparedActors; foregroundWalls = preparedWalls; QueueRedraw();
 	}
 	private static Vector2 Iso(double x, double y) { var p = LegacyProjection.Project(x, y); return new((float)p.X, (float)p.Y); }
 	private void DrawTerrain()
 	{
+		wallCursor = 0;
 		if (terrainContent is null || simulation is null) return;
-		var asset = terrainContent.Terrain[simulation.ActiveRegion]; var textures = terrainTextures[simulation.ActiveRegion];
-		Vector2 offset = Size / 2 - Iso(DisplayPosition.X, DisplayPosition.Y); var viewport = new Rect2(Vector2.Zero, Size);
-		foreach (var placement in asset.Scene.Placements)
-		{
-			if (placement.Image < 0) continue; // Preflight disallows missing referenced tiles.
-			var texture = textures[placement.Image]; var at = offset + new Vector2(placement.PixelX, placement.PixelY);
-			if (viewport.Intersects(new Rect2(at, texture.GetSize()))) DrawTexture(texture, at);
-		}
+		var scene = terrainContent.Terrain[simulation.ActiveRegion].Scene;
+		foreach (var p in scene.Placements) if (!IsForeground(scene, p)) DrawPlacement(p);
+	}
+	private void DrawForeground(int depth, bool roofs = false)
+	{
+		if (terrainContent is null || simulation is null) return;
+		var walls = foregroundWalls[simulation.ActiveRegion];
+		while (wallCursor < walls.Length && Depth(walls[wallCursor]) <= depth) DrawPlacement(walls[wallCursor++]);
+		if (roofs) foreach (var p in terrainContent.Terrain[simulation.ActiveRegion].Scene.Placements)
+			if (p.Key.Orientation == 15 && IsForeground(terrainContent.Terrain[simulation.ActiveRegion].Scene, p)) DrawPlacement(p);
+	}
+	private void DrawPlacement(MapPlacement placement)
+	{
+		if (placement.Image < 0 || simulation is null) return;
+		var texture = terrainTextures[simulation.ActiveRegion][placement.Image];
+		Vector2 at = Size / 2 - Iso(DisplayPosition.X, DisplayPosition.Y) + new Vector2(placement.PixelX, placement.PixelY);
+		if (new Rect2(Vector2.Zero, Size).Intersects(new Rect2(at, texture.GetSize()))) DrawTexture(texture, at);
 	}
 	private void ClearTerrain()
 	{
 		foreach (var textures in terrainTextures.Values) foreach (var texture in textures) texture.Dispose();
-		terrainTextures.Clear(); terrainContent = null;
+		terrainTextures.Clear(); foregroundWalls.Clear(); terrainContent = null; ClearArtwork();
 	}
 	public bool CheckTerrainTexture()
 	{

@@ -12,7 +12,7 @@ public sealed record PlaySpawn(uint Id, uint Region, int X, int Y, bool Player, 
 public sealed record PlayNpc(uint Id, uint Region, int X, int Y, string Name);
 public sealed record PlayPortal(uint Id, uint Region, int X, int Y, uint Destination, int ArrivalX, int ArrivalY);
 public sealed record LegacySceneRequest(int SchemaVersion, string Title, PlayRegion[] Regions, PlaySpawn[] Actors,
-	PlayNpc Npc, PlayPortal[] Portals, uint[] QuestTargets)
+	PlayNpc Npc, PlayPortal[] Portals, uint[] QuestTargets, LegacyActorRequest[]? Artwork = null)
 {
 	public static LegacySceneRequest Read(string file)
 	{
@@ -30,8 +30,10 @@ public sealed class LegacyPlayScene
 	public IReadOnlyList<EntityState> Actors { get; }
 	public IReadOnlyDictionary<RegionId, LegacyMapAsset> Terrain { get; }
 	public string ContentId { get; }
-	private LegacyPlayScene(WorldDefinition world, EntityState[] actors, Dictionary<RegionId, LegacyMapAsset> terrain, string id)
-	{ World = world; Actors = Array.AsReadOnly(actors); Terrain = new ReadOnlyDictionary<RegionId, LegacyMapAsset>(terrain); ContentId = id; }
+	public IReadOnlyDictionary<EntityId, LegacyActorArt> Artwork { get; }
+	public IReadOnlyList<LegacyAssetSource> ArtworkSources { get; }
+	private LegacyPlayScene(WorldDefinition world, EntityState[] actors, Dictionary<RegionId, LegacyMapAsset> terrain, Dictionary<EntityId, LegacyActorArt> artwork, LegacyAssetSource[] artworkSources, string id)
+	{ World = world; Actors = Array.AsReadOnly(actors); Terrain = new ReadOnlyDictionary<RegionId, LegacyMapAsset>(terrain); Artwork = new ReadOnlyDictionary<EntityId, LegacyActorArt>(artwork); ArtworkSources = Array.AsReadOnly(artworkSources); ContentId = id; }
 	public GameSimulation Create(uint seed) => new(seed, Actors, world: World);
 	public static LegacyPlayScene Load(string directory, LegacySceneRequest request) => Load(request, path => AssetDecoders.ReadFromInstall(directory, path));
 	public static LegacyPlayScene Load(LegacySceneRequest request, Func<string, byte[]> read)
@@ -44,6 +46,10 @@ public sealed class LegacyPlayScene
 			request.QuestTargets is null || request.QuestTargets.Length is < 1 or > WorldDefinition.MaxQuestTargets)
 			throw new InvalidDataException("Invalid scene schema, title or content counts.");
 		var regions = request.Regions.Select(r => r with { Terrain = r.Terrain with { Tilesets = r.Terrain.Tilesets?.ToArray()! } }).OrderBy(r => r.Id).ToArray();
+		var artworkRequests = request.Artwork ?? [];
+		if (artworkRequests.Length > 32 || artworkRequests.Any(a => a is null) || artworkRequests.Select(a => a.Entity).Distinct().Count() != artworkRequests.Length)
+			throw new InvalidDataException("Expected at most 32 unique actor artwork profiles.");
+		artworkRequests = artworkRequests.Select(a => a with { Motions = a.Motions?.Select(m => m is null ? null! : m with { Directions = m.Directions?.ToArray()!, Layers = m.Layers is null ? null : new(m.Layers) }).ToArray()! }).ToArray();
 		var spawns = request.Actors.ToArray(); var portals = request.Portals.ToArray(); var targets = request.QuestTargets.ToArray(); var npc = request.Npc; string title = request.Title;
 		if (regions.Any(r => r.Id == 0 || string.IsNullOrWhiteSpace(r.Name) || r.Name.Length > 80 || r.Name.Any(char.IsControl)) || regions.Select(r => r.Id).Distinct().Count() != regions.Length ||
 			spawns.Count(a => a.Player) != 1 || spawns.Single(a => a.Player).Id != 1 || spawns.Any(a => a.Health is < 1 or > 100000))
@@ -68,11 +74,25 @@ public sealed class LegacyPlayScene
 			new(new(npc.Id), new(npc.Region), new(npc.X, npc.Y), npc.Name), targets.Select(id => new EntityId(id)), title);
 		var actors = spawns.Select(a => new EntityState(new(a.Id), new(a.Region), new(a.X, a.Y), Kind: a.Player ? EntityKind.Player : EntityKind.Monster, Health: a.Health, MaxHealth: a.Health)).OrderBy(a => a.Id.Value).ToArray();
 		_ = new GameSimulation(1, actors, world: world); // Validate IDs, ownership, spawns, quest targets and portal references before exposing content.
+		var artwork = new Dictionary<EntityId, LegacyActorArt>(); var artworkSources = new List<LegacyAssetSource>();
+		foreach (var art in artworkRequests.OrderBy(a => a.Entity))
+		{
+			if (!actors.Any(a => a.Id.Value == art.Entity)) throw new InvalidDataException("Artwork references an unknown combat actor.");
+			var loaded = LegacyActorArt.Load(art, path =>
+			{
+				var bytes = Read(path); artworkSources.Add(new(path, bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes)))); return bytes;
+			});
+			pixels += loaded.PixelCount;
+			if (pixels > Dt1Tileset.MaxPixels) throw new InvalidDataException("Combined terrain/artwork pixel budget exceeded.");
+			artwork.Add(new(art.Entity), loaded);
+		}
 		using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 		hash.AppendData(Encoding.UTF8.GetBytes(world.ContentHash)); hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(actors));
 		foreach (var pair in terrain.OrderBy(p => p.Key.Value)) foreach (var source in pair.Value.Check.Sources)
 		{ hash.AppendData(Encoding.UTF8.GetBytes(source.Path + "\n" + source.Sha256 + "\n")); }
-		return new(world, actors, terrain, Convert.ToHexStringLower(hash.GetHashAndReset()));
+		if (artworkRequests.Length > 0) hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(artworkRequests));
+		foreach (var source in artworkSources) hash.AppendData(Encoding.UTF8.GetBytes(source.Path + "\n" + source.Sha256 + "\n"));
+		return new(world, actors, terrain, artwork, artworkSources.ToArray(), Convert.ToHexStringLower(hash.GetHashAndReset()));
 	}
 }
 
