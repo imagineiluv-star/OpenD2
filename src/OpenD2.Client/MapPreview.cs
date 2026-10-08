@@ -98,7 +98,7 @@ public partial class MapPreview : VBoxContainer
 		status.Text += $"\nTile cache: {stats.RetainedBytes / 1024} / {stats.BudgetBytes / 1024} KiB, {stats.Hits} hits, {stats.Misses} misses, {stats.Evictions} evictions (active scene/GPU memory separate).";
 	}
 	public override void _ExitTree() { cache.Clear(); }
-	private void LoadSample()
+	internal static (byte[] Dt1, byte[] Ds1, byte[] Colors) SampleData()
 	{
 		// Own synthetic 2 x 2 floor map and a complete 25-block diamond; no game bytes.
 		byte[] dt1 = new byte[276 + 96 + 25 * 20 + 25 * 256];
@@ -119,6 +119,11 @@ public partial class MapPreview : VBoxContainer
 		D32(0, 18); D32(4, 1); D32(8, 1); D32(28, 1);
 		for (int i = 0; i < 4; i++) D32(32 + i * 4, 0x00100001);
 		byte[] colors = new byte[768]; colors[3] = 80; colors[4] = 150; colors[5] = 90; colors[6] = 55; colors[7] = 105; colors[8] = 60;
+		return (dt1, ds1, colors);
+	}
+	private void LoadSample()
+	{
+		var (dt1, ds1, colors) = SampleData();
 		var tableFiles = new Dictionary<string, string>
 		{
 			["levels.txt"] = "Id\tLevelType\n1\t0\n",

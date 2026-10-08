@@ -29,6 +29,6 @@ with tempfile.TemporaryDirectory(prefix="opend2-export-") as temporary:
     print(result.stdout)
     result.check_returncode()
     assert "ERROR:" not in result.stdout and "SCRIPT ERROR:" not in result.stdout, "Exported package reported an error"
-    for marker in ("OPEND2_M0_READY", "OPEND2_NPC01_DIALOGUE_READY", "OPEND2_NPC02_RUNTIME_READY", "OPEND2_M201_TICK_LOOP_READY"):
+    for marker in ("OPEND2_PLAY02_TERRAIN_READY", "OPEND2_M0_READY", "OPEND2_NPC01_DIALOGUE_READY", "OPEND2_NPC02_RUNTIME_READY", "OPEND2_M201_TICK_LOOP_READY"):
         assert marker in result.stdout, f"Exported package missing {marker}"
 print("EXPORTED PACKAGE SMOKE OK:", args.preset)

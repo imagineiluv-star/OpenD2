@@ -58,8 +58,8 @@ public partial class SimulationPreview : VBoxContainer
 	private bool paused, verifying, interactDown, pickupDown;
 	private bool smokeTest;
 	private double elapsed;
-	public SimulationPreview(Action<string, string> log, string saveDirectory, string modelDirectory)
-	{ this.log = log; savePath = Path.Combine(saveDirectory, "simulation-v1.json"); advanceTick = RunTick; npcMind = new(npcRuntime); npcStore = new(modelDirectory); }
+	public SimulationPreview(Action<string, string> log, string saveDirectory, string modelDirectory, Func<string> gameDirectory)
+	{ this.log = log; this.gameDirectory = gameDirectory; savePath = Path.Combine(saveDirectory, "simulation-v1.json"); advanceTick = RunTick; npcMind = new(npcRuntime); npcStore = new(modelDirectory); }
 	private static EntityState[] InitialEntities() =>
 	[
 		new(Player, Region, new(384, 384)),
@@ -88,7 +88,8 @@ public partial class SimulationPreview : VBoxContainer
 	{
 		smokeTest = OS.GetCmdlineUserArgs().Contains("--smoke-test");
 		AddChild(new Label { Text = "Town / dungeon slice — 25 ticks per second" });
-		AddChild(new Label { Text = "Click the grid: arrows move, Space attacks, E talks / uses a portal, F picks up nearby loot.\nGreen: NPC. Gold: portal. Gray walls and purple unknown cells block movement.\nSynthetic maps and rules; original game artwork is not loaded.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		AddChild(new Label { Text = "Click the grid: arrows move, Space attacks, E talks / uses a portal, F picks up nearby loot.\nGreen: NPC. Gold: portal. Gray walls and purple unknown cells block movement.\nDefault: synthetic maps and rules. Load a checked legacy scene below for original terrain.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		BuildContentControls();
 		var controls = new HFlowContainer(); AddChild(controls);
 		controls.AddChild(new Label { Text = "Seed" }); controls.AddChild(seedInput);
 		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, save, load }) controls.AddChild(button);
@@ -110,15 +111,16 @@ public partial class SimulationPreview : VBoxContainer
 		signal.Pressed += () => Submit(CommandKind.Signal); attack.Pressed += AttackNearest; interact.Pressed += InteractNearest;
 		replay.Pressed += VerifyReplay; save.Pressed += () => CheckpointFile(false); load.Pressed += () => CheckpointFile(true);
 		Smoke(); CombatSmoke(); WorldSmoke(); ItemSmoke(); SaveSmoke(); NewRun();
+		if (smokeTest) ContentSmoke();
 		if (smokeTest) { npcSmokePending = true; dialogueInput.Text = "안녕"; SendDialogue(); }
 	}
 	private void NewRun()
 	{
 		ResetDialogue();
-		seed = (uint)seedInput.Value; simulation = new(seed, InitialEntities(), world: DemoWorld()); view.SetSimulation(simulation);
+		seed = (uint)seedInput.Value; simulation = new(seed, ActiveActors, world: ActiveWorld); view.SetSimulation(simulation);
 		trace.Clear(); replayCheckpoint = null; recordingStart = 0; sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
 		previous = current = simulation.GetEntity(Player); view.SignalValue = -1; interactDown = pickupDown = false; SetPaused(false);
-		status.Text = "Talk to the Camp Guide, clear the cellar, then return to the guide."; ShowFrame(); Refresh();
+		status.Text = "Talk to the quest giver, defeat the marked targets, then return."; ShowFrame(); Refresh();
 		log("simulation_started", $"rules={GameSimulation.RulesVersion}, seed={seed}");
 	}
 	private void SetPaused(bool value) { paused = value; previous = current; pause.Text = paused ? "Resume" : "Pause"; }
@@ -243,9 +245,9 @@ public partial class SimulationPreview : VBoxContainer
 				worldChanged = true;
 				status.Text = simulation.QuestState switch
 				{
-					QuestStage.Active => "Guide: Defeat the three cellar monsters and return.",
-					QuestStage.ReadyToTurnIn => "Cellar cleared. Return to the Camp Guide and use E.",
-					QuestStage.Completed => "Quest completed. The guide restored your health once.", _ => "Talk to the Camp Guide."
+					QuestStage.Active => $"Guide: Defeat {simulation.Quest.Required} quest targets and return.",
+					QuestStage.ReadyToTurnIn => "Targets cleared. Return to the quest giver and use E.",
+					QuestStage.Completed => "Quest completed. The guide restored your health once.", _ => "Talk to the quest giver."
 				};
 			}
 		}
@@ -336,7 +338,7 @@ public partial class SimulationPreview : VBoxContainer
 		try
 		{
 			var baseline = replayCheckpoint;
-			string actual = await Task.Run(() => (baseline is null ? GameSimulation.Replay(recordedSeed, InitialEntities(), recorded, target, world: DemoWorld()) : GameSimulation.Replay(baseline, recorded, target)).ComputeStateHash());
+			string actual = await Task.Run(() => (baseline is null ? GameSimulation.Replay(recordedSeed, ActiveActors, recorded, target, world: ActiveWorld) : GameSimulation.Replay(baseline, recorded, target)).ComputeStateHash());
 			if (!IsInstanceValid(this) || !IsInsideTree()) return;
 			bool match = actual == expected;
 			status.Text = match ? $"Replay matched at tick {target}: {actual}" : $"Replay mismatch: {actual}";
@@ -360,7 +362,7 @@ public partial class SimulationPreview : VBoxContainer
 		{
 			if (loading)
 			{
-				var result = await Task.Run(() => GameSave.Load(savePath, world: DemoWorld()));
+				var result = await Task.Run(() => GameSave.Load(ActiveSavePath, world: ActiveWorld));
 				if (!IsInstanceValid(this) || !IsInsideTree()) return;
 				if (result.Simulation.WorldPlayer != Player) throw new InvalidDataException("Checkpoint belongs to an unsupported player identity.");
 				simulation = result.Simulation; view.SetSimulation(simulation);
@@ -374,9 +376,9 @@ public partial class SimulationPreview : VBoxContainer
 			}
 			else
 			{
-				await Task.Run(() => GameSave.Save(savePath, checkpoint));
+				await Task.Run(() => GameSave.Save(ActiveSavePath, checkpoint));
 				if (!IsInstanceValid(this) || !IsInsideTree()) return;
-				status.Text = "Checkpoint saved: " + savePath; log("game_saved", $"tick={checkpoint.Tick}");
+				status.Text = "Checkpoint saved: " + ActiveSavePath; log("game_saved", $"tick={checkpoint.Tick}");
 			}
 		}
 		catch (Exception error) { if (IsInstanceValid(this) && IsInsideTree()) { status.Text = "Checkpoint failed: " + error.Message; log("checkpoint_error", error.ToString()); } }
@@ -485,11 +487,12 @@ public partial class SimulationCanvas : Control
 		DrawRect(new Rect2(Vector2.Zero, Size), new Color(0.035f, 0.045f, 0.065f));
 		Vector2 center = Size / 2;
 		if (simulation?.Collision is not { } grid) return;
-		Vector2 Project(GamePosition p) => center + (new Vector2(p.X, p.Y) - DisplayPosition) / GameSimulation.UnitsPerTile * 40;
+		Vector2 Project(GamePosition p) => terrainContent is null ? center + (new Vector2(p.X, p.Y) - DisplayPosition) / GameSimulation.UnitsPerTile * 40 : center + Iso(p.X - DisplayPosition.X, p.Y - DisplayPosition.Y);
+		if (terrainContent is not null) DrawTerrain();
 		int left = Math.Max(0, (int)Math.Floor((DisplayPosition.X - center.X / 40 * 256 - grid.Origin.X) / 256));
 		int top = Math.Max(0, (int)Math.Floor((DisplayPosition.Y - center.Y / 40 * 256 - grid.Origin.Y) / 256));
 		int right = Math.Min(grid.Width, left + (int)(Size.X / 40) + 3), bottom = Math.Min(grid.Height, top + (int)(Size.Y / 40) + 3);
-		for (int y = top; y < bottom; y++) for (int x = left; x < right; x++)
+		if (terrainContent is null) for (int y = top; y < bottom; y++) for (int x = left; x < right; x++)
 		{
 			Color color = grid.At(x, y) switch { CollisionCell.Open => new(0.10f, 0.14f, 0.18f), CollisionCell.Blocked => new(0.32f, 0.35f, 0.40f), _ => new(0.32f, 0.13f, 0.38f) };
 			DrawRect(new Rect2(Project(new(grid.Origin.X + x * 256, grid.Origin.Y + y * 256)), new Vector2(39, 39)), color);
