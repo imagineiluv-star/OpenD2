@@ -9,7 +9,7 @@
 | 2 | `feat/play-02-map-integration` | 지도/충돌/게임 상태와 화면 연결 | 코드·합성 검증 완료; 실데이터/GUI 대기 |
 | 3 | `feat/play-03-actor-animation` | 게임 상태→캐릭터/몬스터 애니메이션 | 코드·합성 검증 완료; 실데이터/GUI 대기 |
 | 4 | `feat/play-04-navigation` | 화면 좌표·마우스 이동·벽 우회 | 코드·합성 검증 완료; GUI 대기 |
-| 5 | `feat/play-05-content` | 대표 지역·생성 위치·NPC/포털·콘텐츠 연결 | 대기 |
+| 5 | `feat/play-05-content` | 대표 지역·생성 위치·NPC/포털·콘텐츠 연결 | 연결 인수 도구 구현; 원본 콘텐츠 지정/규칙 대기 |
 | 6 | `feat/play-06-continuous-session` | 기록 예산과 플레이 진행 분리 | 대기 |
 | 7 | `feat/play-07-acceptance` | 배포·실제 GUI·증거/인수 | 대기 |
 
@@ -164,3 +164,29 @@ PLAY-03 로컬 최종 검증: 계약 **244/244**, Linux export·배포본 smoke 
 PLAY-03은 [PR #13](https://github.com/imagineiluv-star/OpenD2/pull/13),
 [3개 OS CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37809879059) 성공 후 master `a29becf`에 병합했다.
 PLAY-04 로컬 검증: **249/249**, 기존 rules-v4 독립 벡터, Linux export·배포 smoke 통과.
+
+## PLAY-05: 대표 장면 연결 인수
+
+`--check-scene`은 정적 퀘스트 왕복과 아트 누락을 추가로 보고한다.
+`--check-play-ready <game-directory> <scene.json>`은 필수 아카이브, 모든 actor의 아트,
+플레이어→NPC→모든 목표→NPC 귀환의 정적 연결을 모두 확인해야 종료 0이다. 미충족은 종료 3이다.
+
+읽은 지도에서 이동 가능 셀의 연결 영역을 만들고 방향성 포털 그래프를 대조한다.
+닫힌 지역·벽으로 고립된 목표·편도 포털로 귀환 불가를 구별한다.
+4방향 flood fill은 전체 충돌 셀 예산(1,048,576) 안에서 실행하며 대각선 코너를 건너뛰지 않는다.
+동적 몬스터/드롭 위치, 실제 전투 생존 가능성, 상호작용 조작 성공을 정적 검사로 보장하지 않는다.
+
+`ReadyForSceneGuiCheck=true`는 해당 작성 장면의 GUI 시험 준비 상태다.
+`OriginalRulesValidated=false`, `GuiQa=NOT_RUN`은 계속 유지한다. 원본 테이블·퀘스트 ID에서
+대표 캐릭터·아이템·몬스터 규칙을 정확히 연결하려면 실제 파일과 기준 동작 대조가 필요하다.
+현재 preview 전투/아이템 규칙을 원본 규칙 호환 완료로 표시하지 않는다.
+
+**미완료인 콘텐츠 작업**: 실제 LoD 지도/캐릭터 경로와 방향·프레임·좌표를 지정한 scene JSON,
+원본 게임 테이블의 의미/전투·아이템 규칙 매핑, NPC 아트·HUD·음향, 실제 화면/조작 대조.
+원본 MPQ 미제공 때문에 이들 항목은 이번 합성 검사 통과와 별도로 열린 상태다.
+
+PLAY-05 로컬 검증: 전체 계약 **253/253**, Linux export·배포본 smoke 성공.
+추가 4개 계약은 전체 아트 누락, 편도 포털, 지역 단절, 동일 지도 내 고립과 미검증 상태를 확인한다.
+
+PLAY-04는 [PR #14](https://github.com/imagineiluv-star/OpenD2/pull/14)의
+[3개 OS CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37811296686) 성공 후 master `0adc8fb`에 병합했다.

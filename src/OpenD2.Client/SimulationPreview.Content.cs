@@ -53,11 +53,17 @@ public partial class SimulationPreview
 		try
 		{
 			string directory = gameDirectory();
-			var next = await Task.Run(() => LegacyPlayScene.Load(directory, LegacySceneRequest.Read(file)));
+			var checkedScene = await Task.Run(() =>
+			{
+				var scene = LegacyPlayScene.Load(directory, LegacySceneRequest.Read(file));
+				return (Scene: scene, Readiness: PlaySceneReadiness.Check(scene));
+			});
+			var next = checkedScene.Scene;
 			if (!IsInstanceValid(this) || !IsInsideTree()) return;
 			// Prepare GPU resources before replacing the live session; failure retains old textures/state.
 			view.SetTerrain(next); legacyScene = next; NewRun();
 			contentInfo.Text = $"Legacy terrain: {next.World.Regions.Length} region(s). Content {next.ContentId[..16]}.\nExplicit placements and preview game rules; original campaign compatibility is not validated. Artwork profiles: {next.Artwork.Count}/{next.Actors.Count}.";
+			contentInfo.Text += $"\nStatic quest loop: {checkedScene.Readiness.QuestLoopReachable}; GUI QA: NOT_RUN. " + string.Join(", ", checkedScene.Readiness.Issues.Take(8));
 			log("legacy_scene_loaded", $"content={next.ContentId}, regions={next.World.Regions.Length}");
 		}
 		catch (Exception error)
