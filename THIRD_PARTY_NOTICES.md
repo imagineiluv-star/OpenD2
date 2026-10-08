@@ -1,4 +1,4 @@
-# M1 MPQ dependency provenance
+# Migration dependency provenance
 
 OpenD2's existing LICENSE continues to apply to its own implementation.
 
@@ -17,3 +17,15 @@ M1-06 DT1/DS1 parsers reorganize the existing OpenD2 `Engine/DT1.cpp/.hpp` and `
 M1-07 map table layouts and the four-byte BIN record-count prefix were checked against OpenD2 `Modcode/Common/DataTables.cpp`, `Shared/D2DataTables.hpp`, and ThePhrozenKeep/D2MOO commit `5596f5cb6c5251a0a07c6637d26458b06099d516` (`source/D2Common/src/DataTbls/LevelsTbls.cpp`, `DataTbls.cpp`, and `include/DataTbls/LevelsTbls.h`). The C# bounded parsers, map projection and tile cache are new OpenD2 source. No external source, original DLL, game table or runtime dependency is bundled.
 
 M2-01 `SimulationRandom` preserves the uint32 xorshift transition from OpenD2 `Modcode/Common/D2Common_Math.cpp` (eezstreet). The C# bounded range conversion, scheduling, simulation state, replay and inspector are OpenD2 source. The legacy 16-bit truncation and unsafe integer seed cast are not carried over. No new runtime dependency or original game resource is introduced.
+
+
+## NPC-02 optional local inference
+
+llama.cpp v0.6.0 is built from the annotated tag's peeled commit `d81235049384534c167caea52b85a694f6103d14` of https://github.com/ggml-org/llama.cpp.git (MIT). `eng/build-npc.py` checks the exact source commit and clean worktree, builds `llama-server` from source, and ships its LICENSE plus dependency notices (including cpp-httplib, json.hpp and hash helpers). The immutable source commit retains full file-level notices. The CPU-only executable is bundled as build output, never committed. Shell subprocess tools, web UI and automatic model fetching are disabled; OpenD2 owns the bounded C# adapter and model installer. Linux uses system C/C++ libraries; Windows statically links the MSVC runtime. Builds are reproducible from source, not certified bit-identical across compilers.
+
+Optional weights are official Qwen GGUF files under Apache-2.0. The complete license is preserved in `eng/notices/Qwen-Apache-2.0.txt` and copied into the distributed NPC runtime directory. The models are unmodified downloads with repository/revision/file/size/SHA-256 pinned in `NpcModelCatalog.cs`; they are not committed, included in CI artifacts, or automatically downloaded. Source attribution:
+
+- Qwen/Qwen3-0.6B-GGUF, revision `1208e45d782fe18602c5eaf10e5758d5b0f24c03`, `Qwen3-0.6B-Q4_K_M.gguf`, 396704416 bytes, SHA-256 `b0638f08417a2d3c8652760462eb5407c6e30173cf9608ad0820757a281eea0e`. This older official immutable revision is intentional; current main no longer lists this Q4 file.
+- Qwen/Qwen3-1.7B-GGUF, revision `90862c4b9d2787eaed51d12237eafdfe7c5f6077`, `Qwen3-1.7B-Q8_0.gguf`, 1834426016 bytes, SHA-256 `061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a`.
+
+License source: https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/blob/1208e45d782fe18602c5eaf10e5758d5b0f24c03/LICENSE. Model cards/files: https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/tree/1208e45d782fe18602c5eaf10e5758d5b0f24c03 and https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/tree/90862c4b9d2787eaed51d12237eafdfe7c5f6077. No Blizzard model or game data is introduced.

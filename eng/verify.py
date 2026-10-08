@@ -18,5 +18,5 @@ for name in ("Core", "Assets", "Npc"):
 paths = subprocess.check_output(["git", "ls-files", "--cached", "--others", "--exclude-standard"], cwd=root, text=True).splitlines()
 for item in paths:
     if item.startswith(("src/", "tests/", "tools/", "eng/")):
-        assert Path(item).suffix.lower() not in (".dll", ".exe", ".mpq", ".d2s", ".d2i"), item
+        assert Path(item).suffix.lower() not in (".dll", ".exe", ".mpq", ".d2s", ".d2i", ".gguf"), item
 print("PASS engine boundary and migration source-only checks")

@@ -4,5 +4,10 @@
     "commit": "44ebfbfc109d76e2a85bbd5d8b0c949df7e65c6f",
     "version": "9.30.0",
     "bundledDependencies": true
+  },
+  "llama_cpp": {
+    "repository": "https://github.com/ggml-org/llama.cpp.git",
+    "commit": "d81235049384534c167caea52b85a694f6103d14",
+    "version": "v0.6.0"
   }
 }
