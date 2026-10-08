@@ -22,7 +22,7 @@ python eng/validate.py --export Linux
 
 bootstrap은 공식 Godot 배포본을 내려받아 `eng/toolchain.json`의 SHA-512로 검사한다. SDK는 별도 설치한다. bootstrap 출력의 실행 파일로 `src/OpenD2.Client/project.godot`를 열면 된다. 기존 Godot 설치를 사용하려면 `python eng/validate.py --godot <실행파일경로> --export Linux`를 사용한다.
 
-`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 228개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export·SDK 검색 경로를 제거한 배포본 실행 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
+`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 257개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export·SDK 검색 경로를 제거한 배포본 실행 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
 
 Godot 없이 코어를 검증할 수 있다:
 
@@ -50,7 +50,13 @@ dotnet run --project tools/OpenD2.AssetAudit -- --tables-bin-110f /path/to/game
 
 **Simulation** 탭에서 그리드를 클릭하고 방향키로 이동한다. 초록색 **Camp Guide** 근처에서 **E / Interact**로 퀘스트를 수락한다. 금색 **Cellar** 포털 근처에서 E로 던전에 들어가 **Space / Attack nearest**로 세 몬스터를 처치한다. 던전 입구의 **Camp** 포털로 돌아와 Guide에게 E로 완료를 보고하면 체력을 한 번 회복한다. 지역을 오가도 체력·몬스터 위치·사망·퀘스트는 현재 실행 중에 유지된다. 공격 중에는 상호작용이 실패할 수 있으므로 Space를 놓고 E를 누른다.
 
-회색 벽과 보라색 미확인 셀은 이동을 막는다. **Pause / Step one tick / Signal / Verify replay**로 상태와 재생을 검사한다. 사망 후 또는 Seed 변경 후에는 **New run**으로 처음부터 시작한다. Save checkpoint / Load checkpoint로 사용자 saves 폴더의 단일 슬롯을 저장/복원한다. 로드 후 Resume으로 진행한다. 조작·판정 순서·예산·제한은 [M2-05 기록](docs/migration/M2_05_RESULTS.md)을 참조한다.
+회색 벽과 보라색 미확인 셀은 이동을 막는다. **Show diagnostics**를 켜면 Seed·Step one tick·Signal·Verify replay와 tick/hash가 나타난다. 사망 후 또는 Seed 변경 후에는 **New run**으로 처음부터 시작한다. Save checkpoint / Load checkpoint로 사용자 saves 폴더의 슬롯을 저장/복원한다. 로드 후 Resume으로 진행한다. 원본 scene은 ContentId별 저장 슬롯을 사용한다. 조작·판정은 [M2-05 기록](docs/migration/M2_05_RESULTS.md), 최신 통합/연속 플레이는 [PLAY 기록](docs/migration/PLAY_INTEGRATION.md)을 참조한다.
+
+시작하면 **Simulation** 탭이 열린다. 상단 HUD는 체력 바/HP 숫자·지역·진행/일시정지/사망 상태를 표시한다.
+게임 화면과 자주 쓰는 버튼을 위에 두고, 리소스·진단·NPC AI 설정은 아래로 스크롤해 접근한다.
+왼쪽 FPS 제한(30~240)·Fullscreen·Show diagnostics는 즉시 적용되며 **Save settings**를 눌러야 재실행 후 유지된다.
+**F11**은 전체화면을 전환한다. 최소 창 크기는 1000×680이며 더 큰 창에서는 컨테이너가 가용 공간에 맞춰 확장된다.
+실제 DPI·다중 모니터·전체화면 전환·키보드 포커스는 QA-06의 GUI 인수 대상이다.
 
 ## 실행과 배포
 

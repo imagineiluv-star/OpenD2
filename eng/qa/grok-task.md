@@ -30,11 +30,11 @@
 | ID | 실제 조작 | 확인할 결과 |
 |---|---|---|
 | QA-01 | 새 프로필에서 앱 실행. 게임 데이터 경로·모델은 비운다. | 기본 화면과 Simulation 탭 표시, 기본 기능 조작. 첫 실행 오류·권한 요청 기록 |
-| QA-02 | Simulation에서 Seed 1 → New run → 그리드 클릭 → 방향키 이동. Camp Guide 근처에서 E. 금색 Cellar 포털에서 E. Space로 몬스터 3마리 처치. Camp로 귀환해 Guide에게 E. | 퀘스트 단계·처치 수·완료와 체력 회복. 다시 상호작용해 중복 완료가 발생하지 않는지 확인 |
+| QA-02 | 기본 Simulation 탭에서 Show diagnostics 활성화 → Seed 1 → New run → 그리드 클릭 → 방향키 이동. Camp Guide 근처에서 E. 금색 Cellar 포털에서 E. Space로 몬스터 3마리 처치. Camp로 귀환해 Guide에게 E. | 체력 바/HP 숫자·지역·퀘스트 단계·처치 수·완료와 체력 회복. 다시 상호작용해 중복 완료가 발생하지 않는지 확인 |
 | QA-03 | 청록색 아이템 근처에서 F. 목록 선택 → Equip selected → Unequip selected → Drop selected. | 가방·장비·능력 표시가 조작과 일치. 버튼별 전후 화면 기록 |
-| QA-04 | Pause → Save checkpoint. tick·State hash·위치·체력·퀘스트·아이템 기록. 종료 후 같은 프로필로 재실행 → Load checkpoint. | 로드가 일시정지 상태이며 기록한 상태와 일치. Resume으로 정상 진행 |
+| QA-04 | Show diagnostics 활성화 → Pause → Save checkpoint. tick·State hash·위치·체력·퀘스트·아이템 기록. 종료 후 같은 프로필로 재실행 → Load checkpoint. | 로드가 일시정지 상태이며 기록한 상태와 HUD가 일치. Resume으로 정상 진행 |
 | QA-05 | New run 후 Guide 근처 이동. '안녕', '퀘스트', '수락'을 Talk to Guide로 전송. | 기본 대사와 제안 표시. Confirm quest action 전에는 수락이 적용되지 않으며 확인 후 다음 tick에 적용 |
-| QA-06 | 창 크기 변경, 탭 이동, 그리드 재클릭, 대화 입력 후 이동·공격 재시도. | 한글 표시, 버튼 접근, 입력 포커스, 오류 안내. 시험한 창 크기만 기록 |
+| QA-06 | 창 크기 변경, 탭 이동, 그리드 재클릭, 대화 입력 후 이동·공격 재시도. FPS 30/60, Fullscreen/F11, Show diagnostics 변경 → Save settings → 재실행. | 한글·HUD·버튼·스크롤 접근, 입력 포커스, 저장한 표시 설정 복원. F11로 전체화면 해제. 실제 시험한 창 크기/DPI만 기록; FPS 제한을 목표 FPS 달성으로 간주하지 않음 |
 | QA-07 (선택) | 0.6B 모델 → Download model → Cancel → 이어받기 → Start local AI → 대화 → Use basic dialogue → Remove model. | 진행·취소·이어받기·응답·전환·제거. 미지원 CPU는 BLOCKED. 큰 비교 모델은 별도 요청 없이 다운로드 금지 |
 | QA-08 | 같은 run에서 15,000 tick을 넘기도록 일반 창에서 10분 이상 진행. 경계 전후 이동·공격 → Verify replay → Save checkpoint → 종료/재실행 → Load checkpoint → Resume. | 자동 정지 없이 tick 증가, Replay window 기준점/rolled 증가, replay 일치, 체력·퀘스트·아이템 유지와 저장 복원. 벽시계 시각과 경계 전후 화면 기록 |
 | QA-09 (원본 장면 별도 인수) | 제공된 게임 경로 지정 → Load legacy scene JSON. 알려진 지면/벽 클릭, 8방향 이동, 공격/피격/사망, NPC 수락→포털→목표 처치→귀환, 저장/재실행/같은 scene 재선택/로드. | 원본 지형·팔레트·캐릭터 프레임·방향·가림, 충돌/코너, 퀘스트 왕복과 scene 저장 슬롯 확인. 실제 확인한 클래스/지역/동작만 결과에 기록 |
@@ -44,6 +44,7 @@
 실패를 숨기기 위해 New run을 반복하지 않는다. 원본 캠페인·3D 고품질 그래픽·다른 OS·GPU 성능·장시간
 안정성을 이번 Linux 시험의 통과 범위에 넣지 않는다.
 
+QA-08의 tick/Replay window/Verify replay는 Show diagnostics를 켜서 확인한다.
 QA-08은 Pause/Step one tick이나 tick 직접 주입으로 시간을 채우지 않는다. 테스트 도중 사망해
 경계를 확인할 수 없으면 안전한 Camp에서 같은 run을 이어가되 실제 확인 범위를 기록한다.
 이 시험은 10분 기록 경계의 동작 확인이며 QA-10의 2시간 안정성 인수를 대체하지 않는다.

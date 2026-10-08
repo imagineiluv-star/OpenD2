@@ -2,7 +2,8 @@ using System.Text.Json;
 
 namespace OpenD2.Core;
 
-public sealed record AppSettings(int SchemaVersion = 1, string GameDataPath = "", int MaxFps = 60)
+public sealed record AppSettings(int SchemaVersion = 1, string GameDataPath = "", int MaxFps = 60,
+	bool Fullscreen = false, bool ShowDiagnostics = false)
 {
 	public void Validate()
 	{

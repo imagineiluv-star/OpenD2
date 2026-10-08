@@ -14,6 +14,8 @@ See [release testing](docs/migration/RELEASE_QA.md) for packaged builds and the 
 
 The historical image and CMake/TCP-IP instructions below describe the original C++ project. They are not evidence of C# GUI gameplay acceptance.
 
+[M2-06a](docs/migration/M2_06A_RESULTS.md) opens the Simulation tab by default, adds a health/state HUD and saves FPS, fullscreen and diagnostics preferences. Use **Save settings** to keep changes, **F11** to toggle fullscreen, and **Show diagnostics** for seed/replay tools. Real GUI, DPI and fullscreen acceptance is pending.
+
 ![Diablo II Main Menu in OpenD2](https://i.imgur.com/RFNbRiT.png)
 
 ### Project Goals
