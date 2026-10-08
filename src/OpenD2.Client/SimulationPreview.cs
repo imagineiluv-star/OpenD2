@@ -470,7 +470,7 @@ public partial class SimulationCanvas : Control
 	public int SignalValue { get; set; } = -1;
 	private GameSimulation? simulation;
 	private readonly List<EntityState> depthActors = new(GameSimulation.MaxCombatEntities);
-	public void SetSimulation(GameSimulation value) { simulation = value; foreach (var sprite in actorSprites.Values) sprite.Reset(); QueueRedraw(); }
+	public void SetSimulation(GameSimulation value) { simulation = value; foreach (var sprite in actorSprites.Values) sprite.Reset(); npcSprite?.Reset(); QueueRedraw(); }
 	public SimulationCanvas() { FocusMode = FocusModeEnum.All; MouseFilter = MouseFilterEnum.Stop; ClipContents = true; }
 	public void SetPositions(GamePosition previous, GamePosition current, double alpha)
 	{
@@ -505,18 +505,23 @@ public partial class SimulationCanvas : Control
 				DrawRect(new Rect2(point - new Vector2(13, 13), new Vector2(26, 26)), Colors.Gold, false, 2);
 				DrawString(GetThemeDefaultFont(), point + new Vector2(16, 5), world.GetRegion(portal.Destination).Name, fontSize: 14, modulate: Colors.Gold);
 			}
-			var npc = world.QuestGiver;
-			if (npc.Region == simulation.ActiveRegion)
-			{
-				Vector2 point = Project(npc.Position); DrawCircle(point, 10, Colors.MediumSeaGreen);
-				DrawString(GetThemeDefaultFont(), point + new Vector2(16, 5), npc.Name, fontSize: 14, modulate: Colors.MediumSeaGreen);
-			}
 		}
 		depthActors.Clear();
 		foreach (var actor in simulation.Entities) if (actor.Region == simulation.ActiveRegion) depthActors.Add(actor);
 		depthActors.Sort(static (a, b) => { int order = (a.Position.X + a.Position.Y).CompareTo(b.Position.X + b.Position.Y); return order != 0 ? order : a.Id.Value.CompareTo(b.Id.Value); });
+		WorldNpc? pendingNpc = simulation.World?.QuestGiver;
+		if (pendingNpc is { } outside && outside.Region != simulation.ActiveRegion) pendingNpc = null;
+		void DrawGuide(WorldNpc npc)
+		{
+			DrawForeground(npc.Position.X + npc.Position.Y); Vector2 point = Project(npc.Position);
+			if (!DrawNpcArtwork(point)) DrawCircle(point, 10, Colors.MediumSeaGreen);
+			DrawString(GetThemeDefaultFont(), point + new Vector2(16, 5), npc.Name, fontSize: 14, modulate: Colors.MediumSeaGreen);
+		}
 		foreach (var e in depthActors)
 		{
+			if (pendingNpc is { } npc && (npc.Position.X + npc.Position.Y < e.Position.X + e.Position.Y ||
+				(npc.Position.X + npc.Position.Y == e.Position.X + e.Position.Y && npc.Id.Value < e.Id.Value)))
+			{ DrawGuide(npc); pendingNpc = null; }
 			DrawForeground(e.Position.X + e.Position.Y);
 			Vector2 point = e.Kind == EntityKind.Player ? center : Project(e.Position);
 			Color color = !e.IsAlive ? Colors.DimGray : e.Kind == EntityKind.Monster ? Colors.IndianRed : SignalValue < 0 ? Colors.CornflowerBlue : Color.FromHsv(SignalValue / 6f, 0.7f, 0.95f);
@@ -529,6 +534,7 @@ public partial class SimulationCanvas : Control
 			}
 			else if (!hasArtwork) { DrawLine(point + new Vector2(-7, -7), point + new Vector2(7, 7), Colors.Gray, 2); DrawLine(point + new Vector2(-7, 7), point + new Vector2(7, -7), Colors.Gray, 2); }
 		}
+		if (pendingNpc is { } lastNpc) DrawGuide(lastNpc);
 		DrawForeground(int.MaxValue, roofs: true);
 		foreach (var item in simulation.Items)
 		{

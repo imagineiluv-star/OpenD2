@@ -14,6 +14,45 @@
 | 7 | `feat/play-07-acceptance` | 배포·실제 GUI·증거/인수 | 인수 자료 구현; 원본/GUI/2시간 실제 시험 대기 |
 | 8 | `feat/play-08-scene-setup` | 데이터 폴더 점검·지도에서 장면 생성·시작 메뉴 연결 | 구현; 실제 자료/GUI 인수 대기 |
 | 9 | `feat/play-09-actor-art-setup` | 장면별 캐릭터/몬스터 아트 입력·방향 미리보기·복사본 저장 | 구현; 실제 자료/GUI 인수 대기 |
+| 10 | `feat/play-10-npc-artwork` | Guide 대기 아트·고정 방향·깊이 정렬·설정 저장 | 구현; 실제 자료/GUI 인수 대기 |
+
+## PLAY-10: Guide NPC 대기 아트
+
+PLAY-10 이후 **Scene art**의 배우 목록에서 **Guide**를 선택한다. v0.2.0-rc.3에는 없다.
+**Use artwork for this actor**를 켜고 팔레트, **Idle**의 DCC 또는 COF/레이어, 8개 방향 번호와 FPS를 지정한다.
+NPC에는 Idle 탭만 표시한다. **Guide fixed facing**은 실제 게임에 그릴 방향, **Inspect facing**은 검사기에서 확인할 방향이다.
+미완성 입력·고정 방향은 다른 배우로 전환해도 유지하며 저장한 복사본을 다시 열어 수정할 수 있다.
+미리보기·검증·새 복사본 저장·로드는 아래 PLAY-09 절차를 따른다.
+
+scene schema 1에 선택 필드 `NpcArtwork`를 추가한다. 다음은 형식 예시이며 경로·방향·FPS를 실제 자료에서 확인해야 한다.
+
+```json
+"NpcArtwork": {
+  "Entity": 10,
+  "PalettePath": "data/global/palette/act1/pal.dat",
+  "Idle": {
+    "Motion": "Idle", "Path": "data/global/monsters/YOUR_NPC_IDLE.dcc",
+    "Layers": null, "Directions": [0, 1, 2, 3, 4, 5, 6, 7], "Fps": 10
+  },
+  "Facing": 4
+}
+```
+
+- `Entity`는 해당 scene의 `Npc.Id`여야 한다. 전투 actor에 NPC를 중복 추가하지 않는다.
+- `Facing`은 0..7이며 아래 PLAY-03의 Core 방향 벡터 순서다. 파일 내부 방향은 `Directions[Facing]`으로 명시한다.
+- Idle은 25Hz 게임 tick으로 반복하므로 Pause/메뉴 정지와 함께 멈춘다. 고정 위치의 NPC 한 명이며 이동·대화 동작 전환은 없다.
+- NPC를 캐릭터/몬스터와 같은 X+Y 깊이 순서에 넣고 기본 벽 정렬을 적용한다. 원본 특수 벽·지붕 효과의 정확성은 미검증이다.
+- 아트가 없으면 기존 원형 표시다. NPC 설정/파일 해시도 ContentId와 별도 저장 슬롯에 반영한다.
+  필드가 없는 기존 scene의 ContentId는 유지한다. 구버전 앱은 알 수 없는 JSON 필드를 거부하므로 새 복사본에는 새 빌드를 사용한다.
+- 지형·combat actor·NPC는 입력 128MiB와 decoded pixel 16,777,216 예산을 공유한다. 실패 시 진행 중 장면을 교체하지 않는다.
+- `--check-scene`/`--check-play-ready` 출력에 `NpcArtworkSources`, `NpcFacing`,
+  `Readiness.NpcArtworkConfigured`, `Readiness.ReadyForAllSpritesGuiCheck`가 추가된다.
+  마지막 값은 기존 `ReadyForSceneGuiCheck`와 NPC 아트 설정을 모두 만족해야 true다.
+  기존 CLI 종료 코드와 `ReadyForSceneGuiCheck`는 combat actor/정적 퀘스트 검사 의미를 유지하며 NPC 아트를 필수로 만들지 않는다.
+  전체 스프라이트 장면 QA에는 새 플래그도 확인한다. true여도 `GuiQa=NOT_RUN`, `OriginalRulesValidated=false`다.
+
+NPC 이름·대화·퀘스트 로직은 기존대로다. 원작 HUD, 장비 교체별 외형, NPC 이동·대화 모션은 후속 작업이다.
+합성 검증과 실제 인수의 경계는 [PLAY_10_RESULTS](PLAY_10_RESULTS.md)에 기록한다.
 
 ## PLAY-09: 캐릭터·몬스터 아트 연결 화면
 
@@ -39,7 +78,7 @@ PLAY-09 이후 빌드의 **Scene art** 탭을 사용한다. 기존 v0.2.0-rc.3�
 
 아트를 끈 배우는 임시 표시다. 일부 배우만 설정한 중간 복사본도 저장할 수 있으며 설정 수를 보고한다.
 모든 combat actor 아트가 로드되어도 실제 색상/방향/타이밍/가림을 확인한 것은 아니다.
-NPC/장비 교체별 아트, 원작 HUD, 원본 캠페인 규칙, 3D는 이 편집기 범위에 포함되지 않는다.
+NPC Idle 아트는 위 PLAY-10에서 추가했다. 장비 교체별 아트, 원작 HUD, 원본 캠페인 규칙, 3D는 별도 범위다.
 리소스 자동 검색/클래스 프리셋 추론 없이 검증한 MPQ 경로를 사용한다.
 검증 기록은 [PLAY_09_RESULTS](PLAY_09_RESULTS.md)를 따른다.
 
@@ -191,7 +230,7 @@ COF는 `Path`에 COF를 넣고 `Layers`를 `{"0":"...head.dcc","1":"...torso.dcc
 - 동작 우선순위는 Death → Hit → Attack → Walk → Idle. 25Hz 게임 tick으로 진행하고 일시정지 시 정지한다.
   Death/Attack/Hit는 마지막 프레임을 유지하고 Idle/Walk만 반복한다. 전투 판정이나 RNG에는 영향이 없다.
 - 지역 지형과 캐릭터의 기본 깊이 정렬을 추가했다. 특수 벽·지붕 투명 처리·PL2·그림자·장비 교체별 아트는 아직 미구현/미검증이다.
-- 프로필이 없는 객체는 기존 도형으로 표시한다. 현재 최대 32개 combat actor artwork 프로필이며 NPC 스프라이트는 별도다.
+- 프로필이 없는 객체는 기존 도형으로 표시한다. 최대 32개 combat actor artwork 프로필과 PLAY-10의 선택 NPC Idle 프로필 한 개를 지원한다.
 - 전체 scene 입력 예산 128MiB에 artwork도 포함하고, 지형+캐릭터 indexed pixels 합계를 16,777,216으로 제한한다.
   같은 motion 안의 반복 방향은 clip을 공유한다. 전체 클래스/장비 아틀라스나 스트리밍 구현은 아니다.
 - artwork의 원본 해시·방향/FPS 설정은 ContentId에 포함된다. artwork가 없는 기존 scene의 ID는 유지한다.
@@ -241,7 +280,7 @@ PLAY-04 로컬 검증: **249/249**, 기존 rules-v4 독립 벡터, Linux export�
 현재 preview 전투/아이템 규칙을 원본 규칙 호환 완료로 표시하지 않는다.
 
 **미완료인 콘텐츠 작업**: 실제 LoD 지도/캐릭터 경로와 방향·프레임·좌표를 지정한 scene JSON,
-원본 게임 테이블의 의미/전투·아이템 규칙 매핑, NPC 아트·전체 UI·미지원 오디오 형식, 실제 화면/조작/청취 대조.
+원본 게임 테이블의 의미/전투·아이템 규칙 매핑, NPC 실제 아트 인수·전체 UI·미지원 오디오 형식, 실제 화면/조작/청취 대조.
 원본 MPQ 미제공 때문에 이들 항목은 이번 합성 검사 통과와 별도로 열린 상태다.
 
 PLAY-05 로컬 검증: 전체 계약 **253/253**, Linux export·배포본 smoke 성공.

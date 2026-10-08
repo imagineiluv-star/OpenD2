@@ -5,6 +5,7 @@ namespace OpenD2.Assets;
 
 public enum ActorMotion { Idle, Walk, Attack, Hit, Death }
 public sealed record LegacyMotionRequest(string Motion, string Path, Dictionary<byte, string>? Layers, int[] Directions, double Fps);
+public sealed record LegacyNpcRequest(uint Entity, string PalettePath, LegacyMotionRequest Idle, int Facing = 0);
 public sealed record LegacyActorRequest(uint Entity, string PalettePath, LegacyMotionRequest[] Motions);
 public sealed record LegacyMotion(ActorMotion Motion, IReadOnlyList<AnimationClip> Directions, double Fps);
 
@@ -16,17 +17,31 @@ public sealed class LegacyActorArt
 	public long PixelCount { get; }
 	private LegacyActorArt(Palette palette, Dictionary<ActorMotion, LegacyMotion> motions, long pixels)
 	{ Palette = palette; Motions = new ReadOnlyDictionary<ActorMotion, LegacyMotion>(motions); PixelCount = pixels; }
-	public static LegacyActorArt Load(LegacyActorRequest request, Func<string, byte[]> read)
+	public static LegacyActorArt Load(LegacyActorRequest request, Func<string, byte[]> read) => Load(request, read, idleOnly: false);
+	public static LegacyActorArt LoadNpc(LegacyNpcRequest request, Func<string, byte[]> read)
 	{
-		if (request is null || request.Entity == 0 || request.Motions is null || request.Motions.Length != 5 || request.Motions.Any(m => m is null) || AssetDecoders.Kind(request.PalettePath) != "palette")
-			throw new InvalidDataException("Actor artwork requires an entity, palette and five motion definitions.");
+		if (request is null || request.Facing is < 0 or > 7 || request.Idle is null || request.Idle.Motion != "Idle")
+			throw new InvalidDataException("NPC artwork needs Idle and a facing index 0..7.");
+		return Load(new(request.Entity, request.PalettePath, [request.Idle]), read, idleOnly: true);
+	}
+	public int IdleFrame(long tick, int facing)
+	{
+		if (tick < 0) throw new ArgumentOutOfRangeException(nameof(tick));
+		if (facing is < 0 or > 7) throw new ArgumentOutOfRangeException(nameof(facing));
+		var idle = Motions[ActorMotion.Idle];
+		return (int)((tick * idle.Fps / 25) % idle.Directions[facing].Frames.Count);
+	}
+	private static LegacyActorArt Load(LegacyActorRequest request, Func<string, byte[]> read, bool idleOnly)
+	{
+		if (request is null || request.Entity == 0 || request.Motions is null || request.Motions.Length != (idleOnly ? 1 : 5) || request.Motions.Any(m => m is null) || AssetDecoders.Kind(request.PalettePath) != "palette")
+			throw new InvalidDataException("Artwork requires an entity, palette and the required motion definitions.");
 		var definitions = request.Motions.Select(m => m with { Directions = m.Directions?.ToArray()!, Layers = m.Layers is null ? null : new(m.Layers) }).ToArray();
 		var motionTypes = new HashSet<ActorMotion>();
 		foreach (var def in definitions)
 		{
 			if (!Enum.TryParse<ActorMotion>(def.Motion, false, out var type) || !Enum.IsDefined(type) || def.Motion != type.ToString() || !motionTypes.Add(type) ||
 				def.Directions is null || def.Directions.Length != 8 || def.Directions.Any(d => d is < 0 or > 31) || !double.IsFinite(def.Fps) || def.Fps is <= 0 or > 120)
-				throw new InvalidDataException("Artwork needs unique Idle/Walk/Attack/Hit/Death, eight explicit directions and valid FPS.");
+				throw new InvalidDataException("Artwork needs unique motion names, eight explicit directions and valid FPS.");
 			string? kind = AssetDecoders.Kind(def.Path);
 			if (kind is not ("dcc" or "cof") || (kind == "dcc" && def.Layers is not null) ||
 				(kind == "cof" && (def.Layers is null || def.Layers.Count is < 1 or > 16 || def.Layers.Any(p => p.Key > 15 || AssetDecoders.Kind(p.Value) != "dcc"))))

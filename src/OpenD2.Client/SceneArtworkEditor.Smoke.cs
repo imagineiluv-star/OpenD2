@@ -27,15 +27,23 @@ public partial class SceneArtworkEditor
 			}
 			ShowActor(0);
 			if (Math.Abs(motions[0].Fps.Value - 12.34567) > 1e-9) throw new InvalidDataException("Artwork form rounded imported FPS.");
+			ShowActor(source!.Actors.Length); enabled.ButtonPressed = true; npcFacing.Select(4);
+			motions[0].Show(new("test.dcc", "", "0,0,0,0,1,1,1,1", 10));
+			if (!npcFacing.Visible || !tabs.IsTabHidden(1)) throw new InvalidDataException("Guide editor did not restrict artwork to Idle.");
+			ShowActor(0); ShowActor(source.Actors.Length);
+			if (npcFacing.Selected != 4 || motions[0].Path.Text != "test.dcc") throw new InvalidDataException("Guide draft or facing was lost.");
 			var saving = SaveCopy(Read, copy);
 			if (!busy || !save.Disabled || !actor.Disabled || !motions[0].Preview.Disabled) throw new InvalidDataException("Artwork save allowed concurrent edits.");
 			if (!await saving || savedFile != copy || loadSaved.Disabled) throw new InvalidDataException("Valid artwork copy could not be saved.");
 			var loaded = LegacyPlayScene.Load(LegacySceneRequest.Read(copy), Read);
-			if (loaded.Artwork.Count != 2 || !PlaySceneReadiness.Check(loaded).ReadyForSceneGuiCheck || !File.ReadAllBytes(original).SequenceEqual(before)) throw new InvalidDataException("Artwork copy lost actors or changed source JSON.");
+			if (loaded.NpcArtwork is null || loaded.NpcFacing != 4 || !PlaySceneReadiness.Check(loaded).ReadyForAllSpritesGuiCheck || loaded.Artwork.Count != 2 || !PlaySceneReadiness.Check(loaded).ReadyForSceneGuiCheck || !File.ReadAllBytes(original).SequenceEqual(before)) throw new InvalidDataException("Artwork copy lost actors or changed source JSON.");
 			string prior = savedFile; string info = sourceInfo.Text;
 			if (await ReadScene(Path.Combine(folder, "missing.json"), Read) || savedFile != prior || sourceInfo.Text != info || source is null) throw new InvalidDataException("Failed artwork import discarded the current form.");
 			RequestOpen(original); replace.Hide(); replace.EmitSignal(ConfirmationDialog.SignalName.Canceled);
 			if (pendingFile.Length != 0 || savedFile != prior || sourceInfo.Text != info) throw new InvalidDataException("Cancelled artwork import changed the form.");
+			if (!await ReadScene(copy, Read)) throw new InvalidDataException("Could not reopen the saved NPC art copy.");
+			ShowActor(source!.Actors.Length);
+			if (!enabled.ButtonPressed || npcFacing.Selected != 4 || motions[0].Path.Text != "test.dcc") throw new InvalidDataException("NPC artwork was not restored in the editor.");
 			GD.Print("OPEND2_PLAY09_ART_SETUP_READY");
 		}
 		catch (Exception error) { GD.PushError("Artwork setup smoke failed: " + error); GetTree().Quit(1); }
