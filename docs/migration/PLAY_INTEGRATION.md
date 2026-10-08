@@ -10,7 +10,7 @@
 | 3 | `feat/play-03-actor-animation` | 게임 상태→캐릭터/몬스터 애니메이션 | 코드·합성 검증 완료; 실데이터/GUI 대기 |
 | 4 | `feat/play-04-navigation` | 화면 좌표·마우스 이동·벽 우회 | 코드·합성 검증 완료; GUI 대기 |
 | 5 | `feat/play-05-content` | 대표 지역·생성 위치·NPC/포털·콘텐츠 연결 | 연결 인수 도구 구현; 원본 콘텐츠 지정/규칙 대기 |
-| 6 | `feat/play-06-continuous-session` | 기록 예산과 플레이 진행 분리 | 대기 |
+| 6 | `feat/play-06-continuous-session` | 기록 예산과 플레이 진행 분리 | 코드·합성 검증 완료; 실제 장시간 GUI 대기 |
 | 7 | `feat/play-07-acceptance` | 배포·실제 GUI·증거/인수 | 대기 |
 
 ## PLAY-01: 선택 지도 사전검사
@@ -190,3 +190,23 @@ PLAY-05 로컬 검증: 전체 계약 **253/253**, Linux export·배포본 smoke 
 
 PLAY-04는 [PR #14](https://github.com/imagineiluv-star/OpenD2/pull/14)의
 [3개 OS CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37811296686) 성공 후 master `0adc8fb`에 병합했다.
+
+## PLAY-06: 연속 플레이와 제한된 재생 기록
+
+10분(15,000 tick) 또는 4,096개 입력을 기록하면 현재 상태를 새 재생 기준점으로 보관하고
+이전 입력 기록만 비운다. 게임 tick·퀘스트·아이템·지역·체력은 유지하며 일시정지하지 않는다.
+진단 화면의 `Replay window`와 `rolled`에서 현재 검증 범위를 확인한다.
+**Verify replay는 현재 기록 구간만 검사**한다. 전체 세션을 무제한 메모리에 남기는 기능은 아니다.
+
+- 다음 입력을 받기 전에 기준점을 갱신한다. 이미 대기 중인 명령은 snapshot에만, 이후 명령은 새 기록에만 포함해 중복 적용을 막는다.
+- 저장 후 로드는 복원한 상태를 새 기준점으로 사용한다. scene별 저장 슬롯과 콘텐츠 해시 검사는 유지한다.
+- 계약은 180,001 tick(게임 시간 2시간 상당)의 연속 진행·12회 구간 교체,
+  4,096개 명령 경계에서 대기 입력 중복 방지, 거절된 입력·복원 상태의 replay를 확인한다.
+- 배포본 `OPEND2_PLAY06_CONTINUOUS_READY`는 실제 클라이언트 RunTick으로 15,001 tick을 진행하고
+  비정지·구간 교체·상태 해시 일치를 검사한다. 빠르게 돌린 합성 시험이며 2시간 실제 GUI soak가 아니다.
+
+PLAY-06 로컬 검증: 전체 계약 **256/256**, Linux export·배포본 smoke 성공.
+실제 10분 이상 조작, 저장/재실행, 목표 PC에서 2시간 렌더링·메모리·입력 안정성은 GUI 인수 항목이다.
+
+PLAY-05는 [PR #15](https://github.com/imagineiluv-star/OpenD2/pull/15)의
+[3개 OS CI](https://github.com/imagineiluv-star/OpenD2/actions/runs/37812531405) 성공 후 master `3ff1150`에 병합했다.

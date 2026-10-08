@@ -49,6 +49,7 @@ assert "OPEND2_NPC02_RUNTIME_READY" in output, "Bundled NPC runtime execution ma
 assert "OPEND2_PLAY02_TERRAIN_READY" in output, "Legacy terrain/session integration marker missing"
 assert "OPEND2_PLAY03_ACTOR_READY" in output, "Legacy actor texture/session integration marker missing"
 assert "OPEND2_PLAY04_NAVIGATION_READY" in output, "Navigation integration marker missing"
+assert "OPEND2_PLAY06_CONTINUOUS_READY" in output, "Continuous session marker missing"
 if args.export:
     names = {"Linux": "OpenD2.x86_64", "Windows": "OpenD2.exe", "macOS": "OpenD2.zip"}
     destination = root / "artifacts" / args.export / names[args.export]

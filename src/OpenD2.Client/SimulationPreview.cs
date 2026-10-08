@@ -8,13 +8,12 @@ namespace OpenD2.Client;
 // Synthetic town/dungeon slice; the authoritative simulation remains engine independent.
 public partial class SimulationPreview : VBoxContainer
 {
-	private const int MaxRecordingTicks = 15000, MaxRecordingCommands = 4096;
 	private static readonly EntityId Player = new(1);
 	private static readonly RegionId Region = new(1);
 	private static readonly RegionId Dungeon = new(2);
 	private readonly FixedTickClock clock = new();
 	private FrameMetrics tickMetrics = new();
-	private readonly List<RecordedCommand> trace = new(MaxRecordingCommands);
+	private SimulationRecording recording = null!;
 	private readonly SpinBox seedInput = new() { MinValue = 1, MaxValue = uint.MaxValue, Value = 1, Step = 1 };
 	private readonly Button restart = new() { Text = "New run" };
 	private readonly Button pause = new() { Text = "Pause" };
@@ -40,8 +39,6 @@ public partial class SimulationPreview : VBoxContainer
 	private NpcFacts? dialogueFacts;
 	private bool npcSmokePending;
 	private readonly string savePath;
-	private SimulationSnapshot? replayCheckpoint;
-	private long recordingStart;
 	private readonly Button replay = new() { Text = "Verify replay" };
 	private readonly Label questInfo = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
 	private readonly Label details = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
@@ -112,14 +109,14 @@ public partial class SimulationPreview : VBoxContainer
 		signal.Pressed += () => Submit(CommandKind.Signal); attack.Pressed += AttackNearest; interact.Pressed += InteractNearest;
 		replay.Pressed += VerifyReplay; save.Pressed += () => CheckpointFile(false); load.Pressed += () => CheckpointFile(true);
 		Smoke(); CombatSmoke(); WorldSmoke(); ItemSmoke(); SaveSmoke(); NewRun();
-		if (smokeTest) ContentSmoke();
+		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); }
 		if (smokeTest) { npcSmokePending = true; dialogueInput.Text = "안녕"; SendDialogue(); }
 	}
 	private void NewRun()
 	{
 		ResetDialogue(); ClearRoute();
 		seed = (uint)seedInput.Value; simulation = new(seed, ActiveActors, world: ActiveWorld); view.SetSimulation(simulation);
-		trace.Clear(); replayCheckpoint = null; recordingStart = 0; sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
+		recording = new(simulation); sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
 		previous = current = simulation.GetEntity(Player); view.SignalValue = -1; interactDown = pickupDown = false; SetPaused(false);
 		status.Text = "Talk to the quest giver, defeat the marked targets, then return."; ShowFrame(); Refresh();
 		log("simulation_started", $"rules={GameSimulation.RulesVersion}, seed={seed}");
@@ -127,12 +124,11 @@ public partial class SimulationPreview : VBoxContainer
 	private void SetPaused(bool value) { paused = value; previous = current; pause.Text = paused ? "Resume" : "Pause"; }
 	private bool Submit(CommandKind kind, int x = 0, int y = 0, EntityId target = default, ItemId item = default)
 	{
-		if (verifying || simulation.Tick - recordingStart >= MaxRecordingTicks || trace.Count >= MaxRecordingCommands)
-		{ SetPaused(true); status.Text = "Recording limit reached. Start a new run to continue."; return false; }
+		if (verifying) return false;
 		var command = new GameCommand(simulation.Tick + 1, sequence + 1, Player, simulation.ActiveRegion, kind, x, y, target, item);
-		var result = simulation.Submit(command);
+		var result = recording.Submit(command);
 		if (result != CommandResult.Accepted) { status.Text = $"Command rejected: {result}"; return false; }
-		sequence++; trace.Add(new(simulation.Tick, command)); return true;
+		sequence++; return true;
 	}
 	private void AttackNearest()
 	{
@@ -222,8 +218,7 @@ public partial class SimulationPreview : VBoxContainer
 	}
 	private void RunTick()
 	{
-		if (simulation.Tick - recordingStart >= MaxRecordingTicks) { SetPaused(true); status.Text = "Ten-minute recording limit reached. Start a new run."; return; }
-		previous = current; long start = Stopwatch.GetTimestamp(); simulation.Step();
+		previous = current; long start = Stopwatch.GetTimestamp(); recording.PrepareForTick(); simulation.Step();
 		tickMetrics.Record(Stopwatch.GetElapsedTime(start).TotalSeconds); current = simulation.GetEntity(Player);
 		ObserveRouteTick();
 		bool worldChanged = previous.Region != current.Region;
@@ -329,7 +324,7 @@ public partial class SimulationPreview : VBoxContainer
 		double p99 = tickMetrics.P99Milliseconds();
 		var quest = simulation.Quest;
 		questInfo.Text = $"{simulation.World!.GetRegion(current.Region).Name} | {simulation.World.QuestTitle}\n{quest.Stage} — {quest.Defeated}/{quest.Required} defeated. Reward: one health restoration.";
-		details.Text = $"Tick {simulation.Tick} | region {current.Region.Value}, entity {current.Id.Value}\nPosition {current.Position.X}, {current.Position.Y} / {GameSimulation.UnitsPerTile} units per navigation cell\nHP {current.Health}/{current.MaxHealth} | cooldown {current.AttackCooldown}, hit stun {current.HitStun} ticks\nCommands {trace.Count}/{MaxRecordingCommands}, queued {simulation.PendingCommands} | RNG {simulation.RandomState}\nTick p99 {p99:F3} ms | dropped wall time {clock.DroppedTime.TotalMilliseconds:F1} ms\nState {simulation.ComputeStateHash()[..16]}";
+		details.Text = $"Tick {simulation.Tick} | region {current.Region.Value}, entity {current.Id.Value}\nPosition {current.Position.X}, {current.Position.Y} / {GameSimulation.UnitsPerTile} units per navigation cell\nHP {current.Health}/{current.MaxHealth} | cooldown {current.AttackCooldown}, hit stun {current.HitStun} ticks\nReplay window {recording.Baseline.Tick}–{simulation.Tick} / rolled {recording.WindowsRolled}; commands {recording.Commands.Count}/{SimulationRecording.CommandWindow}, queued {simulation.PendingCommands} | RNG {simulation.RandomState}\nTick p99 {p99:F3} ms | dropped wall time {clock.DroppedTime.TotalMilliseconds:F1} ms\nState {simulation.ComputeStateHash()[..16]}";
 		log("simulation_metrics", $"tick={simulation.Tick}, p99_ms={p99:F3}, pending={simulation.PendingCommands}, dropped_ms={clock.DroppedTime.TotalMilliseconds:F1}");
 	}
 	private async void VerifyReplay()
@@ -337,12 +332,12 @@ public partial class SimulationPreview : VBoxContainer
 		ResetDialogue();
 		SetPaused(true); StopInput(); verifying = true;
 		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop, save, load }) button.Disabled = true;
-		uint recordedSeed = seed; long target = simulation.Tick; var recorded = trace.ToArray(); string expected = simulation.ComputeStateHash();
+		long target = simulation.Tick; var recorded = recording.Commands.ToArray(); string expected = simulation.ComputeStateHash();
 		status.Text = "Replaying recorded commands...";
 		try
 		{
-			var baseline = replayCheckpoint;
-			string actual = await Task.Run(() => (baseline is null ? GameSimulation.Replay(recordedSeed, ActiveActors, recorded, target, world: ActiveWorld) : GameSimulation.Replay(baseline, recorded, target)).ComputeStateHash());
+			var baseline = recording.Baseline;
+			string actual = await Task.Run(() => GameSimulation.Replay(baseline, recorded, target).ComputeStateHash());
 			if (!IsInstanceValid(this) || !IsInsideTree()) return;
 			bool match = actual == expected;
 			status.Text = match ? $"Replay matched at tick {target}: {actual}" : $"Replay mismatch: {actual}";
@@ -370,8 +365,8 @@ public partial class SimulationPreview : VBoxContainer
 				if (!IsInstanceValid(this) || !IsInsideTree()) return;
 				if (result.Simulation.WorldPlayer != Player) throw new InvalidDataException("Checkpoint belongs to an unsupported player identity.");
 				simulation = result.Simulation; view.SetSimulation(simulation);
-				replayCheckpoint = simulation.CaptureSnapshot(); trace.Clear(); recordingStart = simulation.Tick;
-				sequence = replayCheckpoint.Inputs.First(c => c.Actor == Player).Sequence;
+				recording = new(simulation);
+				sequence = recording.Baseline.Inputs.First(c => c.Actor == Player).Sequence;
 				previous = current = simulation.GetEntity(Player); requestedX = current.MoveX; requestedY = current.MoveY;
 				lastAttackTick = simulation.Tick - GameSimulation.PlayerAttackInterval; interactDown = pickupDown = false;
 				clock.Reset(); tickMetrics = new(); view.SignalValue = -1; ShowFrame();
@@ -454,6 +449,16 @@ public partial class SimulationPreview : VBoxContainer
 		if (sample.GetEntity(Player).Position != initial[0].Position || sample.Events[0].Kind != SimulationEventKind.Blocked || sample.ComputeStateHash() != GameSimulation.Replay(1, initial, script, 2, grid).ComputeStateHash()) throw new InvalidDataException("Combat collision/replay smoke failed.");
 		GD.Print("OPEND2_M202_COMBAT_READY");
 	}
+	private void ContinuousSmoke()
+	{
+		for (int i = 0; i <= SimulationRecording.TickWindow; i++) RunTick();
+		if (paused || simulation.Tick <= SimulationRecording.TickWindow || recording.WindowsRolled != 1)
+			throw new InvalidDataException("Continuous session/recording smoke failed.");
+		if (GameSimulation.Replay(recording.Baseline, recording.Commands, simulation.Tick).ComputeStateHash() != simulation.ComputeStateHash())
+			throw new InvalidDataException("Rolling replay smoke failed.");
+		NewRun(); GD.Print("OPEND2_PLAY06_CONTINUOUS_READY");
+	}
+
 	private void Smoke()
 	{
 		EntityState[] initial = [new(Player, Region, new(0, 0))];
