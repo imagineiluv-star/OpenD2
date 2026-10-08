@@ -70,7 +70,15 @@ git diff --check
 
 ### 원격 검증
 
-원격 기능 브랜치 반영 후 Windows x64·Linux x64·macOS universal CI를 확인하고 이 절에 실행 링크를 기록한다. 로컬 Linux 성공을 다른 운영체제의 성공으로 간주하지 않는다.
+코드 커밋 `e071435ec224d3e982e76f5875e26f2714404221`의 [기능 브랜치 CI #37708216488](https://github.com/imagineiluv-star/OpenD2/actions/runs/37708216488)에서 3개 OS 작업이 모두 성공했다. 각 작업은 고정 native 소스 빌드, 최종 **125개 Debug 계약 테스트**, 두 v2 golden 해시, Godot import/헤드리스 마커 및 self-contained export를 검사했다.
+
+| 환경 | 결과 | CI 산출물 |
+|---|---|---|
+| ubuntu-24.04 / Linux x64 | 성공 | `OpenD2-M2-Linux` |
+| windows-2025 / Windows x64 | 성공 | `OpenD2-M2-Windows` |
+| macos-15 / macOS universal | 성공 | `OpenD2-M2-macOS` |
+
+병합 검토: [PR #4](https://github.com/imagineiluv-star/OpenD2/pull/4), [PR CI #37708242494](https://github.com/imagineiluv-star/OpenD2/actions/runs/37708242494). 위 코드 검증 이후에는 이 결과와 작업계획의 OS 상태만 갱신한다. 산출물 보존 기간은 현재 14일이며, 일반 사용자용 설치·GUI·서명/공증 인수와는 구분한다. master 병합 후에도 동일 CI를 실행한다.
 
 ## 남은 항목과 다음 작업
 

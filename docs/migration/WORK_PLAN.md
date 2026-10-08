@@ -93,7 +93,7 @@ M1 1차 구현: [M1_RESULTS.md](M1_RESULTS.md). 01~03 코드와 합성 검증을
 
 - 엔진 없는 Core/Assets 빌드 및 125개 계약 테스트 통과.
 - Godot 헤드리스 시작과 Linux 독립 실행 시작 확인.
-- M2-02 Linux x64 내보내기 성공. 현재 변경의 Windows/macOS CI 결과는 아래 기록에서 추적한다.
+- M2-02 Linux x64·Windows x64·macOS universal CI의 최종 125개 계약 테스트·헤드리스 시작·내보내기 성공.
 - Windows/macOS 실제 사용자 설치·GUI 실행과 성능 목표 인수는 별도 수행.
 - CI의 OS별 결과 및 후속 잔건: [M2-02 검증 기록](M2_02_RESULTS.md).
 
