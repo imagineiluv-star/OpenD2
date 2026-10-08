@@ -1,0 +1,57 @@
+namespace OpenD2.Core;
+
+public sealed partial class GameSimulation
+{
+	private static long DistanceSquared(GamePosition a, GamePosition b)
+	{ long x = (long)a.X - b.X, y = (long)a.Y - b.Y; return x * x + y * y; }
+	private static bool Overlaps(GamePosition a, GamePosition b) => Math.Abs((long)a.X - b.X) < CollisionGrid.BodyRadius * 2 && Math.Abs((long)a.Y - b.Y) < CollisionGrid.BodyRadius * 2;
+	private bool CanOccupy(int index, GamePosition position)
+	{
+		if (!Collision!.CanOccupy(position)) return false;
+		for (int i = 0; i < entities.Length; i++)
+			if (i != index && entities[i].IsAlive && Overlaps(position, entities[i].Position)) return false;
+		return true;
+	}
+	private void Emit(long tick, SimulationEventKind kind, EntityState actor, GamePosition to, int value = 0, EntityId target = default)
+	{ events[eventCount++] = new(tick, kind, actor.Id, actor.Region, actor.Position, to, value, target); }
+	private void Think(long tick)
+	{
+		for (int i = 0; i < entities.Length; i++)
+		{
+			var e = entities[i]; if (e.Kind != EntityKind.Monster || !e.IsAlive || !canAct[i]) continue;
+			int target = -1; long nearest = (long)AggroRange * AggroRange + 1;
+			for (int j = 0; j < entities.Length; j++)
+			{
+				var candidate = entities[j]; if (candidate.Kind != EntityKind.Player || !candidate.IsAlive || candidate.Region != e.Region) continue;
+				long distance = DistanceSquared(e.Position, candidate.Position);
+				if (distance < nearest) { nearest = distance; target = j; } // sorted IDs break ties
+			}
+			EntityId id = target < 0 ? default : entities[target].Id;
+			var mode = target < 0 ? MonsterMode.Idle : nearest <= (long)AttackRange * AttackRange && Collision!.HasMeleeLine(e.Position, entities[target].Position) ? MonsterMode.Attacking : MonsterMode.Chasing;
+			int x = mode == MonsterMode.Chasing ? Math.Sign(entities[target].Position.X - e.Position.X) : 0;
+			int y = mode == MonsterMode.Chasing ? Math.Sign(entities[target].Position.Y - e.Position.Y) : 0;
+			entities[i] = e with { Target = id, Mode = mode, MoveX = x, MoveY = y };
+			if (e.Mode != mode || e.Target != id) Emit(tick, SimulationEventKind.MonsterChanged, e, e.Position, (int)mode, id);
+			if (mode == MonsterMode.Attacking && e.AttackCooldown == 0) attacks[i] = id;
+		}
+	}
+	private void Attack(int index, long tick)
+	{
+		var e = entities[index]; int targetIndex = indices[attacks[index]]; var target = entities[targetIndex];
+		AttackFailure? failure = !canAct[index] ? AttackFailure.Interrupted : e.AttackCooldown > 0 ? AttackFailure.Cooldown :
+			!target.IsAlive ? AttackFailure.DeadTarget : DistanceSquared(e.Position, target.Position) > (long)AttackRange * AttackRange ? AttackFailure.OutOfRange :
+			!Collision!.HasMeleeLine(e.Position, target.Position) ? AttackFailure.Obstructed : null;
+		if (failure is { } reason) { Emit(tick, SimulationEventKind.AttackFailed, e, target.Position, (int)reason, target.Id); return; }
+		int damage = e.Kind == EntityKind.Player ? 14 + random.NextInt(7) : 4 + random.NextInt(4);
+		int health = Math.Max(0, target.Health - damage);
+		entities[index] = e with { AttackCooldown = e.Kind == EntityKind.Player ? PlayerAttackInterval : MonsterAttackInterval };
+		attacked[index] = true;
+		entities[targetIndex] = target with { Health = health, HitStun = health == 0 ? 0 : HitStunTicks,
+			MoveX = health == 0 ? 0 : target.MoveX, MoveY = health == 0 ? 0 : target.MoveY,
+			Mode = health == 0 ? MonsterMode.Dead : target.Mode, Target = health == 0 ? default : target.Target };
+		canAct[targetIndex] = false;
+		Emit(tick, SimulationEventKind.AttackStarted, e, target.Position, 0, target.Id);
+		Emit(tick, SimulationEventKind.Hit, e, target.Position, Math.Min(damage, target.Health), target.Id);
+		if (health == 0) Emit(tick, SimulationEventKind.Died, target, target.Position, 0, e.Id);
+	}
+}

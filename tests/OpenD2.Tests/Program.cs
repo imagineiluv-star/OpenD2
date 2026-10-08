@@ -26,6 +26,7 @@ try
 	TableContracts.Run(root, Test);
 	MpqContracts.Run(root, Test);
 	SimulationContracts.Run(Test);
+	CombatContracts.Run(Test);
 	Test("paths create separate directories", () =>
 	{
 		var paths = new AppPaths(Path.Combine(root, "user")); paths.EnsureCreated();

@@ -5,21 +5,29 @@ namespace OpenD2.Core;
 public readonly record struct RegionId(uint Value);
 public readonly record struct EntityId(uint Value);
 public readonly record struct GamePosition(int X, int Y);
-public readonly record struct EntityState(EntityId Id, RegionId Region, GamePosition Position, int MoveX = 0, int MoveY = 0);
-public enum CommandKind { SetMove, Signal }
-public readonly record struct GameCommand(long Tick, ulong Sequence, EntityId Actor, RegionId Region, CommandKind Kind, int X = 0, int Y = 0);
-public enum CommandResult { Accepted, InvalidCommand, UnknownActor, WrongRegion, ExpiredTick, TooFarAhead, StaleSequence, OutOfOrderTick, TickFull, QueueFull }
-public enum SimulationEventKind { Moved, Signaled }
-public readonly record struct SimulationEvent(long Tick, SimulationEventKind Kind, EntityId Actor, RegionId Region, GamePosition From, GamePosition To, int Value = 0);
+public enum EntityKind { Player, Monster }
+public enum MonsterMode { Idle, Chasing, Attacking, Dead }
+public readonly record struct EntityState(EntityId Id, RegionId Region, GamePosition Position, int MoveX = 0, int MoveY = 0,
+	EntityKind Kind = EntityKind.Player, int Health = 100, int MaxHealth = 100, int AttackCooldown = 0, int HitStun = 0,
+	MonsterMode Mode = MonsterMode.Idle, EntityId Target = default)
+{
+	public bool IsAlive => Health > 0;
+}
+public enum CommandKind { SetMove, Signal, Attack }
+public readonly record struct GameCommand(long Tick, ulong Sequence, EntityId Actor, RegionId Region, CommandKind Kind, int X = 0, int Y = 0, EntityId Target = default);
+public enum CommandResult { Accepted, InvalidCommand, UnknownActor, WrongRegion, ExpiredTick, TooFarAhead, StaleSequence, OutOfOrderTick, TickFull, QueueFull, DeadActor, NotPlayerControlled, InvalidTarget }
+public enum SimulationEventKind { Moved, Signaled, Blocked, AttackStarted, Hit, Died, AttackFailed, MonsterChanged }
+public enum AttackFailure { Cooldown, OutOfRange, Obstructed, DeadTarget, Interrupted }
+public readonly record struct SimulationEvent(long Tick, SimulationEventKind Kind, EntityId Actor, RegionId Region, GamePosition From, GamePosition To, int Value = 0, EntityId Target = default);
 public readonly record struct CommandCursor(EntityId Actor, ulong Sequence, long Tick);
 public readonly record struct RecordedCommand(long SubmittedAfterTick, GameCommand Command);
 public sealed record SimulationSnapshot(int RulesVersion, long Tick, uint RandomState, IReadOnlyList<EntityState> Entities,
-	IReadOnlyList<CommandCursor> Inputs, IReadOnlyList<GameCommand> PendingCommands);
+	IReadOnlyList<CommandCursor> Inputs, IReadOnlyList<GameCommand> PendingCommands, CollisionGrid? Collision);
 
 // A single owner advances authoritative state. No wall clock, rendering, I/O or callbacks in Step.
-public sealed class GameSimulation
+public sealed partial class GameSimulation
 {
-	public const int RulesVersion = 1, UnitsPerTile = 256, PositionLimit = 16777216;
+	public const int RulesVersion = 2, UnitsPerTile = 256, PositionLimit = 16777216;
 	public const int MaxEntities = 1024, MaxPendingCommands = 4096, MaxCommandsPerTick = 128, CommandHorizon = 250;
 	public const int MaxReplayCommands = 16384, MaxReplayTicks = 100000;
 	private readonly EntityState[] entities;
@@ -29,6 +37,10 @@ public sealed class GameSimulation
 	private readonly Dictionary<long, int> counts = new();
 	private readonly SimulationEvent[] events;
 	private int eventCount;
+	public const int MaxCombatEntities = 128, AttackRange = 384, AggroRange = 1536, PlayerAttackInterval = 12, MonsterAttackInterval = 20, HitStunTicks = 3;
+	public CollisionGrid? Collision { get; }
+	private readonly EntityId[] attacks;
+	private readonly bool[] canAct, attacked;
 	private SimulationRandom random;
 	public long Tick { get; private set; }
 	public uint RandomState => random.State;
@@ -36,27 +48,42 @@ public sealed class GameSimulation
 	// Spans are borrowed until the next Step; value snapshots below own their copies.
 	public ReadOnlySpan<EntityState> Entities => entities;
 	public ReadOnlySpan<SimulationEvent> Events => events.AsSpan(0, eventCount);
-	public GameSimulation(uint seed, IEnumerable<EntityState> initialEntities)
+	public GameSimulation(uint seed, IEnumerable<EntityState> initialEntities, CollisionGrid? collision = null)
 	{
 		ArgumentNullException.ThrowIfNull(initialEntities); random = new(seed);
 		entities = initialEntities.Take(MaxEntities + 1).OrderBy(e => e.Id.Value).ToArray();
 		if (entities.Length is < 1 or > MaxEntities) throw new ArgumentException("Expected 1..1024 entities.", nameof(initialEntities));
-		inputs = new CommandCursor[entities.Length]; events = new SimulationEvent[entities.Length + MaxCommandsPerTick];
+		Collision = collision;
+		if (collision is not null && entities.Length > MaxCombatEntities) throw new ArgumentException("Combat entity budget exceeded.");
+		inputs = new CommandCursor[entities.Length]; events = new SimulationEvent[6 * entities.Length + MaxCommandsPerTick];
+		attacks = new EntityId[entities.Length]; canAct = new bool[entities.Length]; attacked = new bool[entities.Length];
 		for (int i = 0; i < entities.Length; i++)
 		{
 			var e = entities[i];
 			if (e.Id.Value == 0 || e.Region.Value == 0 || !ValidPosition(e.Position) || !ValidDirection(e.MoveX, e.MoveY) || !indices.TryAdd(e.Id, i))
 				throw new ArgumentException("Invalid entity, region, position, direction or duplicate ID.", nameof(initialEntities));
+			if (!Enum.IsDefined(e.Kind) || !Enum.IsDefined(e.Mode) || e.MaxHealth is < 1 or > 100000 || e.Health < 0 || e.Health > e.MaxHealth ||
+				e.AttackCooldown is < 0 or > MonsterAttackInterval || e.HitStun is < 0 or > HitStunTicks || e.Target != default || e.Mode != MonsterMode.Idle ||
+				(e.Kind == EntityKind.Monster && collision is null)) throw new ArgumentException("Invalid initial combat state.");
+			if (collision is not null && (e.Region != collision.Region || (e.IsAlive && !collision.CanOccupy(e.Position)))) throw new ArgumentException("Entity must spawn on known walkable cells in its region.");
+			if (!e.IsAlive) entities[i] = e with { MoveX = 0, MoveY = 0, Mode = MonsterMode.Dead };
 			inputs[i] = new(e.Id, 0, 0);
 		}
+		if (collision is not null)
+			for (int i = 0; i < entities.Length; i++) for (int j = 0; j < i; j++)
+				if (entities[i].IsAlive && entities[j].IsAlive && Overlaps(entities[i].Position, entities[j].Position)) throw new ArgumentException("Living bodies overlap at spawn.");
 	}
 	public EntityState GetEntity(EntityId id) => entities[indices.TryGetValue(id, out int index) ? index : throw new ArgumentException("Unknown entity.", nameof(id))];
 	public CommandResult Submit(GameCommand command)
 	{
 		if (command.Sequence == 0 || !Enum.IsDefined(command.Kind) ||
-			(command.Kind == CommandKind.SetMove ? !ValidDirection(command.X, command.Y) : command.X != 0 || command.Y != 0)) return CommandResult.InvalidCommand;
+			(command.Kind == CommandKind.SetMove ? !ValidDirection(command.X, command.Y) : command.X != 0 || command.Y != 0) ||
+			(command.Kind != CommandKind.Attack && command.Target != default)) return CommandResult.InvalidCommand;
 		if (!indices.TryGetValue(command.Actor, out int index)) return CommandResult.UnknownActor;
 		if (command.Region != entities[index].Region) return CommandResult.WrongRegion;
+		if (!entities[index].IsAlive) return CommandResult.DeadActor;
+		if (entities[index].Kind != EntityKind.Player) return CommandResult.NotPlayerControlled;
+		if (command.Kind == CommandKind.Attack && (Collision is null || !indices.TryGetValue(command.Target, out int target) || entities[target].Kind == entities[index].Kind || entities[target].Region != command.Region)) return CommandResult.InvalidTarget;
 		if (command.Tick <= Tick) return CommandResult.ExpiredTick;
 		if (command.Tick - Tick > CommandHorizon) return CommandResult.TooFarAhead;
 		if (command.Sequence <= inputs[index].Sequence) return CommandResult.StaleSequence;
@@ -70,30 +97,51 @@ public sealed class GameSimulation
 	public void Step()
 	{
 		long nextTick = checked(Tick + 1); eventCount = 0;
+		for (int i = 0; i < entities.Length; i++)
+		{
+			var e = entities[i]; canAct[i] = e.IsAlive && e.HitStun == 0; attacked[i] = false; attacks[i] = default;
+			entities[i] = e with { AttackCooldown = Math.Max(0, e.AttackCooldown - 1), HitStun = Math.Max(0, e.HitStun - 1) };
+		}
 		while (commands.TryPeek(out var command, out _) && command.Tick == nextTick)
 		{
 			commands.Dequeue(); int index = indices[command.Actor]; var entity = entities[index];
+			if (!entity.IsAlive) continue;
 			if (command.Kind == CommandKind.SetMove) entities[index] = entity with { MoveX = command.X, MoveY = command.Y };
-			else events[eventCount++] = new(nextTick, SimulationEventKind.Signaled, entity.Id, entity.Region, entity.Position, entity.Position, random.NextInt(6));
+			else if (command.Kind == CommandKind.Attack) attacks[index] = command.Target;
+			else Emit(nextTick, SimulationEventKind.Signaled, entity, entity.Position, random.NextInt(6));
 		}
 		counts.Remove(nextTick);
+		if (Collision is not null)
+		{
+			Think(nextTick);
+			for (int i = 0; i < entities.Length; i++) if (attacks[i] != default && entities[i].IsAlive) Attack(i, nextTick);
+		}
 		for (int i = 0; i < entities.Length; i++)
 		{
-			var e = entities[i]; int distance = e.MoveX != 0 && e.MoveY != 0 ? 23 : 32;
-			var position = new GamePosition(Math.Clamp(e.Position.X + e.MoveX * distance, -PositionLimit, PositionLimit), Math.Clamp(e.Position.Y + e.MoveY * distance, -PositionLimit, PositionLimit));
+			var e = entities[i]; if (!canAct[i] || attacked[i] || !e.IsAlive) continue;
+			int distance = e.MoveX != 0 && e.MoveY != 0 ? 23 : 32;
+			var wanted = new GamePosition(Math.Clamp(e.Position.X + e.MoveX * distance, -PositionLimit, PositionLimit), Math.Clamp(e.Position.Y + e.MoveY * distance, -PositionLimit, PositionLimit));
+			var position = wanted;
+			if (Collision is not null)
+			{
+				// Fixed X-then-Y sliding, with steps smaller than body/cell width: no corner cutting or tunneling.
+				position = e.Position; var x = new GamePosition(wanted.X, position.Y);
+				if (CanOccupy(i, x)) position = x;
+				var y = new GamePosition(position.X, wanted.Y); if (CanOccupy(i, y)) position = y;
+				if (wanted != position) Emit(nextTick, SimulationEventKind.Blocked, e, position);
+			}
 			if (position == e.Position) continue;
-			entities[i] = e with { Position = position };
-			events[eventCount++] = new(nextTick, SimulationEventKind.Moved, e.Id, e.Region, e.Position, position);
+			entities[i] = e with { Position = position }; Emit(nextTick, SimulationEventKind.Moved, e, position);
 		}
 		Tick = nextTick;
 	}
 	public SimulationSnapshot CaptureSnapshot() => new(RulesVersion, Tick, random.State, Array.AsReadOnly((EntityState[])entities.Clone()),
-		Array.AsReadOnly((CommandCursor[])inputs.Clone()), Array.AsReadOnly(OrderedCommands()));
-	public static GameSimulation Replay(uint seed, IEnumerable<EntityState> initialEntities, IReadOnlyList<RecordedCommand> trace, long targetTick)
+		Array.AsReadOnly((CommandCursor[])inputs.Clone()), Array.AsReadOnly(OrderedCommands()), Collision);
+	public static GameSimulation Replay(uint seed, IEnumerable<EntityState> initialEntities, IReadOnlyList<RecordedCommand> trace, long targetTick, CollisionGrid? collision = null)
 	{
 		ArgumentNullException.ThrowIfNull(trace);
 		if (targetTick is < 0 or > MaxReplayTicks || trace.Count > MaxReplayCommands) throw new ArgumentOutOfRangeException(nameof(targetTick), "Replay exceeds work budget.");
-		var result = new GameSimulation(seed, initialEntities);
+		var result = new GameSimulation(seed, initialEntities, collision);
 		foreach (var entry in trace)
 		{
 			if (entry.SubmittedAfterTick < result.Tick || entry.SubmittedAfterTick > targetTick) throw new InvalidDataException("Replay submission times must be ordered and within target tick.");
@@ -105,21 +153,28 @@ public sealed class GameSimulation
 		return result;
 	}
 	private GameCommand[] OrderedCommands() => commands.UnorderedItems.OrderBy(p => p.Priority).Select(p => p.Element).ToArray();
-	// Canonical little-endian v1 state, including scheduling watermarks and queued commands.
+	// Canonical little-endian v2 state, including scheduling watermarks and queued commands.
 	// Explicit diagnostic operation: allocates, so callers must not invoke it for every render frame.
 	public string ComputeStateHash()
 	{
 		using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream);
-		writer.Write(RulesVersion); writer.Write(Tick); writer.Write(random.State); writer.Write(entities.Length);
+		writer.Write(RulesVersion); writer.Write(Tick); writer.Write(random.State); writer.Write(Collision is not null);
+		if (Collision is { } grid)
+		{
+			writer.Write(grid.Region.Value); writer.Write(grid.Origin.X); writer.Write(grid.Origin.Y); writer.Write(grid.Width); writer.Write(grid.Height);
+			foreach (var cell in grid.Cells) writer.Write((byte)cell);
+		}
+		writer.Write(entities.Length);
 		for (int i = 0; i < entities.Length; i++)
 		{
 			var e = entities[i]; writer.Write(e.Id.Value); writer.Write(e.Region.Value); writer.Write(e.Position.X); writer.Write(e.Position.Y); writer.Write(e.MoveX); writer.Write(e.MoveY);
+			writer.Write((int)e.Kind); writer.Write(e.Health); writer.Write(e.MaxHealth); writer.Write(e.AttackCooldown); writer.Write(e.HitStun); writer.Write((int)e.Mode); writer.Write(e.Target.Value);
 			writer.Write(inputs[i].Sequence); writer.Write(inputs[i].Tick);
 		}
 		writer.Write(commands.Count);
 		foreach (var c in OrderedCommands())
 		{
-			writer.Write(c.Tick); writer.Write(c.Sequence); writer.Write(c.Actor.Value); writer.Write(c.Region.Value); writer.Write((int)c.Kind); writer.Write(c.X); writer.Write(c.Y);
+			writer.Write(c.Tick); writer.Write(c.Sequence); writer.Write(c.Actor.Value); writer.Write(c.Region.Value); writer.Write((int)c.Kind); writer.Write(c.X); writer.Write(c.Y); writer.Write(c.Target.Value);
 		}
 		writer.Flush(); return Convert.ToHexStringLower(SHA256.HashData(stream.GetBuffer().AsSpan(0, (int)stream.Length)));
 	}
