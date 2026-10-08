@@ -22,7 +22,8 @@ public partial class MapPreview : VBoxContainer
 	private readonly Label status = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
 	private readonly Label hover = new();
 	private readonly MapCanvas view = new() { CustomMinimumSize = new Vector2(480, 260), SizeFlagsVertical = SizeFlags.ExpandFill };
-	public MapPreview(Func<string> gameDirectory) { this.gameDirectory = gameDirectory; }
+	public MapPreview(Func<string> gameDirectory, string sceneDirectory, Action<string> openScene)
+	{ this.gameDirectory = gameDirectory; this.sceneDirectory = sceneDirectory; this.openScene = openScene; }
 	public override void _Ready()
 	{
 		AddChild(new Label { Text = "DT1 / DS1 map preview" });
@@ -42,11 +43,14 @@ public partial class MapPreview : VBoxContainer
 		controls.AddChild(clearCache); clearCache.Pressed += () => { cache.Clear(); status.Text = "Tile cache cleared; active preview retained."; };
 		AddChild(layers); AddChild(view); AddChild(hover); AddChild(status);
 		view.Hovered += text => hover.Text = text;
+		BuildSetup();
 		LoadSample();
+		if (OS.GetCmdlineUserArgs().Contains("--smoke-test")) SetupSmoke();
 	}
-	private void Busy(bool value) { load.Disabled = value; resolve.Disabled = value; clearCache.Disabled = value; }
+	private void Busy(bool value) { busy = value; load.Disabled = value; resolve.Disabled = value; clearCache.Disabled = value; RefreshSetup(); }
 	private async void ResolvePaths()
 	{
+		if (busy) return;
 		Busy(true); status.Text = "Reading map tables and checking references...";
 		try
 		{
@@ -58,7 +62,7 @@ public partial class MapPreview : VBoxContainer
 				return (plan: tables.Resolve(level, preset, slot), issues: tables.Validate());
 			});
 			if (!IsInstanceValid(this) || !IsInsideTree()) return;
-			resource.Text = result.plan.MapPath; tilesets.Text = string.Join('\n', result.plan.Tilesets);
+			InvalidateMap(); resource.Text = result.plan.MapPath; tilesets.Text = string.Join('\n', result.plan.Tilesets);
 			status.Text = $"Resolved {result.plan.Tilesets.Count} DT1 slots. Table errors: {result.issues.Count(i => i.IsError)}; context notices: {result.issues.Count(i => !i.IsError)}. Check the Act palette, then Load map. Version and file existence are not yet verified.";
 		}
 		catch (Exception error) { if (IsInstanceValid(this) && IsInsideTree()) status.Text = "Table resolution failed; previous paths retained. " + error.Message; }
@@ -66,18 +70,17 @@ public partial class MapPreview : VBoxContainer
 	}
 	private async void LoadMap()
 	{
-		Busy(true); status.Text = "Reading and decoding map...";
+		if (busy) return;
+		loadedMap = null; Busy(true); status.Text = "Reading and decoding map...";
 		try
 		{
-			string directory = gameDirectory(), path = resource.Text, colors = palettePath.Text, sources = tilesets.Text;
-			var loaded = await Task.Run(() =>
-			{
-				var request = new LegacyMapRequest(1, "lod-1.10f", path, colors,
-					sources.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-				return LegacyMapAsset.Load(directory, request, cache);
-			});
+			string directory = gameDirectory(); int revision = inputRevision;
+			var request = new LegacyMapRequest(1, "lod-1.10f", resource.Text, palettePath.Text,
+				tilesets.Text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+			var loaded = await Task.Run(() => LegacyMapAsset.Load(directory, request, cache));
 			if (!IsInstanceValid(this) || !IsInsideTree()) { cache.Clear(); return; }
-			ShowMap(loaded.Scene, loaded.Palette, path);
+			ShowMap(loaded.Scene, loaded.Palette, request.MapPath);
+			if (revision == inputRevision && directory == gameDirectory()) loadedMap = (directory, request);
 			status.Text += $"\nSelected sources checked: {loaded.Check.Sources.Count}; version/gameplay compatibility unverified.";
 		}
 		catch (Exception error) { if (IsInstanceValid(this) && IsInsideTree()) status.Text = "Load failed; previous preview retained. " + error.Message; }
@@ -190,7 +193,7 @@ public partial class MapCanvas : Control
 			Vector2 p = (motion.Position - pan) / zoom;
 			int sx = (int)Math.Floor((p.X / 160 + p.Y / 80) * 5), sy = (int)Math.Floor((p.Y / 80 - p.X / 160) * 5);
 			if (sx < 0 || sy < 0 || sx >= scene.Map.Width * 5 || sy >= scene.Map.Height * 5) { Hovered?.Invoke(""); return; }
-			var c = scene.CollisionAt(sx, sy); Hovered?.Invoke($"Tile {sx / 5},{sy / 5} / subtile {sx % 5},{sy % 5}: flags 0x{c.Flags:X2}, {(c.Known ? "known" : "unknown")}");
+			var c = scene.CollisionAt(sx, sy); Hovered?.Invoke($"Cell {sx},{sy} / Tile {sx / 5},{sy / 5} / subtile {sx % 5},{sy % 5}: flags 0x{c.Flags:X2}, {(c.Known ? "known" : "unknown")}");
 		}
 	}
 	public override void _Draw()

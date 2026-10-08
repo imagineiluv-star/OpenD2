@@ -63,6 +63,8 @@ dotnet run --project tools/OpenD2.AssetAudit -- --tables-bin-110f /path/to/game
 
 가방 8칸과 Weapon/Body 슬롯에서 아이템을 선택하면 상세 수치와 가능한 장착/해제/버리기 조작이 나타난다.
 New run과 장면 교체는 확인 후 실행한다. 취소하면 이전 일시정지 상태로 돌아간다.
+원본 지형 장면은 **Check data directory → Map → Load map → 셀 위치 지정 → Validate and create scene → Load generated scene**으로 만들 수 있다. 아트/오디오 없는 지형 프리뷰이며 원작 화면 전체를 재현하지 않는다. 자세한 절차는 [PLAY-08](docs/migration/PLAY_INTEGRATION.md#play-08-json-수동-작성-없는-첫-지형-장면)을 따른다. 시작 메뉴에서도 **Load original scene JSON / Load remembered scene**을 사용할 수 있다.
+
 원본 scene을 성공적으로 읽은 뒤 Save settings를 누르면 경로가 저장된다. 재실행 후 **Load remembered scene**으로 재사용하며 자동 로드하지 않는다.
 
 ## 실행과 배포
@@ -80,7 +82,7 @@ CI 다운로드는 `OpenD2-M2-<OS>` 아티팩트 안의 OS별 압축 파일 전�
 - Windows: `OpenD2.exe`
 - macOS: ZIP을 풀어 앱 실행. 현재는 서명·공증 전 개발 빌드이며 일반 사용자용 설치 인수 전이다.
 
-설정은 OS의 `LocalApplicationData/OpenD2/settings.json`에 저장한다. 동일 루트 아래 `saves/`, `cache/`, `logs/`를 사용한다. 설정 저장 시 이전 파일을 `.bak`으로 남긴다. 손상/미래 버전 설정은 자동 덮어쓰지 않는다. 여러 인스턴스의 동시 설정 저장은 아직 지원하지 않는다.
+설정은 OS의 `LocalApplicationData/OpenD2/settings.json`에 저장한다. 동일 루트 아래 `saves/`, `cache/`, `logs/`, 생성 장면용 `scenes/`를 사용한다. 설정 저장 시 이전 파일을 `.bak`으로 남긴다. 손상/미래 버전 설정은 자동 덮어쓰지 않는다. 여러 인스턴스의 동시 설정 저장은 아직 지원하지 않는다.
 
 ## 구조
 

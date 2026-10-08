@@ -18,7 +18,7 @@ public partial class SimulationPreview
 	public string ScenePath { get; private set; } = "";
 	public void SetScenePath(string path)
 	{
-		ScenePath = path; reloadScene.Disabled = verifying || path.Length == 0;
+		ScenePath = path; reloadScene.Disabled = verifying || path.Length == 0; menuReloadScene.Disabled = reloadScene.Disabled;
 		scenePathInfo.Text = path.Length == 0 ? "No remembered scene. Choose a scene JSON once to reuse it." : "Remembered scene: " + path + "\nSave settings to keep this path. Loading remains an explicit action.";
 	}
 	private void ConfirmRestart(Action action)
@@ -55,27 +55,39 @@ public partial class SimulationPreview
 		restartDialog.Confirmed += () => { var action = pendingRestart; pendingRestart = null; SetPaused(restartWasPaused); action?.Invoke(); };
 		restartDialog.Canceled += () => { pendingRestart = null; SetPaused(restartWasPaused); };
 		var dialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.json ; Legacy scene request"] };
-		AddChild(dialog); loadScene.Pressed += () => { if (!verifying) dialog.PopupCenteredRatio(0.7f); };
-		dialog.FileSelected += file => ConfirmRestart(() => LoadLegacyScene(file));
-		reloadScene.Pressed += () => { string file = ScenePath; if (file.Length > 0) ConfirmRestart(() => LoadLegacyScene(file)); };
+		AddChild(dialog);
+		void ChooseScene() { if (!verifying && pendingRestart is null) dialog.PopupCenteredRatio(0.7f); }
+		loadScene.Pressed += ChooseScene; menuChooseScene.Pressed += ChooseScene;
+		dialog.FileSelected += file => RequestSceneLoad(file);
+		reloadScene.Pressed += () => RequestSceneLoad(ScenePath);
+		menuReloadScene.Pressed += () => RequestSceneLoad(ScenePath);
 		demoScene.Pressed += () => ConfirmRestart(() =>
 		{
 			if (verifying) return;
 			view.SetTerrain(null); legacyScene = null; NewRun(); contentInfo.Text = "Synthetic Camp / Cellar. Original resources are not loaded.";
 		});
 	}
-	private async void LoadLegacyScene(string file)
+	public bool RequestSceneLoad(string file)
+	{
+		if (verifying || pendingRestart is not null || string.IsNullOrWhiteSpace(file)) return false;
+		if (sessionStarted) ConfirmRestart(() => _ = LoadLegacyScene(file));
+		else _ = LoadLegacyScene(file);
+		return true;
+	}
+	private async Task LoadLegacyScene(string file, Func<string, byte[]>? read = null)
 	{
 		if (verifying) return;
 		bool wasPaused = paused; SetPaused(true); StopInput(); ResetDialogue(); verifying = true;
-		loadScene.Disabled = true; reloadScene.Disabled = true; demoScene.Disabled = true; restart.Disabled = true;
+		loadScene.Disabled = true; reloadScene.Disabled = true; demoScene.Disabled = true; restart.Disabled = true; RefreshMenu();
+		if (menuOpen) menuStatus.Text = "Checking original scene resources...";
 		contentInfo.Text = "Checking selected resources and gameplay placements...";
 		try
 		{
 			string directory = gameDirectory();
 			var checkedScene = await Task.Run(() =>
 			{
-				var scene = LegacyPlayScene.Load(directory, LegacySceneRequest.Read(file));
+				var request = LegacySceneRequest.Read(file);
+				var scene = read is null ? LegacyPlayScene.Load(directory, request) : LegacyPlayScene.Load(request, read);
 				return (Scene: scene, Readiness: PlaySceneReadiness.Check(scene));
 			});
 			var next = checkedScene.Scene;
@@ -83,20 +95,23 @@ public partial class SimulationPreview
 			// Prepare GPU resources before replacing the live session; failure retains old textures/state.
 			view.SetTerrain(next); legacyScene = next; NewRun();
 			SetScenePath(Path.GetFullPath(file));
+			if (menuOpen) { SetPaused(true); menuWasPaused = false; }
 			contentInfo.Text = $"Legacy terrain: {next.World.Regions.Length} region(s). Content {next.ContentId[..16]}.\nExplicit placements and preview game rules; original campaign compatibility is not validated. Artwork profiles: {next.Artwork.Count}/{next.Actors.Count}.";
 			contentInfo.Text += $"\nStatic quest loop: {checkedScene.Readiness.QuestLoopReachable}; GUI QA: NOT_RUN. " + string.Join(", ", checkedScene.Readiness.Issues.Take(8));
 			contentInfo.Text += $"\nAudio: {next.Audio?.Effects.Count ?? 0} effects, {next.Audio?.Music.Count ?? 0} region tracks. Listening QA: NOT_RUN.";
+			if (menuOpen) menuStatus.Text = contentInfo.Text + "\nSelect Continue current session to play, or Load checkpoint for this scene.";
 			log("legacy_scene_loaded", $"content={next.ContentId}, regions={next.World.Regions.Length}");
 		}
 		catch (Exception error)
 		{
 			if (!IsInstanceValid(this) || !IsInsideTree()) return;
 			SetPaused(wasPaused); contentInfo.Text = "Scene load failed; current session retained. " + error.Message;
+			if (menuOpen) menuStatus.Text = contentInfo.Text;
 			log("legacy_scene_failed", error.Message);
 		}
 		finally
 		{
-			if (IsInstanceValid(this) && IsInsideTree()) { verifying = false; loadScene.Disabled = false; demoScene.Disabled = false; restart.Disabled = false; SetScenePath(ScenePath); RefreshItems(); }
+			if (IsInstanceValid(this) && IsInsideTree()) { verifying = false; loadScene.Disabled = false; demoScene.Disabled = false; restart.Disabled = false; SetScenePath(ScenePath); RefreshItems(); RefreshMenu(); }
 		}
 	}
 }

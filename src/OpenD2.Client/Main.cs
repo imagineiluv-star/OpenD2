@@ -92,6 +92,17 @@ public partial class Main : Node3D
 		var dialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenDir, Access = FileDialog.AccessEnum.Filesystem };
 		canvas.AddChild(dialog); dialog.DirSelected += path => dataPath.Text = path;
 		browse.Pressed += () => dialog.PopupCenteredRatio(0.7f);
+		var check = new Button { Text = "Check data directory" }; panel.AddChild(check);
+		check.Pressed += () =>
+		{
+			try
+			{
+				var probe = GameInstall.Probe(dataPath.Text);
+				status.Text = $"{probe.Archives.Count} archives found. Missing: " + (probe.MissingArchives.Count == 0 ? "none" : string.Join(", ", probe.MissingArchives)) +
+					"\nFilename check only; version/content unverified. Open Map to select resources and create a scene, or load an existing scene from the start menu. Save settings to remember the directory.";
+			}
+			catch (Exception error) { status.Text = "Directory check failed: " + error.Message; }
+		};
 		var save = new Button { Text = "Save settings" }; panel.AddChild(save);
 		save.Pressed += SaveSettings;
 		status = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart }; panel.AddChild(status);
@@ -107,7 +118,8 @@ public partial class Main : Node3D
 		previews.AddChild(new AnimationPreview(() => dataPath.Text) { Name = "DCC-COF" });
 		var mapScroll = new ScrollContainer { Name = "Map", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
 		previews.AddChild(mapScroll);
-		mapScroll.AddChild(new MapPreview(() => dataPath.Text) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
+		mapScroll.AddChild(new MapPreview(() => dataPath.Text, Path.Combine(paths.Root, "scenes"), file =>
+		{ if (simulation.RequestSceneLoad(file)) previews.CurrentTab = 0; }) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
 		previews.CurrentTab = 0;
 		var quit = new Button { Text = "Quit" }; panel.AddChild(quit); quit.Pressed += () => GetTree().Quit();
 	}

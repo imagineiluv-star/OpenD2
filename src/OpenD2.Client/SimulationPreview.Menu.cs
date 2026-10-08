@@ -1,5 +1,6 @@
 using Godot;
 using OpenD2.Core;
+using OpenD2.Assets;
 
 namespace OpenD2.Client;
 
@@ -11,6 +12,8 @@ public partial class SimulationPreview
 	private readonly Button menuNew = new() { Text = "New game" };
 	private readonly Button menuContinue = new() { Text = "Continue current session" };
 	private readonly Button menuLoad = new() { Text = "Load checkpoint" };
+	private readonly Button menuChooseScene = new() { Text = "Load original scene JSON" };
+	private readonly Button menuReloadScene = new() { Text = "Load remembered scene", Disabled = true };
 	private readonly Label menuInfo = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
 	private readonly Label menuStatus = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
 	private bool menuOpen, menuWasPaused, sessionStarted;
@@ -20,11 +23,11 @@ public partial class SimulationPreview
 		AddChild(menuPanel);
 		menuPanel.AddChild(new Label { Text = "OPEND2 — Offline play" });
 		menuPanel.AddChild(menuInfo);
-		foreach (var button in new[] { menuNew, menuContinue, menuLoad }) menuPanel.AddChild(button);
+		foreach (var button in new[] { menuNew, menuContinue, menuLoad, menuChooseScene, menuReloadScene }) menuPanel.AddChild(button);
 		menuPanel.AddChild(menuStatus);
 		menuPanel.AddChild(new Label
 		{
-			Text = "The game is stopped while this menu is open. Settings remain available on the left.\nNew game uses the current scene and seed; checkpoint files are kept. Original scenes can be selected from the play screen.\nThis preview has one player and one quest loop. Character selection and skills are not available yet.",
+			Text = "The game is stopped while this menu is open. Settings remain available on the left.\nNew game uses the current scene and seed; checkpoint files are kept. Load an original scene here, or create a terrain preview in the Map tab. Created previews use placeholder actors.\nThis preview has one player and one quest loop. Character selection and skills are not available yet.",
 			AutowrapMode = TextServer.AutowrapMode.WordSmart
 		});
 		menuButton.Pressed += () => OpenMenu();
@@ -50,7 +53,7 @@ public partial class SimulationPreview
 	}
 	private void RefreshMenu()
 	{
-		menuNew.Disabled = verifying;
+		menuNew.Disabled = verifying; menuChooseScene.Disabled = verifying; menuReloadScene.Disabled = verifying || ScenePath.Length == 0;
 		menuContinue.Disabled = verifying || !sessionStarted;
 		menuContinue.Text = menuWasPaused ? "Return to paused session" : "Continue current session";
 		bool exists = File.Exists(ActiveSavePath) || File.Exists(ActiveSavePath + ".bak");
@@ -144,6 +147,27 @@ public partial class SimulationPreview
 			RequestMenuNew(); restartDialog.Hide(); restartDialog.EmitSignal(ConfirmationDialog.SignalName.Confirmed);
 			if (menuOpen || paused || simulation.Tick != 0 || File.ReadAllText(file) != "{" || !File.Exists(file + ".bak"))
 				throw new InvalidDataException("Confirmed new game did not reset the session or altered checkpoint files.");
+			OpenMenu(); retained = simulation.ComputeStateHash(); string remembered = ScenePath;
+			await LoadLegacyScene(Path.Combine(folder, "missing-scene.json"));
+			if (!menuOpen || !paused || simulation.ComputeStateHash() != retained || ScenePath != remembered || !menuStatus.Text.Contains("failed"))
+				throw new InvalidDataException("Failed scene setup load changed the menu session or remembered path.");
+			if (!RequestSceneLoad(Path.Combine(folder, "cancelled.json")) || pendingRestart is null)
+				throw new InvalidDataException("Scene replacement skipped the existing session confirmation.");
+			restartDialog.Hide(); restartDialog.EmitSignal(ConfirmationDialog.SignalName.Canceled);
+			if (simulation.ComputeStateHash() != retained || !menuOpen || !paused) throw new InvalidDataException("Cancelled scene load changed the session.");
+			var sample = MapPreview.SampleData();
+			byte[] Read(string path) => path.EndsWith(".ds1") ? sample.Ds1 : path.EndsWith(".dt1") ? sample.Dt1 : sample.Colors;
+			var request = LegacySceneSetup.Create(new(1, "lod-1.10f", "test.ds1", "data/global/palette/act1/pal.dat", ["test.dt1"]), "Setup smoke", 1, 1, 6, 2, 2, 1);
+			string sceneFile = Path.Combine(folder, "generated.json");
+			LegacySceneSetup.SaveNew(sceneFile, request, Read);
+			await LoadLegacyScene(sceneFile, Read);
+			if (!menuOpen || !paused || menuContinue.Disabled || legacyScene is null || ScenePath != sceneFile || ActiveSavePath == savePath)
+				throw new InvalidDataException("Generated scene did not load into a paused menu with its own checkpoint slot.");
+			retained = simulation.ComputeStateHash(); _Process(3);
+			if (simulation.ComputeStateHash() != retained) throw new InvalidDataException("Generated scene advanced behind its menu.");
+			ContinueMenuSession(); _Process(0.04);
+			if (paused || simulation.Tick != 1) throw new InvalidDataException("Generated scene could not continue from its menu.");
+			view.SetTerrain(null); legacyScene = null; NewRun(); SetScenePath(remembered);
 			GD.Print("OPEND2_M206_MENU_READY");
 			npcSmokePending = true; dialogueInput.Text = "안녕"; SendDialogue();
 		}
