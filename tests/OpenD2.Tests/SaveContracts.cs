@@ -156,7 +156,11 @@ internal static class SaveContracts
 		test("Atomic backup failure leaves primary bytes intact and cleans temporary output", () =>
 		{
 			var path = Slot("failure"); var game = Game(); GameSave.Save(path, game.CaptureSnapshot()); var before = File.ReadAllBytes(path);
-			Directory.CreateDirectory(path + ".bak"); game.Step(); Throws<IOException>(() => GameSave.Save(path, game.CaptureSnapshot()));
+			Directory.CreateDirectory(path + ".bak"); game.Step();
+			bool failed = false;
+			try { GameSave.Save(path, game.CaptureSnapshot()); }
+			catch (Exception error) when (error is IOException or UnauthorizedAccessException) { failed = true; }
+			Check(failed); // Windows reports access denied; Unix reports a destination-directory I/O error.
 			Check(File.ReadAllBytes(path).SequenceEqual(before) && !Directory.EnumerateFiles(Path.GetDirectoryName(path)!, "*.tmp").Any());
 		});
 		test("A busy save slot refuses a second writer without touching primary or backup", () =>
