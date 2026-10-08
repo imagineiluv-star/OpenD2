@@ -8,6 +8,12 @@ implementation backlog, and acceptance criteria are documented in
 [the migration plan (한국어)](docs/migration/README.md).
 The C# implementation in `src/` includes legacy asset readers and viewers, deterministic collision/combat/AI, and a synthetic town-to-dungeon quest with persistent in-session region state, loot, inventory and equipment-driven combat stats, and versioned checkpoints with backup recovery. See [build and run instructions](BUILDING.md) and [M2-05 results / remaining gates](docs/migration/M2_05_RESULTS.md). The game core runs locally without a central server; networked co-op and a dedicated .NET server host are planned for M5. Original game data acceptance, campaign gameplay and high-quality 3D presentation remain in progress. The C++ runtime remains separate.
 
+The [PLAY integration work](docs/migration/PLAY_INTEGRATION.md) connects explicitly configured legacy DS1/DT1 terrain, DCC/COF actor artwork and click navigation to the local simulation. Diagnostic replay windows now roll without stopping gameplay. Loading a legacy scene requires owned game data and a scene JSON with verified resource paths, coordinates and animation directions; preview combat/items do not yet reproduce the original rules. Real-data and visible gameplay acceptance remain pending.
+
+See [release testing](docs/migration/RELEASE_QA.md) for packaged builds and the separate synthetic, legacy-scene and two-hour GUI acceptance cases. The existing `v0.2.0-rc.1` predates PLAY integration; use a new candidate built from the updated master for those features.
+
+The historical image and CMake/TCP-IP instructions below describe the original C++ project. They are not evidence of C# GUI gameplay acceptance.
+
 ![Diablo II Main Menu in OpenD2](https://i.imgur.com/RFNbRiT.png)
 
 ### Project Goals

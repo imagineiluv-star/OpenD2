@@ -78,9 +78,26 @@ class ReleaseTests(unittest.TestCase):
         self.packages()
         self.prepare()
         manifest = json.loads((self.output / "release-manifest.json").read_text())
+        self.assertEqual(2, manifest["schema_version"])
         self.assertEqual("NOT_RUN", manifest["gui_qa_status"])
+        self.assertEqual("synthetic_preview", manifest["gui_qa_scope"])
+        self.assertEqual("NOT_RUN", manifest["legacy_scene_qa_status"])
+        self.assertEqual("NOT_RUN", manifest["two_hour_soak_status"])
+        self.assertFalse(manifest["original_rules_validated"])
         report = json.loads((self.output / "qa-result-template.json").read_text())
+        self.assertEqual(2, report["schema_version"])
         self.assertEqual("NOT_RUN", report["status"])
+        self.assertEqual("synthetic_preview", report["status_scope"])
+        self.assertEqual("NOT_RUN", report["legacy_scene_qa"]["status"])
+        self.assertFalse(report["legacy_scene_qa"]["original_rules_validated"])
+        self.assertEqual("NOT_RUN", report["two_hour_soak"]["status"])
+        self.assertEqual(0, report["two_hour_soak"]["active_seconds"])
+        self.assertEqual({"QA-01", "QA-02", "QA-03", "QA-04", "QA-05", "QA-06", "QA-08"},
+                         {case["id"] for case in report["cases"] if case["required"]})
+        self.assertEqual({"QA-07", "QA-09", "QA-10"},
+                         {case["id"] for case in report["cases"] if not case["required"]})
+        self.assertEqual((release.ROOT / "docs/migration/PLAY_INTEGRATION.md").read_bytes(),
+                         (self.output / "LEGACY_PLAY_SETUP.md").read_bytes())
         self.assertTrue(all(case["status"] == "NOT_RUN" for case in report["cases"]))
         for line in (self.output / "SHA256SUMS").read_text().splitlines():
             digest, name = line.split("  ", 1)
