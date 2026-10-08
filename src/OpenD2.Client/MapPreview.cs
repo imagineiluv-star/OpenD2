@@ -72,22 +72,13 @@ public partial class MapPreview : VBoxContainer
 			string directory = gameDirectory(), path = resource.Text, colors = palettePath.Text, sources = tilesets.Text;
 			var loaded = await Task.Run(() =>
 			{
-				var names = sources.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(MpqArchive.NormalizePath).Distinct().ToArray();
-				if (names.Length is < 1 or > 32 || names.Any(n => AssetDecoders.Kind(n) != "dt1")) throw new InvalidDataException("Supply 1..32 DT1 MPQ paths.");
-				if (AssetDecoders.Kind(path) != "ds1") throw new InvalidDataException("Choose a DS1 MPQ path.");
-				var palette = Palette.Parse(AssetDecoders.ReadFromInstall(directory, colors));
-				byte[] bytes = AssetDecoders.ReadFromInstall(directory, path); long input = bytes.Length;
-				var map = Ds1Map.Parse(bytes); var sets = new List<MapTileset>();
-				foreach (string name in names)
-				{
-					bytes = AssetDecoders.ReadFromInstall(directory, name); input += bytes.Length;
-					if (input > 67108864) throw new InvalidDataException("Map input exceeds 64 MiB.");
-					sets.Add(new(name, Dt1Tileset.Parse(bytes)));
-				}
-				return (scene: MapScene.Build(map, sets, cache), palette);
+				var request = new LegacyMapRequest(1, "lod-1.10f", path, colors,
+					sources.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+				return LegacyMapAsset.Load(directory, request, cache);
 			});
 			if (!IsInstanceValid(this) || !IsInsideTree()) { cache.Clear(); return; }
-			ShowMap(loaded.scene, loaded.palette, path);
+			ShowMap(loaded.Scene, loaded.Palette, path);
+			status.Text += $"\nSelected sources checked: {loaded.Check.Sources.Count}; version/gameplay compatibility unverified.";
 		}
 		catch (Exception error) { if (IsInstanceValid(this) && IsInsideTree()) status.Text = "Load failed; previous preview retained. " + error.Message; }
 		finally { if (IsInstanceValid(this) && IsInsideTree()) Busy(false); else cache.Clear(); }
