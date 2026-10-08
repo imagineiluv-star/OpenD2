@@ -74,3 +74,5 @@ QA-09 자료 준비는 `LEGACY_PLAY_SETUP.md`를 따른다. 개발자가 `--chec
   현재 Actions에 결과 자동 회수/정식 릴리즈 승격은 없다. 봇의 PASS는 사람의 인수 검토 자료다.
 
 PLAY-08 이후 빌드에서는 QA-09 준비 과정에서 Map의 실제 경로/팔레트를 Load map으로 확인하고, Cell X,Y로 서로 다른 연결된 위치 3개를 지정해 Validate and create scene → Load generated scene을 확인한다. 막힌 위치/범위 밖 위치/변경된 데이터 폴더/없는 리소스는 기존 세션·파일을 유지하는지 확인한다. 생성 장면의 임시 캐릭터는 원본 아트 인수 PASS 증거가 아니며, 전체 QA-09에는 아트가 설정된 별도 scene을 사용한다. 시작 메뉴 로드 완료 후에는 Continue 전까지 tick이 진행하지 않아야 한다.
+
+PLAY-09 이후에는 Map의 Edit generated artwork 또는 Scene art에서 소유 자료의 검증된 scene을 열고 Player/Monster별 다섯 동작·레이어·방향·FPS를 입력한다. 배우 전환 시 미완성 입력 유지, Inspect this motion → DCC-COF 방향/프레임 확인, 폼 복귀, Validate and save a new scene copy → Load saved copy를 시험한다. 잘못된 방향/누락된 COF 레이어/데이터 폴더 변경은 저장 실패해야 하며 원본 JSON/MPQ/기존 세이브가 바뀌면 FAIL이다. 다른 scene 열기 취소/실패 시 이전 폼 유지도 확인한다. 아트가 모두 로드되어도 실제 프레임·색상·방향·가림을 대조하기 전에는 QA-09 PASS로 처리하지 않는다.

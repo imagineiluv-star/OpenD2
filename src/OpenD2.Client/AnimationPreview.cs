@@ -11,7 +11,7 @@ public partial class AnimationPreview : VBoxContainer
 	private readonly TextEdit mapping = new() { PlaceholderText = "COF layers, one per line: component number=MPQ DCC path", CustomMinimumSize = new Vector2(480, 65) };
 	private readonly SpinBox direction = new() { MinValue = 0, MaxValue = 31, Step = 1 };
 	private readonly SpinBox frame = new() { MinValue = 0, MaxValue = 0, Step = 1 };
-	private readonly SpinBox fps = new() { MinValue = 1, MaxValue = 60, Value = 12, Step = 1 };
+	private readonly SpinBox fps = new() { MinValue = 0, MaxValue = 120, Value = 12, Step = 0 };
 	private readonly Button play = new() { Text = "Play", ToggleMode = true };
 	private readonly Button load = new() { Text = "Load selected direction" };
 	private readonly Label details = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
@@ -31,14 +31,22 @@ public partial class AnimationPreview : VBoxContainer
 		var playback = new HBoxContainer(); AddChild(playback);
 		playback.AddChild(play); playback.AddChild(new Label { Text = "Frame" }); playback.AddChild(frame);
 		playback.AddChild(new Label { Text = "Preview FPS" }); playback.AddChild(fps);
-		frame.ValueChanged += _ => { elapsed = frame.Value / fps.Value; ShowFrame(); };
-		fps.ValueChanged += _ => elapsed = frame.Value / fps.Value;
+		frame.ValueChanged += _ => { elapsed = fps.Value > 0 ? frame.Value / fps.Value : 0; ShowFrame(); };
+		fps.ValueChanged += _ => elapsed = fps.Value > 0 ? frame.Value / fps.Value : 0;
 		play.Toggled += on => play.Text = on ? "Pause" : "Play";
 		AddChild(picture); AddChild(details);
 		LoadSample();
 	}
+	public bool InspectMotion(string colors, LegacyMotionRequest motion, int facing)
+	{
+		if (load.Disabled || facing is < 0 or > 7) return false;
+		resource.Text = motion.Path; palettePath.Text = colors;
+		mapping.Text = motion.Layers is null ? "" : string.Join('\n', motion.Layers.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}"));
+		direction.Value = motion.Directions[facing]; fps.Value = motion.Fps; LoadSelected(); return true;
+	}
 	private async void LoadSelected()
 	{
+		if (load.Disabled) return;
 		play.ButtonPressed = false; load.Disabled = true; frame.Editable = false; direction.Editable = false;
 		try
 		{
@@ -52,12 +60,7 @@ public partial class AnimationPreview : VBoxContainer
 				else if (AssetDecoders.Kind(path) == "cof")
 				{
 					var cof = CofAnimation.Parse(bytes); cof.DrawOrder(selected, 0);
-					var paths = new Dictionary<byte, string>();
-					foreach (string line in map.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-					{
-						var parts = line.Split('=', 2, StringSplitOptions.TrimEntries);
-						if (parts.Length != 2 || !byte.TryParse(parts[0], out byte component) || component > 15 || !paths.TryAdd(component, parts[1])) throw new InvalidDataException("Use unique component numbers 0..15=MPQ path.");
-					}
+					var paths = LegacyArtworkSetup.ParseLayers(map);
 					if (paths.Count != cof.Layers.Count || cof.Layers.Any(l => !paths.ContainsKey(l.Component))) throw new InvalidDataException("Map every COF component exactly once.");
 					var layers = new Dictionary<byte, IReadOnlyList<IndexedFrame>>(); long pixels = 0, inputBytes = bytes.Length;
 					foreach (var entry in paths)
@@ -101,7 +104,7 @@ public partial class AnimationPreview : VBoxContainer
 	}
 	public override void _Process(double delta)
 	{
-		if (clip is null || !play.ButtonPressed || !IsVisibleInTree() || load.Disabled) return;
+		if (clip is null || !play.ButtonPressed || !IsVisibleInTree() || load.Disabled || fps.Value <= 0) return;
 		elapsed = (elapsed + delta) % (clip.Frames.Count / fps.Value);
 		int next = clip.FrameAt(elapsed, fps.Value);
 		if ((int)frame.Value != next) { frame.SetValueNoSignal(next); ShowFrame(); }

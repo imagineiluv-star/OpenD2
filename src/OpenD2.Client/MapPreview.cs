@@ -22,8 +22,8 @@ public partial class MapPreview : VBoxContainer
 	private readonly Label status = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
 	private readonly Label hover = new();
 	private readonly MapCanvas view = new() { CustomMinimumSize = new Vector2(480, 260), SizeFlagsVertical = SizeFlags.ExpandFill };
-	public MapPreview(Func<string> gameDirectory, string sceneDirectory, Action<string> openScene)
-	{ this.gameDirectory = gameDirectory; this.sceneDirectory = sceneDirectory; this.openScene = openScene; }
+	public MapPreview(Func<string> gameDirectory, string sceneDirectory, Action<string> openScene, Action<string> editArtwork)
+	{ this.gameDirectory = gameDirectory; this.sceneDirectory = sceneDirectory; this.openScene = openScene; this.editArtwork = editArtwork; }
 	public override void _Ready()
 	{
 		AddChild(new Label { Text = "DT1 / DS1 map preview" });
