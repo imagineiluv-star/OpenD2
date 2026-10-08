@@ -21,7 +21,7 @@ python eng/validate.py --export Linux
 
 bootstrap은 공식 Godot 배포본을 내려받아 `eng/toolchain.json`의 SHA-512로 검사한다. SDK는 별도 설치한다. bootstrap 출력의 실행 파일로 `src/OpenD2.Client/project.godot`를 열면 된다. 기존 Godot 설치를 사용하려면 `python eng/validate.py --godot <실행파일경로> --export Linux`를 사용한다.
 
-`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 164개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
+`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 188개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
 
 Godot 없이 코어를 검증할 수 있다:
 
@@ -49,7 +49,7 @@ dotnet run --project tools/OpenD2.AssetAudit -- --tables-bin-110f /path/to/game
 
 **Simulation** 탭에서 그리드를 클릭하고 방향키로 이동한다. 초록색 **Camp Guide** 근처에서 **E / Interact**로 퀘스트를 수락한다. 금색 **Cellar** 포털 근처에서 E로 던전에 들어가 **Space / Attack nearest**로 세 몬스터를 처치한다. 던전 입구의 **Camp** 포털로 돌아와 Guide에게 E로 완료를 보고하면 체력을 한 번 회복한다. 지역을 오가도 체력·몬스터 위치·사망·퀘스트는 현재 실행 중에 유지된다. 공격 중에는 상호작용이 실패할 수 있으므로 Space를 놓고 E를 누른다.
 
-회색 벽과 보라색 미확인 셀은 이동을 막는다. **Pause / Step one tick / Signal / Verify replay**로 상태와 재생을 검사한다. 사망 후 또는 Seed 변경 후에는 **New run**으로 처음부터 시작한다. 파일 세이브는 아직 없다. 조작·판정 순서·예산·제한은 [M2-04 기록](docs/migration/M2_04_RESULTS.md)을 참조한다.
+회색 벽과 보라색 미확인 셀은 이동을 막는다. **Pause / Step one tick / Signal / Verify replay**로 상태와 재생을 검사한다. 사망 후 또는 Seed 변경 후에는 **New run**으로 처음부터 시작한다. Save checkpoint / Load checkpoint로 사용자 saves 폴더의 단일 슬롯을 저장/복원한다. 로드 후 Resume으로 진행한다. 조작·판정 순서·예산·제한은 [M2-05 기록](docs/migration/M2_05_RESULTS.md)을 참조한다.
 
 ## 실행과 배포
 
@@ -77,4 +77,8 @@ dotnet run --project tools/OpenD2.AssetAudit -- --tables-bin-110f /path/to/game
 
 빌드 출력·사용자 게임 데이터·추출 캐시는 커밋하지 않는다. 의존성을 바꿀 때 lock 파일을 의도적으로 갱신하고 출처를 [의존성 기록](docs/migration/M0_DEPENDENCIES.md)에 추가한다. 실제 수행한 결과와 남은 인수는 [M0 검증 기록](docs/migration/M0_RESULTS.md)을 참조한다.
 
-몬스터 처치 후 청록색 아이템 표식에 접근해 **F / Pick up nearest**로 줍는다. 아이템 목록에서 선택하고 **Equip selected / Unequip selected / Drop selected**로 장착·해제·버리기를 수행한다. 가방은 8칸이며 장비는 무기·몸통 두 슬롯이다. 피해 범위와 방어력은 장착 결과에 따라 바뀐다. 아이템·장비도 현재 프로세스 안에서만 보존된다.
+몬스터 처치 후 청록색 아이템 표식에 접근해 **F / Pick up nearest**로 줍는다. 아이템 목록에서 선택하고 **Equip selected / Unequip selected / Drop selected**로 장착·해제·버리기를 수행한다. 가방은 8칸이며 장비는 무기·몸통 두 슬롯이다. 피해 범위와 방어력은 장착 결과에 따라 바뀐다. 아이템·장비도 체크포인트에 포함된다. 저장하지 않은 진행은 앱 종료 시 잃는다.
+
+원본 세이브 사전검사: `dotnet run --project tools/OpenD2.AssetAudit -- --inspect-save /path/to/character.d2s`. v96 헤더/전체 checksum을 읽기 전용으로 검사하며 원본 캐릭터 가져오기나 본문 검증은 지원하지 않는다. 자체 체크포인트와는 별개 형식이다.
+
+NPC LLM은 [설계/실측 계획](docs/migration/NPC_LLM_DESIGN.md) 단계이며 모델·API 키·추론 서버 설치는 현재 필요 없다.

@@ -28,6 +28,11 @@ public partial class SimulationPreview : VBoxContainer
 	private readonly OptionButton ownedItems = new();
 	private readonly Label gearInfo = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
 	private readonly List<ItemId> itemChoices = new();
+	private readonly Button save = new() { Text = "Save checkpoint" };
+	private readonly Button load = new() { Text = "Load checkpoint" };
+	private readonly string savePath;
+	private SimulationSnapshot? replayCheckpoint;
+	private long recordingStart;
 	private readonly Button replay = new() { Text = "Verify replay" };
 	private readonly Label questInfo = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
 	private readonly Label details = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
@@ -44,7 +49,7 @@ public partial class SimulationPreview : VBoxContainer
 	private bool paused, verifying, interactDown, pickupDown;
 	private bool smokeTest;
 	private double elapsed;
-	public SimulationPreview(Action<string, string> log) { this.log = log; advanceTick = RunTick; }
+	public SimulationPreview(Action<string, string> log, string saveDirectory) { this.log = log; savePath = Path.Combine(saveDirectory, "simulation-v1.json"); advanceTick = RunTick; }
 	private static EntityState[] InitialEntities() =>
 	[
 		new(Player, Region, new(384, 384)),
@@ -76,7 +81,7 @@ public partial class SimulationPreview : VBoxContainer
 		AddChild(new Label { Text = "Click the grid: arrows move, Space attacks, E talks / uses a portal, F picks up nearby loot.\nGreen: NPC. Gold: portal. Gray walls and purple unknown cells block movement.\nSynthetic maps and rules; original game artwork is not loaded.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		var controls = new HFlowContainer(); AddChild(controls);
 		controls.AddChild(new Label { Text = "Seed" }); controls.AddChild(seedInput);
-		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay }) controls.AddChild(button);
+		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, save, load }) controls.AddChild(button);
 		var inventory = new HFlowContainer(); AddChild(inventory);
 		inventory.AddChild(ownedItems);
 		foreach (var button in new[] { pickup, equip, unequip, drop }) inventory.AddChild(button);
@@ -88,13 +93,13 @@ public partial class SimulationPreview : VBoxContainer
 		restart.Pressed += NewRun; pause.Pressed += () => { SetPaused(!paused); StopInput(); Refresh(); };
 		singleStep.Pressed += () => { SetPaused(true); StopInput(); if (!verifying) { RunTick(); ShowFrame(); Refresh(); } };
 		signal.Pressed += () => Submit(CommandKind.Signal); attack.Pressed += AttackNearest; interact.Pressed += InteractNearest;
-		replay.Pressed += VerifyReplay;
-		Smoke(); CombatSmoke(); WorldSmoke(); ItemSmoke(); NewRun();
+		replay.Pressed += VerifyReplay; save.Pressed += () => CheckpointFile(false); load.Pressed += () => CheckpointFile(true);
+		Smoke(); CombatSmoke(); WorldSmoke(); ItemSmoke(); SaveSmoke(); NewRun();
 	}
 	private void NewRun()
 	{
 		seed = (uint)seedInput.Value; simulation = new(seed, InitialEntities(), world: DemoWorld()); view.SetSimulation(simulation);
-		trace.Clear(); sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
+		trace.Clear(); replayCheckpoint = null; recordingStart = 0; sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
 		previous = current = simulation.GetEntity(Player); view.SignalValue = -1; interactDown = pickupDown = false; SetPaused(false);
 		status.Text = "Talk to the Camp Guide, clear the cellar, then return to the guide."; ShowFrame(); Refresh();
 		log("simulation_started", $"rules={GameSimulation.RulesVersion}, seed={seed}");
@@ -102,7 +107,7 @@ public partial class SimulationPreview : VBoxContainer
 	private void SetPaused(bool value) { paused = value; previous = current; pause.Text = paused ? "Resume" : "Pause"; }
 	private bool Submit(CommandKind kind, int x = 0, int y = 0, EntityId target = default, ItemId item = default)
 	{
-		if (verifying || simulation.Tick >= MaxRecordingTicks || trace.Count >= MaxRecordingCommands)
+		if (verifying || simulation.Tick - recordingStart >= MaxRecordingTicks || trace.Count >= MaxRecordingCommands)
 		{ SetPaused(true); status.Text = "Recording limit reached. Start a new run to continue."; return false; }
 		var command = new GameCommand(simulation.Tick + 1, sequence + 1, Player, simulation.ActiveRegion, kind, x, y, target, item);
 		var result = simulation.Submit(command);
@@ -192,7 +197,7 @@ public partial class SimulationPreview : VBoxContainer
 	}
 	private void RunTick()
 	{
-		if (simulation.Tick >= MaxRecordingTicks) { SetPaused(true); status.Text = "Ten-minute recording limit reached. Start a new run."; return; }
+		if (simulation.Tick - recordingStart >= MaxRecordingTicks) { SetPaused(true); status.Text = "Ten-minute recording limit reached. Start a new run."; return; }
 		previous = current; long start = Stopwatch.GetTimestamp(); simulation.Step();
 		tickMetrics.Record(Stopwatch.GetElapsedTime(start).TotalSeconds); current = simulation.GetEntity(Player);
 		bool worldChanged = previous.Region != current.Region;
@@ -239,12 +244,13 @@ public partial class SimulationPreview : VBoxContainer
 	private async void VerifyReplay()
 	{
 		SetPaused(true); StopInput(); verifying = true;
-		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop }) button.Disabled = true;
+		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop, save, load }) button.Disabled = true;
 		uint recordedSeed = seed; long target = simulation.Tick; var recorded = trace.ToArray(); string expected = simulation.ComputeStateHash();
 		status.Text = "Replaying recorded commands...";
 		try
 		{
-			string actual = await Task.Run(() => GameSimulation.Replay(recordedSeed, InitialEntities(), recorded, target, world: DemoWorld()).ComputeStateHash());
+			var baseline = replayCheckpoint;
+			string actual = await Task.Run(() => (baseline is null ? GameSimulation.Replay(recordedSeed, InitialEntities(), recorded, target, world: DemoWorld()) : GameSimulation.Replay(baseline, recorded, target)).ComputeStateHash());
 			if (!IsInstanceValid(this) || !IsInsideTree()) return;
 			bool match = actual == expected;
 			status.Text = match ? $"Replay matched at tick {target}: {actual}" : $"Replay mismatch: {actual}";
@@ -254,8 +260,60 @@ public partial class SimulationPreview : VBoxContainer
 		finally
 		{
 			if (IsInstanceValid(this) && IsInsideTree())
-			{ verifying = false; foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop }) button.Disabled = false; Refresh(); }
+			{ verifying = false; foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop, save, load }) button.Disabled = false; Refresh(); }
 		}
+	}
+	private async void CheckpointFile(bool loading)
+	{
+		if (verifying) return;
+		SetPaused(true); StopInput(); verifying = true;
+		foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop, save, load }) button.Disabled = true;
+		var checkpoint = simulation.CaptureSnapshot(); status.Text = loading ? "Loading checkpoint..." : "Saving checkpoint...";
+		try
+		{
+			if (loading)
+			{
+				var result = await Task.Run(() => GameSave.Load(savePath, world: DemoWorld()));
+				if (!IsInstanceValid(this) || !IsInsideTree()) return;
+				if (result.Simulation.WorldPlayer != Player) throw new InvalidDataException("Checkpoint belongs to an unsupported player identity.");
+				simulation = result.Simulation; view.SetSimulation(simulation);
+				replayCheckpoint = simulation.CaptureSnapshot(); trace.Clear(); recordingStart = simulation.Tick;
+				sequence = replayCheckpoint.Inputs.First(c => c.Actor == Player).Sequence;
+				previous = current = simulation.GetEntity(Player); requestedX = current.MoveX; requestedY = current.MoveY;
+				lastAttackTick = simulation.Tick - GameSimulation.PlayerAttackInterval; interactDown = pickupDown = false;
+				clock.Reset(); tickMetrics = new(); view.SignalValue = -1; ShowFrame();
+				status.Text = result.RecoveredFromBackup ? "Recovered the previous valid backup. Files preserved; paused for review." : "Checkpoint loaded. Press Resume to continue.";
+				log("game_loaded", $"tick={simulation.Tick}, backup={result.RecoveredFromBackup}");
+			}
+			else
+			{
+				await Task.Run(() => GameSave.Save(savePath, checkpoint));
+				if (!IsInstanceValid(this) || !IsInsideTree()) return;
+				status.Text = "Checkpoint saved: " + savePath; log("game_saved", $"tick={checkpoint.Tick}");
+			}
+		}
+		catch (Exception error) { if (IsInstanceValid(this) && IsInsideTree()) { status.Text = "Checkpoint failed: " + error.Message; log("checkpoint_error", error.ToString()); } }
+		finally
+		{
+			if (IsInstanceValid(this) && IsInsideTree())
+			{ verifying = false; foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop, save, load }) button.Disabled = false; Refresh(); }
+		}
+	}
+	private static void SaveSmoke()
+	{
+		string folder = Path.Combine(Path.GetTempPath(), "opend2-save-smoke-" + Guid.NewGuid().ToString("N"));
+		try
+		{
+			string path = Path.Combine(folder, "checkpoint.json"); var game = new GameSimulation(1, InitialEntities(), world: DemoWorld());
+			game.Step(); GameSave.Save(path, game.CaptureSnapshot()); string first = game.ComputeStateHash();
+			game.Step(); GameSave.Save(path, game.CaptureSnapshot());
+			var loaded = GameSave.Load(path, world: DemoWorld());
+			if (loaded.RecoveredFromBackup || loaded.Simulation.ComputeStateHash() != game.ComputeStateHash()) throw new InvalidDataException("Save smoke round trip failed.");
+			File.WriteAllText(path, "{"); var recovered = GameSave.Load(path, world: DemoWorld());
+			if (!recovered.RecoveredFromBackup || recovered.Simulation.ComputeStateHash() != first) throw new InvalidDataException("Save smoke backup recovery failed.");
+			GD.Print("OPEND2_M205_SAVE_READY");
+		}
+		finally { if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true); }
 	}
 	private static void ItemSmoke()
 	{

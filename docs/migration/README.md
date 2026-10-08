@@ -33,7 +33,7 @@ Godot .NET 클라이언트와 엔진 독립 C# 게임 코어로 이전한다. �
 - [M0 검증 결과와 잔여 인수](M0_RESULTS.md)
 - [고정 의존성과 소스 재빌드 기록](M0_DEPENDENCIES.md)
 
-M1-07은 TXT/명시적 1.10f 맵 BIN, 맵 테이블 참조 검사·DT1 경로 해결·예산 기반 타일 캐시까지 구현했다. M2-01~04는 25Hz 코어·입력·난수·재생, 충돌·전투·AI 및 합성 마을/던전·지역 상태 보존·NPC 퀘스트·드롭·습득·인벤토리·장비·기본 능력치까지 구현했다. 다음은 M2-05 파일 저장·복원·손상 복구다. M1 실제 데이터 인수와 미지원 형식 확대도 병행한다. 실제 파일을 받기 전에는 synthetic fixture 기반 검사만 수행한다.
+M1-07은 TXT/명시적 1.10f 맵 BIN, 맵 테이블 참조 검사·DT1 경로 해결·예산 기반 타일 캐시까지 구현했다. M2-01~04는 25Hz 코어·입력·난수·재생, 충돌·전투·AI 및 합성 마을/던전·지역 상태 보존·NPC 퀘스트·드롭·습득·인벤토리·장비·기본 능력치까지 구현했다. M2-05 자체 파일 저장·복원·손상 복구와 원본 세이브 헤더 사전검사도 구현했다. 원본 세이브 본문 변환은 미완료이며 다음은 해당 인수와 M2-06이다. M1 실제 데이터 인수와 미지원 형식 확대도 병행한다. 실제 파일을 받기 전에는 synthetic fixture 기반 검사만 수행한다.
 
 현재 Core가 사용자 PC에서 판정하므로 중앙 게임 서버가 필요 없다. M5에서는 방장 호스트 또는 그래픽 없는 `OpenD2.Server` .NET 호스트가 같은 규칙을 실행하고 참가자의 입력을 검증한다. 네트워크·다중 플레이어·인증/세션·재접속 구현은 아직 없다. 상세는 [서버 구성과 확장 조건](ARCHITECTURE.md#adr-002-로컬-우선-선택적-협동-세션)에 기록한다.
 
@@ -55,3 +55,5 @@ M1-07은 TXT/명시적 1.10f 맵 BIN, 맵 테이블 참조 검사·DT1 경로 �
 - [Godot 렌더러](https://docs.godotengine.org/en/stable/tutorials/rendering/renderers.html), [3D 파일](https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/importing_3d_scenes/available_formats.html), [LOD](https://docs.godotengine.org/en/stable/tutorials/3d/mesh_lod.html), [C#](https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/index.html).
 
 외부 코드를 가져올 때는 해당 시점의 커밋·라이선스·파일별 출처를 기록한다. 참고 저장소를 읽었다는 사실과 그 코드를 실제 채택했다는 사실을 구분한다.
+
+오픈월드 NPC의 선택형 로컬/서버 LLM, 기억·행동 검증·비용 예산·단계별 계획은 [NPC_LLM_DESIGN](NPC_LLM_DESIGN.md)에 정리했다. 현재는 설계 단계다.

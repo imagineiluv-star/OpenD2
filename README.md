@@ -6,7 +6,7 @@ A project to open-source Diablo 2, under the GNU General Public License.
 The proposed C# and Godot migration architecture, asset compatibility requirements,
 implementation backlog, and acceptance criteria are documented in
 [the migration plan (한국어)](docs/migration/README.md).
-The C# implementation in `src/` includes legacy asset readers and viewers, deterministic collision/combat/AI, and a synthetic town-to-dungeon quest with persistent in-session region state, loot, inventory and equipment-driven combat stats. See [build and run instructions](BUILDING.md) and [M2-04 results / remaining gates](docs/migration/M2_04_RESULTS.md). The game core runs locally without a central server; networked co-op and a dedicated .NET server host are planned for M5. Original game data acceptance, campaign gameplay and high-quality 3D presentation remain in progress. The C++ runtime remains separate.
+The C# implementation in `src/` includes legacy asset readers and viewers, deterministic collision/combat/AI, and a synthetic town-to-dungeon quest with persistent in-session region state, loot, inventory and equipment-driven combat stats, and versioned checkpoints with backup recovery. See [build and run instructions](BUILDING.md) and [M2-05 results / remaining gates](docs/migration/M2_05_RESULTS.md). The game core runs locally without a central server; networked co-op and a dedicated .NET server host are planned for M5. Original game data acceptance, campaign gameplay and high-quality 3D presentation remain in progress. The C++ runtime remains separate.
 
 ![Diablo II Main Menu in OpenD2](https://i.imgur.com/RFNbRiT.png)
 
@@ -89,3 +89,5 @@ The serverside is responsible for quest management, AI, and more. Ideally, this 
 
 #### Clientside (D2Client.dll)
 The clientside is responsible for client logic, mostly with drawing the menus and sprites.
+
+Optional LLM-driven NPC dialogue, memory and planning are under [design review](docs/migration/NPC_LLM_DESIGN.md); no model runtime or autonomous NPC inference is shipped yet.
