@@ -37,16 +37,18 @@ public partial class SimulationPreview
 		var request = new LegacySceneRequest(1, "Synthetic integration check", [new(1, "Sample map", map)],
 			[new(1, 1, 384, 384, true), new(2, 1, 1664, 1664, false)], new(10, 1, 640, 384, "Guide"), [], [2],
 			[new(1, map.PalettePath, Enum.GetNames<ActorMotion>().Select(m => new LegacyMotionRequest(m, "sample.dcc", null, new int[8], 10)).ToArray())]);
-		request = request with { NpcArtwork = new(10, map.PalettePath, new("Idle", "sample.dcc", null, [0, 0, 0, 0, 1, 1, 1, 1], 10), 4) };
-		var content = LegacyPlayScene.Load(request, p => p.EndsWith(".ds1") ? bytes.Ds1 : p.EndsWith(".dt1") ? bytes.Dt1 : p.EndsWith(".dcc") ? Convert.FromHexString(AnimationPreview.SampleDcc) : bytes.Colors);
-		view.SetTerrain(content); legacyScene = content; NewRun();
+		request = request with { NpcArtwork = new(10, map.PalettePath, new("Idle", "sample.dcc", null, [0, 0, 0, 0, 1, 1, 1, 1], 10), 4), HudArtwork = SampleHud() };
+		var content = LegacyPlayScene.Load(request, p => p.EndsWith(".ds1") ? bytes.Ds1 : p.EndsWith(".dt1") ? bytes.Dt1 : p.EndsWith(".dc6") ? AssetPreview.SampleDc6() : p.EndsWith(".dcc") ? Convert.FromHexString(AnimationPreview.SampleDcc) : bytes.Colors);
+		SetSceneArt(content); legacyScene = content; NewRun();
 		if (simulation.World != content.World || simulation.Collision!.Width != 10 || !view.CheckTerrainTexture() || !view.CheckActorTexture() || !view.CheckNpcTexture() || ActiveSavePath == savePath)
 			throw new InvalidDataException("Legacy terrain/session integration smoke failed.");
+		HudArtworkSmoke();
 		Submit(CommandKind.SetMove, 1, 0); RunTick();
 		if (simulation.GetEntity(Player).Position.X <= 384) throw new InvalidDataException("Legacy terrain movement smoke failed.");
 		NavigationSmoke();
-		view.SetTerrain(null); legacyScene = null; NewRun();
+		SetSceneArt(null); legacyScene = null; NewRun();
 		if (view.CheckNpcTexture()) throw new InvalidDataException("NPC texture survived scene teardown.");
+		if (legacyHud.HasArtwork || !healthBar.Visible) throw new InvalidDataException("HUD teardown did not restore the basic health bar.");
 		GD.Print("OPEND2_PLAY10_NPC_READY");
 		GD.Print("OPEND2_PLAY02_TERRAIN_READY");
 		GD.Print("OPEND2_PLAY03_ACTOR_READY");
@@ -67,7 +69,7 @@ public partial class SimulationPreview
 		demoScene.Pressed += () => ConfirmRestart(() =>
 		{
 			if (verifying) return;
-			view.SetTerrain(null); legacyScene = null; NewRun(); contentInfo.Text = "Synthetic Camp / Cellar. Original resources are not loaded.";
+			SetSceneArt(null); legacyScene = null; NewRun(); contentInfo.Text = "Synthetic Camp / Cellar. Original resources are not loaded.";
 		});
 	}
 	public bool RequestSceneLoad(string file)
@@ -96,10 +98,10 @@ public partial class SimulationPreview
 			var next = checkedScene.Scene;
 			if (!IsInstanceValid(this) || !IsInsideTree()) return;
 			// Prepare GPU resources before replacing the live session; failure retains old textures/state.
-			view.SetTerrain(next); legacyScene = next; NewRun();
+			SetSceneArt(next); legacyScene = next; NewRun();
 			SetScenePath(Path.GetFullPath(file));
 			if (menuOpen) { SetPaused(true); menuWasPaused = false; }
-			contentInfo.Text = $"Legacy terrain: {next.World.Regions.Length} region(s). Content {next.ContentId[..16]}.\nExplicit placements and preview game rules; original campaign compatibility is not validated. Artwork profiles: {next.Artwork.Count}/{next.Actors.Count}; NPC art: {next.NpcArtwork is not null}.";
+			contentInfo.Text = $"Legacy terrain: {next.World.Regions.Length} region(s). Content {next.ContentId[..16]}.\nExplicit placements and preview game rules; original campaign compatibility is not validated. Artwork profiles: {next.Artwork.Count}/{next.Actors.Count}; NPC art: {next.NpcArtwork is not null}; HUD art: {next.HudArtwork is not null}.";
 			contentInfo.Text += $"\nStatic quest loop: {checkedScene.Readiness.QuestLoopReachable}; GUI QA: NOT_RUN. " + string.Join(", ", checkedScene.Readiness.Issues.Take(8));
 			contentInfo.Text += $"\nAudio: {next.Audio?.Effects.Count ?? 0} effects, {next.Audio?.Music.Count ?? 0} region tracks. Listening QA: NOT_RUN.";
 			if (menuOpen) menuStatus.Text = contentInfo.Text + "\nSelect Continue current session to play, or Load checkpoint for this scene.";

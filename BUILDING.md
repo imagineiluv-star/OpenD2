@@ -71,6 +71,8 @@ New run과 장면 교체는 확인 후 실행한다. 취소하면 이전 일시�
 
 PLAY-10 이후 같은 목록의 **Guide**는 **Idle** 한 동작과 **Guide fixed facing**을 설정한다. NPC는 정해진 위치에서 대기 애니메이션을 반복하며 Pause에서 멈춘다. 새 복사본을 저장하고 Load saved copy로 연결한다. 설정하지 않으면 원형 표시를 유지한다. [NPC 설정·JSON·준비 상태](docs/migration/PLAY_INTEGRATION.md#play-10-guide-npc-대기-아트). 공개 v0.2.0-rc.3에는 PLAY-08/09/10이 없다.
 
+PLAY-11 이후 **Scene art → HUD artwork settings**에서 소유 자료의 UI 팔레트·DC6 프레임·배치를 지정한다. Decoration/Health/Menu/Inventory를 지원하며 Preview HUD at 50% health → 새 복사본 저장 → Load saved copy로 연결한다. 게임 아래에 비율을 유지해 표시하며 체력과 기존 메뉴/인벤토리 동작을 사용한다. [설정/범위](docs/migration/PLAY_INTEGRATION.md#play-11-원본-hud-이미지-연결). 마나·스킬·벨트·원작 UI 전체 재현은 미구현이며 rc.3에는 포함되지 않는다.
+
 ## 실행과 배포
 
 출시 후보는 Actions의 **Release candidate and QA handoff** (`release.yml`)를 사용한다.

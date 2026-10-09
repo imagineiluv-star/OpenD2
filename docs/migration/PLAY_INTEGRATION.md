@@ -15,6 +15,60 @@
 | 8 | `feat/play-08-scene-setup` | 데이터 폴더 점검·지도에서 장면 생성·시작 메뉴 연결 | 구현; 실제 자료/GUI 인수 대기 |
 | 9 | `feat/play-09-actor-art-setup` | 장면별 캐릭터/몬스터 아트 입력·방향 미리보기·복사본 저장 | 구현; 실제 자료/GUI 인수 대기 |
 | 10 | `feat/play-10-npc-artwork` | Guide 대기 아트·고정 방향·깊이 정렬·설정 저장 | 구현; 실제 자료/GUI 인수 대기 |
+| 11 | `feat/play-11-legacy-hud` | DC6 HUD 배치·체력 표시·메뉴/인벤토리 동작·설정 미리보기 | 구현; 실제 자료/GUI 인수 대기 |
+
+## PLAY-11: 원본 HUD 이미지 연결
+
+**LoD = Diablo II: Lord of Destruction(디아블로 2: 파괴의 군주)**, 원작 디아블로 2의 확장팩이다.
+이 프로젝트는 사용자 소유의 원작 LoD MPQ를 읽는다. `lod-1.10f`는 현재 선택 지도/테이블 프로필의 목표 기준이며
+모든 실제 파일의 호환을 검증했다는 뜻이 아니다. 리저렉션의 고해상도 3D 리소스는 이 입력과 구별한다.
+
+PLAY-11 이후 Scene art에서 장면을 열고 **HUD artwork settings**를 펼친다. 공개 v0.2.0-rc.3에는 없다.
+
+1. **Use HUD artwork**를 켠다. 실제 UI에 맞는 팔레트와 캔버스 크기를 입력한다. 기본 800×120은 편집 예시다.
+2. DC6 탭에서 소유 자료의 파일·팔레트·프레임을 확인한다. **Add HUD element**로 Role, MPQ DC6 경로,
+   Frame, X, Y를 입력한다. Frame은 0부터 시작하는 direction-major 인덱스다.
+3. X/Y는 캔버스 안에서 이미지의 **왼쪽 위** 위치다. 파일의 signed offset을 추가하지 않는다.
+   타일처럼 나뉜 원본 패널은 여러 Decoration 요소로 명시적으로 이어 붙인다. 프레임 연결을 자동 추측하지 않는다.
+4. 목록 순서대로 뒤에서 앞으로 그린다. Decoration은 여러 개, Health/Menu/Inventory는 각각 최대 한 개다.
+   Health는 현재 체력 비율만큼 아래쪽 행을 보여준다. 빈 구슬/테두리는 별도 Decoration으로 배치한다.
+5. **Preview HUD at 50% health**로 합성 배치를 확인한다. 입력 변경은 다시 Preview해야 보인다.
+   미리보기의 버튼 그림은 게임을 조작하지 않는다. 잘못된 프레임이나 캔버스 밖 이미지면 이전 미리보기를 유지한다.
+6. **Validate and save a new scene copy → Load saved copy**로 플레이에 연결한다.
+   원본 JSON/MPQ를 덮어쓰지 않는다. 배우와 NPC 아트도 함께 유지한다. HUD를 끈 복사본은 기본 체력 바를 사용한다.
+
+실행 중 HUD는 게임 화면 아래에 위치한다. 가용 폭에 맞춰 비율을 유지해 축소하고, 빈 폭은 가운데 정렬하며 원래 크기보다 확대하지 않는다.
+Menu 이미지는 기존 일시정지 메뉴를 열고, Inventory 이미지는 기존 인벤토리 패널을 토글한다.
+클릭 판정은 프레임의 직사각형이며 겹친 버튼은 나중 요소를 우선한다. 장식은 클릭을 가로막는 마스크가 아니다.
+텍스트 HP·상태와 기존 Menu/Inventory 버튼도 유지하므로 일부 이미지만 설정해도 기본 조작이 가능하다.
+인벤토리 토글은 게임을 일시정지하지 않으며 새 세션은 패널을 다시 표시한다.
+
+선택 scene 필드의 형식 예시(경로·프레임·실제 크기는 반드시 확인):
+
+```json
+"HudArtwork": {
+  "PalettePath": "data/global/palette/units/pal.dat",
+  "Width": 800, "Height": 120,
+  "Elements": [
+    {"Role": "Decoration", "Path": "data/global/ui/YOUR_PANEL.dc6", "Frame": 0, "X": 0, "Y": 0},
+    {"Role": "Health", "Path": "data/global/ui/YOUR_HEALTH.dc6", "Frame": 0, "X": 16, "Y": 8},
+    {"Role": "Menu", "Path": "data/global/ui/YOUR_MENU.dc6", "Frame": 0, "X": 360, "Y": 80},
+    {"Role": "Inventory", "Path": "data/global/ui/YOUR_INVENTORY.dc6", "Frame": 0, "X": 420, "Y": 80}
+  ]
+}
+```
+
+- 캔버스 1..4096 × 1..1024, 요소 1..32. HUD 입력 합계 64MiB, 파일당 32MiB,
+  고유 decoded frame 픽셀 4,194,304. 같은 파일/프레임의 반복 배치는 디코딩과 텍스처를 공유한다.
+  전체 scene 128MiB 입력·16,777,216 픽셀 제한에도 합산한다. 장면 스트리밍/전체 UI 자동 이관은 아니다.
+- HUD 설정·소스 해시는 ContentId/장면별 저장 슬롯에 포함한다. HUD 없는 기존 장면의 identity는 유지한다.
+  구버전 앱은 새 JSON 필드를 거부한다. 기존 scene schema 1을 읽는 새 빌드를 사용한다.
+- CLI는 `HudArtworkSources`와 `Readiness.HudArtworkConfigured`를 보고한다. 구성됐다는 뜻이며
+  원작 HUD 전체 완료 플래그가 아니다. 기존 준비 상태와 종료 코드는 그대로다.
+- 원작 글꼴·마나·스킬·벨트·메뉴 전체 스킨·격자형 인벤토리 외형·버튼 hover/pressed 프레임은 미구현이다.
+  현재 체력·메뉴·인벤토리 기능은 preview 규칙이다. 실제 원본 화면/DPI/마우스 대조는 NOT_RUN이다.
+
+[PLAY_11_RESULTS](PLAY_11_RESULTS.md)에 코드·합성 검증과 실제 인수를 구별해 기록한다.
 
 ## PLAY-10: Guide NPC 대기 아트
 
