@@ -19,7 +19,7 @@ def fetch(key):
     spec = lock["archives"][key]
     return fetch_verified(lock["baseUrl"] + spec["file"], cache / spec["file"], spec["sha512"])
 
-editor_dir = cache / "godot"
+editor_dir = cache / f"godot-{lock['godot']}"
 with zipfile.ZipFile(fetch(host)) as archive:
     archive.extractall(editor_dir)
 # Preserve executable modes, including the macOS app's helper binaries.

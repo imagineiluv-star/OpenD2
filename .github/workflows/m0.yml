@@ -38,6 +38,9 @@ jobs:
         run: python -m unittest discover -s eng -p "test_*.py" -v
       - name: Install pinned Godot and templates
         run: python eng/bootstrap.py
+      - name: Stress macOS editor initialization and export teardown
+        if: runner.os == 'macOS'
+        run: python eng/check-editor-lifecycle.py --iterations 12
       - name: Build pinned MPQ backend from source
         run: python eng/build-native.py
       - name: Build pinned optional NPC runtime from source
@@ -49,6 +52,14 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag || 'ci' }}
           SOURCE_SHA: ${{ github.sha }}
         run: python eng/release.py pack --preset ${{ matrix.preset }} --smoke
+      - name: Preserve Godot validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenD2-validation-${{ matrix.preset }}
+          path: artifacts/validation/
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: OpenD2-M2-${{ matrix.preset }}

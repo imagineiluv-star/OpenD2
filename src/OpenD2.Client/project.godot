@@ -3,7 +3,7 @@ config_version=5
 [application]
 config/name="OpenD2 Foundation"
 run/main_scene="res://Main.tscn"
-config/features=PackedStringArray("4.6", "C#", "GL Compatibility")
+config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
 
 [display]
 window/size/viewport_width=1152

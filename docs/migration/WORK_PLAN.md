@@ -224,3 +224,11 @@ NPC 다음 작업은 **NPC-02b 품질 개선과 목표 PC 성능/배포 인수**
 2. 표시 항목 선택→접근→지정 아이템 줍기, 기존 F 최근접 줍기와 취소/지역 전환 경계를 연결한다.
 3. 숨김/가려짐·여러 전리품·이미 주운 대상·도달 불가·가방 부족과 GUI 연결을 검증한다.
 4. 원본 바닥 아트/폰트/품질색 전체 이관과 구분한다. 실제 대표 scene 시각 인수와 새 테스트 릴리즈는 병행 잔건이다.
+
+
+### CI-01 macOS 편집기 종료 경합
+
+- Godot 4.7.2 .NET·SDK·templates를 함께 고정하고 desktop-only 프로젝트의 불필요한 Android polling을 제거하는 공식 수정을 적용한다.
+- 모든 ERROR 실패를 유지하고 macOS cold import/export 반복 검사·단계별 로그 아티팩트를 추가했다.
+- 4.6.3의 동일 오류를 로컬 11번째 import에서 재현했다. 4.7.2 로컬 12+12 반복 통과와 원격 검증/인수 경계는 [CI_EDITOR_LIFECYCLE](CI_EDITOR_LIFECYCLE.md), 최종 3개 OS와 패키지 결과는 [PR #31](https://github.com/imagineiluv-star/OpenD2/pull/31)에 기록한다.
+- 실제 GUI/원본 자료/장시간 플레이 완료로 간주하지 않으며 다음 코드 단계 PLAY-17은 유지한다.
