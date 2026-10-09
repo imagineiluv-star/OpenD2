@@ -52,7 +52,7 @@ public partial class SimulationCanvas
 	{
 		if (!actorSprites.TryGetValue(actor.Id, out var sprite) || simulation is null) return false;
 		foreach (var change in simulation.Events)
-			if (change.Actor == actor.Id && change.Kind == SimulationEventKind.AttackStarted)
+			if (change.Actor == actor.Id && change.Kind is SimulationEventKind.AttackStarted or SimulationEventKind.SkillCast)
 				sprite.Clock.Face(change.To.X - change.From.X, change.To.Y - change.From.Y);
 		sprite.Update(actor, simulation.Tick);
 		DrawTexture(sprite.Texture, point + new Vector2(sprite.Clip.Left, sprite.Clip.Top)); return true;

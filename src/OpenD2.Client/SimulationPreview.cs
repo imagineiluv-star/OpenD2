@@ -89,8 +89,8 @@ public partial class SimulationPreview : VBoxContainer
 		view.MoveRequested += ClickMove; view.AttackRequested += ClickAttack;
 		var controls = new HFlowContainer(); playPanel.AddChild(controls);
 		foreach (var button in new[] { menuButton, inventoryButton, restart, pause, attack, interact, save, load }) controls.AddChild(button);
-		playPanel.AddChild(new Label { Text = "Click ground to move; click a monster to attack. Arrows move · Space attacks · E talks / uses a portal · F picks up loot.\nGreen: NPC · Gold: portal · Gray / purple: blocked cells. Click the game view to use the keyboard.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
-		BuildInventory();
+		playPanel.AddChild(new Label { Text = "Click ground to move; click a monster to attack. Arrows move · Space attacks · Q casts selected skill · E talks / uses a portal · F picks up loot.\nGreen: NPC · Gold: portal · Gray / purple: blocked cells. Click the game view to use the keyboard.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		BuildSkills(); BuildInventory();
 		BuildContentControls();
 		playPanel.AddChild(diagnosticControls);
 		diagnosticControls.AddChild(new Label { Text = "Seed" }); diagnosticControls.AddChild(seedInput);
@@ -107,7 +107,7 @@ public partial class SimulationPreview : VBoxContainer
 		replay.Pressed += VerifyReplay; save.Pressed += async () => await CheckpointFile(false, ActiveSavePath);
 		load.Pressed += () => ConfirmRestart(() => _ = CheckpointFile(true, ActiveSavePath));
 		Smoke(); CombatSmoke(); WorldSmoke(); ItemSmoke(); SaveSmoke(); NewRun();
-		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); HudSmoke(); AudioSmoke(); InventorySmoke(); GridInventorySmoke(); }
+		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); HudSmoke(); AudioSmoke(); InventorySmoke(); GridInventorySmoke(); SkillSmoke(); }
 		OpenMenu(initial: true);
 		if (smokeTest) Callable.From(() => { _ = MenuSmoke(); }).CallDeferred();
 	}
@@ -117,7 +117,7 @@ public partial class SimulationPreview : VBoxContainer
 		audio.SetBank(legacyScene?.Audio, legacyScene is null);
 		seed = (uint)seedInput.Value; simulation = new(seed, ActiveActors, world: ActiveWorld, inventory: legacyScene?.Inventory); view.SetSimulation(simulation);
 		recording = new(simulation); sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
-		previous = current = simulation.GetEntity(Player); view.SignalValue = -1; interactDown = pickupDown = false; SetPaused(false);
+		previous = current = simulation.GetEntity(Player); view.SignalValue = -1; interactDown = pickupDown = skillDown = false; SetPaused(false);
 		status.Text = "Talk to the quest giver, defeat the marked targets, then return."; ShowFrame(); Refresh();
 		log("simulation_started", $"rules={GameSimulation.RulesVersion}, seed={seed}");
 	}
@@ -132,7 +132,8 @@ public partial class SimulationPreview : VBoxContainer
 		if (result != CommandResult.Accepted) { status.Text = $"Command rejected: {result}"; return false; }
 		sequence++; return true;
 	}
-	private void AttackNearest()
+	private void AttackNearest() => AttackNearest(false);
+	private void AttackNearest(bool skill)
 	{
 		if (!current.IsAlive || verifying) return;
 		EntityId nearest = default; long best = long.MaxValue;
@@ -143,7 +144,7 @@ public partial class SimulationPreview : VBoxContainer
 			if (distance < best) { best = distance; nearest = e.Id; }
 		}
 		if (nearest == default) { status.Text = "No living monsters in this region. Use E near an NPC or portal."; return; }
-		if (Submit(CommandKind.Attack, target: nearest)) lastAttackTick = simulation.Tick;
+		if (Submit(skill ? CommandKind.CastSkill : CommandKind.Attack, target: nearest)) lastAttackTick = simulation.Tick;
 	}
 	private void InteractNearest()
 	{
@@ -189,6 +190,8 @@ public partial class SimulationPreview : VBoxContainer
 		(x, y) = FollowRoute(active, x, y);
 		if ((x != requestedX || y != requestedY) && Submit(CommandKind.SetMove, x, y)) { requestedX = x; requestedY = y; }
 		if (active && !paused && Input.IsKeyPressed(Key.Space) && simulation.Tick - lastAttackTick >= GameSimulation.PlayerAttackInterval) AttackNearest();
+		bool casting = active && !paused && Input.IsKeyPressed(Key.Q);
+		if (casting && !skillDown) CastSelected(); skillDown = casting;
 		bool pressed = active && !paused && Input.IsKeyPressed(Key.E);
 		if (pressed && !interactDown) InteractNearest(); interactDown = pressed;
 		bool picking = active && !paused && Input.IsKeyPressed(Key.F);
@@ -212,6 +215,7 @@ public partial class SimulationPreview : VBoxContainer
 		{
 			if (item.Kind == SimulationEventKind.Signaled) view.SignalValue = item.Value;
 			else if (item.Kind == SimulationEventKind.Hit) status.Text = $"Entity {item.Actor.Value} hit {item.Target.Value}: {item.Value} damage";
+			else if (item.Kind == SimulationEventKind.SkillFailed && item.Actor == Player) status.Text = $"Skill: {(SkillFailure)item.Value}";
 			else if (item.Kind == SimulationEventKind.AttackFailed && item.Actor == Player) status.Text = $"Attack: {(AttackFailure)item.Value}";
 			else if (item.Kind == SimulationEventKind.Died) status.Text = item.Actor == Player ? "You died. New run restarts the arena." : $"Monster {item.Actor.Value} defeated.";
 			else if (item.Kind is SimulationEventKind.ItemDropped or SimulationEventKind.ItemChanged or SimulationEventKind.ItemFailed)
@@ -356,11 +360,11 @@ public partial class SimulationPreview : VBoxContainer
 				recording = new(simulation);
 				sequence = recording.Baseline.Inputs.First(c => c.Actor == Player).Sequence;
 				previous = current = simulation.GetEntity(Player); requestedX = current.MoveX; requestedY = current.MoveY;
-				lastAttackTick = simulation.Tick - GameSimulation.PlayerAttackInterval; interactDown = pickupDown = false;
+				lastAttackTick = simulation.Tick - GameSimulation.PlayerAttackInterval; interactDown = pickupDown = skillDown = false;
 				clock.Reset(); tickMetrics = new(); view.SignalValue = -1; audio.SetBank(legacyScene?.Audio, legacyScene is null); SyncAudio(); ShowFrame();
 				status.Text = result.RecoveredFromBackup ? "Recovered the previous valid backup. Files preserved; paused for review." :
 					menuOpen ? "Checkpoint loaded; paused for review." : "Checkpoint loaded. Press Resume to continue.";
-				if (result.Migrated) status.Text += " Previous save verified and converted to the grid in memory; Save checkpoint writes v2 and keeps the previous file as .bak.";
+				if (result.Migrated) status.Text += " Previous save verified and converted to current inventory/mana rules in memory; Save checkpoint writes v3 and keeps the previous file as .bak.";
 				log("game_loaded", $"tick={simulation.Tick}, backup={result.RecoveredFromBackup}");
 			}
 			else
@@ -481,7 +485,7 @@ public partial class SimulationCanvas : Control
 	public override void _GuiInput(InputEvent input)
 	{
 		if (input is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } mouse) { GrabFocus(); ClickWorld(mouse.Position); AcceptEvent(); }
-		if (input is InputEventKey { Keycode: Key.Up or Key.Down or Key.Left or Key.Right or Key.Space or Key.E or Key.F }) AcceptEvent();
+		if (input is InputEventKey { Keycode: Key.Up or Key.Down or Key.Left or Key.Right or Key.Space or Key.Q or Key.E or Key.F }) AcceptEvent();
 	}
 	public override void _Draw()
 	{

@@ -32,13 +32,13 @@ public partial class SceneArtworkEditor
 	private readonly VBoxContainer hudRowsBox = new();
 	private readonly List<HudRow> hudRows = new();
 	private readonly Button hudAdd = new() { Text = "Add HUD element (up to 32)" };
-	private readonly Button hudInspect = new() { Text = "Preview HUD at 50% health" };
+	private readonly Button hudInspect = new() { Text = "Preview HUD at 50% health/mana" };
 	private readonly LegacyHudView hudPreview = new();
 	private void BuildHudEditor()
 	{
 		var toggle = new Button { Text = "HUD artwork settings", ToggleMode = true }; form.AddChild(toggle);
 		var fields = new VBoxContainer { Visible = false }; form.AddChild(fields); toggle.Toggled += value => fields.Visible = value;
-		fields.AddChild(new Label { Text = "Choose verified DC6 frames in the DC6 tab. Add elements in back-to-front order; X/Y are the frame's top-left on the HUD canvas.\nDecoration draws a static frame; Health clips from the bottom. Menu and Inventory use the existing actions. One of each action/Health, multiple decorations.\nCanvas 800×120 is an editable example. File offsets are not added. Mana, skills, belt slots and original fonts are not connected.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		fields.AddChild(new Label { Text = "Choose verified DC6 frames in the DC6 tab. Add elements in back-to-front order; X/Y are the frame's top-left on the HUD canvas.\nDecoration draws a static frame; Health and Mana clip from the bottom. Menu and Inventory use the existing actions. One of each action/Health/Mana, multiple decorations.\nCanvas 800×120 is an editable example. File offsets are not added. Skill icons, belt slots and original fonts are not connected.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		fields.AddChild(hudEnabled); fields.AddChild(hudPalette);
 		var size = new HFlowContainer(); fields.AddChild(size);
 		size.AddChild(new Label { Text = "Canvas width" }); size.AddChild(hudWidth); size.AddChild(new Label { Text = "height" }); size.AddChild(hudHeight);
@@ -82,8 +82,8 @@ public partial class SceneArtworkEditor
 			var request = CaptureHud(); string directory = sourceDirectory;
 			var art = await Task.Run(() => LegacyHudArt.Load(request, read ?? (path => AssetDecoders.ReadFromInstall(directory, path))));
 			if (!IsInstanceValid(this) || !IsInsideTree()) return false;
-			hudPreview.SetArtwork(new(art)); hudPreview.SetHealth(50, 100);
-			status.Text = "HUD preview loaded at 50% health. Later edits require previewing again. Save a new scene copy to use it in play. Original appearance and GUI QA remain unverified.";
+			hudPreview.SetArtwork(new(art)); hudPreview.SetHealth(50, 100); hudPreview.SetMana(30, 60);
+			status.Text = "HUD preview loaded at 50% health/mana. Later edits require previewing again. Save a new scene copy to use it in play. Original appearance and GUI QA remain unverified.";
 			return true;
 		}
 		catch (Exception error) { if (IsInstanceValid(this) && IsInsideTree()) status.Text = "HUD preview failed; previous preview retained. " + error.Message; return false; }

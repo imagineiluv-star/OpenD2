@@ -27,9 +27,10 @@ public partial class LegacyHudView : Control
 		public void Dispose() { foreach (var texture in Textures.Values) texture.Dispose(); Textures.Clear(); }
 	}
 	private Prepared? artwork;
-	private int health, maximum = 1;
+	private int health, maximum = 1, mana, maxMana = 1;
 	public bool HasArtwork => artwork is not null;
 	public int HealthRows => artwork?.Art.Sprites.FirstOrDefault(s => s.Role == HudRole.Health) is { } s ? LegacyHudArt.FilledRows(health, maximum, s.Frame.Height) : 0;
+	public int ManaRows => artwork?.Art.Sprites.FirstOrDefault(s => s.Role == HudRole.Mana) is { } s ? LegacyHudArt.FilledRows(mana, Math.Max(1, maxMana), s.Frame.Height) : 0;
 	public event Action<HudRole>? ActionRequested;
 	public LegacyHudView()
 	{
@@ -54,6 +55,12 @@ public partial class LegacyHudView : Control
 		if (health == value && maximum == max) return;
 		health = value; maximum = max; QueueRedraw();
 	}
+	public void SetMana(int value, int max)
+	{
+		if (max < 0) throw new ArgumentOutOfRangeException(nameof(max));
+		if (mana == value && maxMana == max) return;
+		mana = value; maxMana = max; QueueRedraw();
+	}
 	private (float Scale, Vector2 Origin) Placement()
 	{
 		if (artwork is null) return (0, Vector2.Zero);
@@ -66,7 +73,7 @@ public partial class LegacyHudView : Control
 		var (scale, origin) = Placement(); if (scale <= 0) return;
 		foreach (var s in artwork.Art.Sprites)
 		{
-			int rows = s.Role == HudRole.Health ? LegacyHudArt.FilledRows(health, maximum, s.Frame.Height) : s.Frame.Height;
+			int rows = s.Role == HudRole.Health ? LegacyHudArt.FilledRows(health, maximum, s.Frame.Height) : s.Role == HudRole.Mana ? LegacyHudArt.FilledRows(mana, Math.Max(1, maxMana), s.Frame.Height) : s.Frame.Height;
 			if (rows == 0) continue;
 			int top = s.Frame.Height - rows;
 			DrawTextureRectRegion(artwork.Textures[s.Frame], new Rect2(origin + new Vector2(s.X, s.Y + top) * scale, new Vector2(s.Frame.Width, rows) * scale),
