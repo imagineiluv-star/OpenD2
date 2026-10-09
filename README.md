@@ -14,7 +14,9 @@ The [PLAY integration work](docs/migration/PLAY_INTEGRATION.md) connects explici
 
 [PLAY-12](docs/migration/PLAY_12_RESULTS.md) connects explicitly configured DC6 item icons to the existing bag/equipment slots, with Scene art preview/save controls and text fallback. It keeps the two preview item definitions and eight-slot bag; original item rules, multi-cell inventory and equipment-dependent character art remain pending.
 
-See [release testing](docs/migration/RELEASE_QA.md) for packaged builds and the separate synthetic, legacy-scene and two-hour GUI acceptance cases. `v0.2.0-rc.3` includes the basic HUD, audio, inventory and startup menu. PLAY-08 through PLAY-12 require newer CI packages or a future release.
+[PLAY-13](docs/migration/PLAY_13_RESULTS.md) reads owned LoD item TXT definitions, validates type/slot references and lets Scene art search original codes/names and associate them with preview items and DC6 paths. The inventory shows base dimensions, requirements and ranges as reference information. Combat stats and eight-slot occupancy remain unchanged; original item rules and grid/save migration are subsequent work.
+
+See [release testing](docs/migration/RELEASE_QA.md) for packaged builds and the separate synthetic, legacy-scene and two-hour GUI acceptance cases. `v0.2.0-rc.3` includes the basic HUD, audio, inventory and startup menu. PLAY-08 through PLAY-13 require newer CI packages or a future release.
 
 The historical image and CMake/TCP-IP instructions below describe the original C++ project. They are not evidence of C# GUI gameplay acceptance.
 

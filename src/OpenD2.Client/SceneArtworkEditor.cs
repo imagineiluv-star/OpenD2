@@ -61,7 +61,7 @@ public partial class SceneArtworkEditor : VBoxContainer
 			panel.AddChild(new Label { Text = "Playback FPS" }); panel.AddChild(fields.Fps); panel.AddChild(fields.Preview);
 			fields.Preview.Pressed += () => Inspect(index);
 		}
-		BuildHudEditor(); BuildItemEditor(); AddChild(save); AddChild(loadSaved); AddChild(status); AddChild(replace);
+		BuildHudEditor(); BuildItemEditor(); BuildDefinitionEditor(); AddChild(save); AddChild(loadSaved); AddChild(status); AddChild(replace);
 		var dialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.json ; Legacy scene request"] }; AddChild(dialog);
 		choose.Pressed += () => { if (!busy) dialog.PopupCenteredRatio(0.7f); }; dialog.FileSelected += RequestOpen;
 		replace.Confirmed += () => { string file = pendingFile; pendingFile = ""; _ = ReadScene(file); };
@@ -79,7 +79,7 @@ public partial class SceneArtworkEditor : VBoxContainer
 	private void SetBusy(bool value)
 	{
 		busy = value; choose.Disabled = value; actor.Disabled = value; enabled.Disabled = value; palette.Editable = !value; facing.Disabled = value; npcFacing.Disabled = value;
-		foreach (var motion in motions) motion.SetBusy(value); SetHudBusy(value); SetItemsBusy(value);
+		foreach (var motion in motions) motion.SetBusy(value); SetHudBusy(value); SetItemsBusy(value); SetDefinitionsBusy(value);
 		save.Disabled = value || source is null; loadSaved.Disabled = value || savedFile.Length == 0;
 	}
 	private void CaptureActor()
@@ -128,7 +128,7 @@ public partial class SceneArtworkEditor : VBoxContainer
 			source = request; sourceDirectory = directory; drafts = nextDrafts; selectedActor = -1; savedFile = ""; actor.Clear();
 			foreach (var spawn in request.Actors) actor.AddItem($"{(spawn.Player ? "Player" : "Monster")} {spawn.Id} · region {spawn.Region}");
 			actor.AddItem($"Guide {request.Npc.Id} · {request.Npc.Name} · Idle only");
-			ShowActor(0); ShowHud(request.HudArtwork, "data/global/palette/units/pal.dat"); ShowItems(request.ItemArtwork, "data/global/palette/units/pal.dat"); form.Show(); sourceInfo.Text = "Source: " + Path.GetFullPath(file);
+			ShowActor(0); ShowHud(request.HudArtwork, "data/global/palette/units/pal.dat"); ShowItems(request.ItemArtwork, "data/global/palette/units/pal.dat"); ShowDefinitions(request.ItemDefinitions); form.Show(); sourceInfo.Text = "Source: " + Path.GetFullPath(file);
 			status.Text = "Scene opened. Existing artwork is preserved. Palette defaults to the actor's region; verify it for each actor. Saving always creates a new file.";
 			return true;
 		}
@@ -159,13 +159,13 @@ public partial class SceneArtworkEditor : VBoxContainer
 			var npcDraft = drafts[source.Npc.Id]; var idle = npcDraft.Motions[0];
 			LegacyNpcRequest? npcArt = npcDraft.Enabled ? new(source.Npc.Id, npcDraft.Palette,
 				LegacyArtworkSetup.ParseMotion("Idle", idle.Path, idle.Layers, idle.Directions, idle.Fps), npcDraft.Facing) : null;
-			var request = source with { Artwork = artwork, NpcArtwork = npcArt, HudArtwork = hudEnabled.ButtonPressed ? CaptureHud() : null, ItemArtwork = itemsEnabled.ButtonPressed ? CaptureItems() : null }; string directory = sourceDirectory;
+			var request = source with { Artwork = artwork, NpcArtwork = npcArt, HudArtwork = hudEnabled.ButtonPressed ? CaptureHud() : null, ItemArtwork = itemsEnabled.ButtonPressed ? CaptureItems() : null, ItemDefinitions = definitionsEnabled.ButtonPressed ? CaptureDefinitions() : null }; string directory = sourceDirectory;
 			file ??= Path.Combine(sceneDirectory, "artwork-" + Guid.NewGuid().ToString("N") + ".json");
 			await Task.Yield();
 			var ready = await Task.Run(() => LegacySceneSetup.SaveNew(file, request, read ?? (path => AssetDecoders.ReadFromInstall(directory, path))));
 			if (!IsInstanceValid(this) || !IsInsideTree()) return false;
 			savedFile = file;
-			status.Text = $"Saved copy: {file}\nCombat actor artwork: {ready.ActorsWithArtwork}/{ready.Actors}; guide artwork: {ready.NpcArtworkConfigured}; HUD artwork: {ready.HudArtworkConfigured}; item icons: {ready.ItemArtworkCount}; static quest loop: {ready.QuestLoopReachable}. GUI QA: NOT_RUN.\nLoad saved copy uses this snapshot. Later edits require saving another copy. Artwork changes use a separate checkpoint slot. Guide walking/talking motions, original rules and visual accuracy remain unverified.";
+			status.Text = $"Saved copy: {file}\nCombat actor artwork: {ready.ActorsWithArtwork}/{ready.Actors}; guide artwork: {ready.NpcArtworkConfigured}; HUD artwork: {ready.HudArtworkConfigured}; item icons: {ready.ItemArtworkCount}; item references: {ready.ItemDefinitionCount}; static quest loop: {ready.QuestLoopReachable}. GUI QA: NOT_RUN.\nLoad saved copy uses this snapshot. Later edits require saving another copy. Artwork changes use a separate checkpoint slot. Guide walking/talking motions, original rules and visual accuracy remain unverified.";
 			return true;
 		}
 		catch (Exception error) { if (IsInstanceValid(this) && IsInsideTree()) status.Text = "Save failed; original scene, previous copies and current game retained. " + error.Message; return false; }

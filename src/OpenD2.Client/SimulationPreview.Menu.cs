@@ -156,8 +156,8 @@ public partial class SimulationPreview
 			restartDialog.Hide(); restartDialog.EmitSignal(ConfirmationDialog.SignalName.Canceled);
 			if (simulation.ComputeStateHash() != retained || !menuOpen || !paused) throw new InvalidDataException("Cancelled scene load changed the session.");
 			var sample = MapPreview.SampleData();
-			byte[] Read(string path) => path.EndsWith(".ds1") ? sample.Ds1 : path.EndsWith(".dt1") ? sample.Dt1 : path.EndsWith(".dc6") ? AssetPreview.SampleDc6() : sample.Colors;
-			var request = LegacySceneSetup.Create(new(1, "lod-1.10f", "test.ds1", "data/global/palette/act1/pal.dat", ["test.dt1"]), "Setup smoke", 1, 1, 6, 2, 2, 1) with { HudArtwork = SampleHud(), ItemArtwork = SampleItems() };
+			byte[] Read(string path) => path.EndsWith(".txt") ? ItemDefinitionSmoke.Read(path) : path.EndsWith(".ds1") ? sample.Ds1 : path.EndsWith(".dt1") ? sample.Dt1 : path.EndsWith(".dc6") ? AssetPreview.SampleDc6() : sample.Colors;
+			var request = LegacySceneSetup.Create(new(1, "lod-1.10f", "test.ds1", "data/global/palette/act1/pal.dat", ["test.dt1"]), "Setup smoke", 1, 1, 6, 2, 2, 1) with { HudArtwork = SampleHud(), ItemArtwork = SampleItems(), ItemDefinitions = ItemDefinitionSmoke.Request() };
 			string sceneFile = Path.Combine(folder, "generated.json");
 			LegacySceneSetup.SaveNew(sceneFile, request, Read);
 			await LoadLegacyScene(sceneFile, Read);
@@ -178,6 +178,12 @@ public partial class SimulationPreview
 			await LoadLegacyScene(invalidItemsFile, Read);
 			if (itemTextures != keptIcons || itemTextures?.CheckTexture() != true || legacyScene != keptScene || simulation.ComputeStateHash() != retained || ScenePath != sceneFile || !menuOpen || !paused)
 				throw new InvalidDataException("Failed item scene replacement changed the live scene or icons.");
+			string invalidDefinitionsFile = Path.Combine(folder, "invalid-definitions.json");
+			var invalidDefinitions = request with { ItemDefinitions = new(ItemTables.Profile, [new("TrainingSword", "far")]) };
+			File.WriteAllText(invalidDefinitionsFile, System.Text.Json.JsonSerializer.Serialize(invalidDefinitions));
+			await LoadLegacyScene(invalidDefinitionsFile, Read);
+			if (legacyScene != keptScene || simulation.ComputeStateHash() != retained || ScenePath != sceneFile || !menuOpen || !paused || itemTextures != keptIcons)
+				throw new InvalidDataException("Invalid definition replacement changed the current session.");
 			ContinueMenuSession(); _Process(0.04);
 			if (paused || simulation.Tick != 1) throw new InvalidDataException("Generated scene could not continue from its menu.");
 			SetSceneArt(null); legacyScene = null; NewRun(); SetScenePath(remembered);

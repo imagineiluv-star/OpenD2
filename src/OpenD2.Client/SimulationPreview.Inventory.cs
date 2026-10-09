@@ -73,6 +73,8 @@ public partial class SimulationPreview
 		{
 			var spec = ItemCatalog.Get(chosen.Definition);
 			itemDetails.Text = $"{spec.Name} · {chosen.Location}\n{spec.Slot} | damage bonus +{spec.DamageBonus} | armor {spec.Armor}";
+			if (legacyScene?.ItemDefinitions?.Bindings.TryGetValue(chosen.Definition, out var original) == true)
+				itemDetails.Text += "\n\n" + ItemDefinitionText.Describe(original);
 		}
 		else itemDetails.Text = "Select an item to inspect it. Pick up nearby loot with F.";
 		var stats = simulation.GetStats(Player);
@@ -102,6 +104,8 @@ public partial class SimulationPreview
 		simulation = GameSimulation.Restore(snapshot with { Entities = snapshot.Entities.Select(e => e.Id == new EntityId(2) ? e with { Health = 0, Mode = MonsterMode.Dead } : e).ToArray(),
 			Items = [new(new(2), ItemDefinition.TrainingSword, ItemLocation.Inventory, Player, 0, default, default)] });
 		recording = new(simulation); view.SetSimulation(simulation); selectedItem = new(2); RefreshItems();
+		if (!itemDetails.Text.Contains("Fixture sword [fws]") || !itemDetails.Text.Contains("Size 1×3") || !itemDetails.Text.Contains("7–13") || !itemDetails.Text.Contains("Reference only") || simulation.GetStats(Player).MinimumDamage != 14)
+			throw new InvalidDataException("Original reference definition binding changed preview stats or omitted source values.");
 		var texture = itemTextures.Get(ItemDefinition.TrainingSword);
 		if (itemSlots[2].Icon != texture || itemSlots[0].Icon is not null || !itemSlots[2].Text.Contains("Training sword")) throw new InvalidDataException("Bag icon/name binding failed.");
 		UseSelected(CommandKind.Equip); RunTick(); RefreshItems();
@@ -117,7 +121,7 @@ public partial class SimulationPreview
 		simulation = GameSimulation.Restore(snapshot with { Entities = snapshot.Entities.Append(snapshot.Entities.Single(e => e.Id == new EntityId(2)) with { Id = new(3) }).ToArray(),
 			Inputs = snapshot.Inputs.Append(new CommandCursor(new(3), 0, 0)).ToArray(), Items = [new(new(3), ItemDefinition.TrainingVest, ItemLocation.Inventory, Player, 0, default, default)] });
 		recording = new(simulation); view.SetSimulation(simulation); RefreshItems();
-		if (itemSlots[2].Icon is not null || !itemSlots[2].Text.Contains("Training vest")) throw new InvalidDataException("Missing icon fallback failed.");
-		NewRun(); GD.Print("OPEND2_PLAY12_ITEMS_READY");
+		if (itemSlots[2].Icon is not null || !itemSlots[2].Text.Contains("Training vest") || itemDetails.Text.Contains("Original reference")) throw new InvalidDataException("Missing icon fallback failed.");
+		NewRun(); GD.Print("OPEND2_PLAY12_ITEMS_READY"); GD.Print("OPEND2_PLAY13_DEFINITIONS_READY");
 	}
 }
