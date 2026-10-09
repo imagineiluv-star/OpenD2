@@ -31,7 +31,7 @@ def main():
         (project / "project.godot").write_text(
             'config_version=5\n[application]\nconfig/name="Editor lifecycle probe"\n'
             '[rendering]\nrenderer/rendering_method="gl_compatibility"\n', encoding="utf-8")
-        # --export-pack uses the editor export/automatic-quit path without SDKs/templates.
+        # --export-pack exercises export/automatic quit without compiling C# or using templates.
         (project / "export_presets.cfg").write_text(
             '[preset.0]\nname="Probe"\nplatform="Linux"\nrunnable=true\n'
             'export_filter="all_resources"\ninclude_filter=""\nexclude_filter=""\n'

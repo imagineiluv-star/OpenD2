@@ -56,7 +56,26 @@ export는 엔진의 `--export-release` 완료/자동 종료를 기다린다. 이
 ## 검증 기록과 인수 경계
 
 최초 로컬 검사: 새 SDK lock restore와 Debug 빌드 성공(경고 0/오류 0), Python 계약 22/22 성공.
-3개 OS 결과와 반복 실행 결과는 이 변경 PR과 후속 검증 기록에 실제 실행 링크로 기록한다.
+
+Linux x64에서 동일 fixture를 두 공식 .NET 에디터로 비교했다. 4.6.3은 24회 상한 중 **11번째 cold import 종료**에서
+아래 오류를 출력했고 엄격한 검사기가 즉시 실패시켰다(앞선 10회 import/export 성공). 11회는 종료 지연
+120프레임/60fps 조건이므로 기존 지연으로도 막지 못하는 경합을 직접 재현했다.
+4.7.2는 **12 cold imports + 12 exports**를 모두 통과했다. macOS 재발은 위 실제 CI 로그 두 개로 별도 확인했다.
+이는 유한 반복 시험이며 모든 가능한 OS/스케줄링 상황을 증명하는 것은 아니다.
+
+```text
+4.6.3.stable.mono.official.7d41c59c4
+ERROR: EditorSettings not instantiated yet when getting setting "export/android/android_sdk_path".
+   at: _EDITOR_GET (editor/settings/editor_settings.cpp:1531)
+Godot reported an error despite its exit code; see artifacts/baseline-4.6.3/11-import.log
+
+4.7.2.stable.mono.official.ed1daf0bf
+EDITOR LIFECYCLE PASS: 12 cold imports + 12 exports
+```
+
+[PR #31](https://github.com/imagineiluv-star/OpenD2/pull/31), 최초 검증 실행
+[37939524987](https://github.com/imagineiluv-star/OpenD2/actions/runs/37939524987).
+3개 OS의 최종 job/압축 패키지/아티팩트 결과와 병합 후 master 실행은 [PR #31의 검증 표](https://github.com/imagineiluv-star/OpenD2/pull/31)에 실제 run 링크로 기록한다. 이 문서의 로컬 결과와 원격 3개 OS 결과를 구분한다.
 
 **실제 GUI 플레이: NOT_RUN.** 헤드리스 검사는 합성 게임 경로와 자체 포함 패키지 시작을 확인한다.
 화면 렌더링·키보드/마우스·오디오 청취·DPI·멀티 모니터·서명/공증 설치·원본 데이터 호환 인수가 아니다.
@@ -65,6 +84,8 @@ Intel macOS의 실제 실행은 별도다.
 
 ## 남은 프로젝트 작업
 
+- 다음 코드 단계 PLAY-17: 겹친 바닥 아이템 이름 표시·선택 접근/줍기와 취소·지역 전환·가방 부족 경계.
+- 새 테스트 RC 발행/GUI 인수: 기존 공개 v0.2.0-rc.3에는 PLAY-08~16이 없다. 이번 CI의 압축 패키지 아티팩트와 공개 Release를 구분한다.
 - RELEASE-QA-02: 세 OS 실제 GUI 플레이, Grok Bot 결과 회수, QA-01~10의 증거와 장시간 플레이.
 - M1: 소유한 원본 MPQ로 DCC/COF·DT1/DS1·TXT/BIN 변형과 원본 장면·UI·음원을 인수.
 - M2-05c: 원본 세이브 캐릭터/아이템 본문 변환. 현재 헤더 사전검사와 자체 저장 호환을 구분.
