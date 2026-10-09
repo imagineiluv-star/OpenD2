@@ -14,10 +14,10 @@ public readonly record struct EntityState(EntityId Id, RegionId Region, GamePosi
 {
 	public bool IsAlive => Health > 0;
 }
-public enum CommandKind { SetMove, Signal, Attack, Interact, Pickup, Equip, Unequip, DropItem, MoveItem, SelectSkill, CastSkill }
+public enum CommandKind { SetMove, Signal, Attack, Interact, Pickup, Equip, Unequip, DropItem, MoveItem, SelectSkill, CastSkill, BeltItem, UseItem, UseBelt }
 public readonly record struct GameCommand(long Tick, ulong Sequence, EntityId Actor, RegionId Region, CommandKind Kind, int X = 0, int Y = 0, EntityId Target = default, ItemId Item = default);
 public enum CommandResult { Accepted, InvalidCommand, UnknownActor, WrongRegion, ExpiredTick, TooFarAhead, StaleSequence, OutOfOrderTick, TickFull, QueueFull, DeadActor, NotPlayerControlled, InvalidTarget }
-public enum SimulationEventKind { Moved, Signaled, Blocked, AttackStarted, Hit, Died, AttackFailed, MonsterChanged, RegionChanged, NpcTalked, QuestChanged, InteractionFailed, ItemDropped, ItemChanged, ItemFailed, SkillCast, SkillFailed }
+public enum SimulationEventKind { Moved, Signaled, Blocked, AttackStarted, Hit, Died, AttackFailed, MonsterChanged, RegionChanged, NpcTalked, QuestChanged, InteractionFailed, ItemDropped, ItemChanged, ItemFailed, SkillCast, SkillFailed, ItemConsumed }
 public enum AttackFailure { Cooldown, OutOfRange, Obstructed, DeadTarget, Interrupted }
 public readonly record struct SimulationEvent(long Tick, SimulationEventKind Kind, EntityId Actor, RegionId Region, GamePosition From, GamePosition To, int Value = 0, EntityId Target = default, RegionId Destination = default, ItemId Item = default);
 public readonly record struct CommandCursor(EntityId Actor, ulong Sequence, long Tick);
@@ -28,7 +28,7 @@ public sealed record SimulationSnapshot(int RulesVersion, long Tick, uint Random
 // A single owner advances authoritative state. No wall clock, rendering, I/O or callbacks in Step.
 public sealed partial class GameSimulation
 {
-	public const int RulesVersion = 6, UnitsPerTile = 256, PositionLimit = 16777216;
+	public const int RulesVersion = 7, UnitsPerTile = 256, PositionLimit = 16777216;
 	public const int MaxEntities = 1024, MaxPendingCommands = 4096, MaxCommandsPerTick = 128, CommandHorizon = 250;
 	public const int MaxReplayCommands = 16384, MaxReplayTicks = 100000;
 	private readonly EntityState[] entities;
@@ -72,8 +72,8 @@ public sealed partial class GameSimulation
 		}
 		else Collision = collision;
 		if (world is null && collision is not null && entities.Length > MaxCombatEntities) throw new ArgumentException("Combat entity budget exceeded.");
-		items = new ItemState[entities.Length];
-		inputs = new CommandCursor[entities.Length]; events = new SimulationEvent[7 * entities.Length + MaxCommandsPerTick + (world is null ? 0 : 4)];
+		items = new ItemState[2 * entities.Length]; usedPotions = new bool[entities.Length];
+		inputs = new CommandCursor[entities.Length]; events = new SimulationEvent[8 * entities.Length + MaxCommandsPerTick + (world is null ? 0 : 4)];
 		attacks = new EntityId[entities.Length]; skillAttacks = new bool[entities.Length]; castSkills = new SkillId[entities.Length]; canAct = new bool[entities.Length]; attacked = new bool[entities.Length];
 		for (int i = 0; i < entities.Length; i++)
 		{
@@ -97,7 +97,7 @@ public sealed partial class GameSimulation
 	public CommandResult Submit(GameCommand command)
 	{
 		if (command.Sequence == 0 || !Enum.IsDefined(command.Kind) ||
-			(command.Kind == CommandKind.SetMove ? !ValidDirection(command.X, command.Y) : command.Kind == CommandKind.MoveItem ? command.X is < 0 or >= InventoryLayout.Width || command.Y is < 0 or >= InventoryLayout.Height : command.Kind == CommandKind.SelectSkill ? !Enum.IsDefined((SkillId)command.X) || command.Y != 0 : command.X != 0 || command.Y != 0) ||
+			!ValidCommandCoordinates(command) ||
 			(command.Kind is not (CommandKind.Attack or CommandKind.CastSkill or CommandKind.Interact) && command.Target != default) ||
 			(IsItemCommand(command.Kind) ? command.Item == default : command.Item != default)) return CommandResult.InvalidCommand;
 		if (!indices.TryGetValue(command.Actor, out int index)) return CommandResult.UnknownActor;
@@ -122,7 +122,7 @@ public sealed partial class GameSimulation
 		long nextTick = checked(Tick + 1); eventCount = 0; interaction = default;
 		for (int i = 0; i < entities.Length; i++)
 		{
-			var e = entities[i]; bool active = IsActive(e); canAct[i] = active && e.IsAlive && e.HitStun == 0; attacked[i] = false; attacks[i] = default; skillAttacks[i] = false;
+			var e = entities[i]; bool active = IsActive(e); canAct[i] = active && e.IsAlive && e.HitStun == 0; attacked[i] = false; attacks[i] = default; skillAttacks[i] = false; usedPotions[i] = false;
 			if (active) entities[i] = AdvanceResources(e) with { AttackCooldown = Math.Max(0, e.AttackCooldown - 1), HitStun = Math.Max(0, e.HitStun - 1) };
 		}
 		while (commands.TryPeek(out var command, out _) && command.Tick == nextTick)
@@ -141,6 +141,7 @@ public sealed partial class GameSimulation
 				else Emit(nextTick, SimulationEventKind.SkillFailed, entity, entity.Position, (int)SkillFailure.Interrupted);
 			}
 			else if (command.Kind == CommandKind.Interact) interaction = command.Target;
+			else if (command.Kind == CommandKind.UseBelt) UseBelt(index, command.X, nextTick);
 			else if (IsItemCommand(command.Kind)) ApplyItemCommand(index, command, nextTick);
 			else Emit(nextTick, SimulationEventKind.Signaled, entity, entity.Position, random.NextInt(6));
 		}
@@ -188,7 +189,7 @@ public sealed partial class GameSimulation
 		return result;
 	}
 	private GameCommand[] OrderedCommands() => commands.UnorderedItems.OrderBy(p => p.Priority).Select(p => p.Element).ToArray();
-	// Canonical little-endian v6 state, including scheduling, world content, quest and item ownership.
+	// Canonical little-endian v7 state, including scheduling, world content, quest and item ownership.
 	// Explicit diagnostic operation: allocates, so callers must not invoke it for every render frame.
 	public string ComputeStateHash() => ComputeStateHash(RulesVersion);
 	internal string ComputeStateHash(int version)
@@ -211,14 +212,22 @@ public sealed partial class GameSimulation
 		writer.Write(commands.Count);
 		foreach (var c in OrderedCommands())
 		{
-			writer.Write(c.Tick); writer.Write(c.Sequence); writer.Write(c.Actor.Value); writer.Write(c.Region.Value); writer.Write((int)c.Kind); writer.Write(c.X); writer.Write(c.Y); writer.Write(c.Target.Value); writer.Write(c.Item.Value);
+			writer.Write(c.Tick); writer.Write(c.Sequence); writer.Write(c.Actor.Value); writer.Write(c.Region.Value); writer.Write((int)c.Kind); writer.Write(c.X); writer.Write(c.Y); writer.Write(c.Target.Value); WriteItemId(writer, c.Item, version);
 		}
 		writer.Write(World is not null);
 		if (World is { } world) { writer.Write(world.ContentHash); writer.Write(WorldPlayer.Value); writer.Write(ActiveRegion.Value); writer.Write((int)QuestState); }
-		WriteItems(writer);
+		WriteItems(writer, version);
 		if (version >= 5) writer.Write(Inventory.ContentHash);
 		writer.Flush(); return Convert.ToHexStringLower(SHA256.HashData(stream.GetBuffer().AsSpan(0, (int)stream.Length)));
 	}
+	private static bool ValidCommandCoordinates(GameCommand command) => command.Kind switch
+	{
+		CommandKind.SetMove => ValidDirection(command.X, command.Y),
+		CommandKind.MoveItem => command.X is >= 0 and < InventoryLayout.Width && command.Y is >= 0 and < InventoryLayout.Height,
+		CommandKind.BeltItem or CommandKind.UseBelt => command.X is >= 0 and < BeltCapacity && command.Y == 0,
+		CommandKind.SelectSkill => Enum.IsDefined((SkillId)command.X) && command.Y == 0,
+		_ => command.X == 0 && command.Y == 0
+	};
 	private static bool ValidDirection(int x, int y) => x is >= -1 and <= 1 && y is >= -1 and <= 1;
 	private static bool ValidPosition(GamePosition p) => p.X is >= -PositionLimit and <= PositionLimit && p.Y is >= -PositionLimit and <= PositionLimit;
 }

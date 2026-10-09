@@ -45,9 +45,9 @@ internal static class ItemContracts
 		{
 			var game = Loot(); var item = game.GetItem(new(2));
 			Check(item == new ItemState(new(2), ItemDefinition.TrainingSword, ItemLocation.Ground, default, -1, Region, new(640, 384)));
-			Check(game.RandomState == 270369 && game.Events.ToArray().Count(e => e.Kind == SimulationEventKind.ItemDropped) == 1);
+			Check(game.RandomState == 270369 && game.Events.ToArray().Count(e => e.Kind == SimulationEventKind.ItemDropped) == 2);
 			Act(game, CommandKind.Attack, target: new(2)); for (int i = 0; i < 30; i++) game.Step();
-			Check(game.Items.Length == 1 && game.RandomState == 270369); Unique(game);
+			Check(game.Items.Length == 2 && game.RandomState == 270369); Unique(game);
 		});
 		test("Items do not appear for initially dead entities", () =>
 		{
@@ -58,7 +58,7 @@ internal static class ItemContracts
 		{
 			var game = Loot();
 			for (ulong seq = 2; seq <= 3; seq++) Check(game.Submit(new(2, seq, Player, Region, CommandKind.Pickup, Item: new(2))) == CommandResult.Accepted);
-			game.Step(); Check(game.Items.Length == 1 && game.GetItem(new(2)).Location == ItemLocation.Inventory);
+			game.Step(); Check(game.Items.Length == 2 && game.GetItem(new(2)).Location == ItemLocation.Inventory);
 			Check(game.Events[^1].Kind == SimulationEventKind.ItemFailed && game.Events[^1].Value == (int)ItemFailure.InvalidLocation); Unique(game);
 		});
 		test("Unknown items and malformed item payloads are rejected without consuming sequence or RNG", () =>
@@ -98,7 +98,7 @@ internal static class ItemContracts
 		{
 			var game = Loot(); Act(game, CommandKind.Pickup, new(2)); Act(game, CommandKind.DropItem, new(2));
 			Check(game.GetItem(new(2)).Position == game.GetEntity(Player).Position && game.GetItem(new(2)).Owner == default);
-			Act(game, CommandKind.Pickup, new(2)); Check(game.Items.Length == 1 && game.GetItem(new(2)).Slot == 0); Unique(game);
+			Act(game, CommandKind.Pickup, new(2)); Check(game.Items.Length == 2 && game.GetItem(new(2)).Slot == 0); Unique(game);
 		});
 		test("Out-of-range pickup leaves ground item and RNG unchanged", () =>
 		{
@@ -140,7 +140,7 @@ internal static class ItemContracts
 				game.Step(); uint rng = game.RandomState; game.Step();
 				Check(game.GetItem(new(3)).Location == ItemLocation.Equipped && game.RandomState == rng);
 				if (health == 100) Check(game.Events[^1].Kind == SimulationEventKind.ItemFailed && game.Events[^1].Value == (int)ItemFailure.Interrupted);
-				else Check(game.Items.Length == 1 && game.Submit(new(6, 5, Player, Region, CommandKind.Unequip, Item: new(3))) == CommandResult.DeadActor);
+				else Check(game.Items.Length == 2 && game.Submit(new(6, 5, Player, Region, CommandKind.Unequip, Item: new(3))) == CommandResult.DeadActor);
 			}
 		});
 		test("Pickup cannot cross a collision wall even when the item is in range", () =>
@@ -165,7 +165,7 @@ internal static class ItemContracts
 			Check(game.Events[^1].Value == (int)ItemFailure.WrongRegion && game.GetItem(new(2)) == ground);
 			Act(game, CommandKind.Interact, target: new(11)); Act(game, CommandKind.Pickup, new(2)); Act(game, CommandKind.Equip, new(2));
 			Act(game, CommandKind.Interact, target: new(12)); Act(game, CommandKind.Interact, target: new(11));
-			Check(game.Items.Length == 1 && game.GetStats(Player).MinimumDamage == 20 && game.GetItem(new(2)).Location == ItemLocation.Equipped); Unique(game);
+			Check(game.Items.Length == 2 && game.GetStats(Player).MinimumDamage == 20 && game.GetItem(new(2)).Location == ItemLocation.Equipped); Unique(game);
 		});
 		test("Item snapshots own their storage and survive later equipment changes", () =>
 		{

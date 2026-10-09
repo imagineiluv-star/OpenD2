@@ -16,17 +16,23 @@ public sealed class InventoryLayout
 	public InventoryLayout(IEnumerable<ItemFootprint> definitions)
 	{
 		ArgumentNullException.ThrowIfNull(definitions);
-		int count = Enum.GetValues<ItemDefinition>().Length;
+		const int count = 2; // Only equipment footprints are configurable; consumables are fixed 1×1.
 		entries = definitions.Take(count + 1).ToArray();
-		if (entries.Length != count || entries.Any(e => e is null || !Enum.IsDefined(e.Definition) || e.Code is null || e.Code.Length > 4 || e.Code.Any(c => !char.IsAsciiLetterOrDigit(c)) || e.Width is < 1 or > Width || e.Height is < 1 or > Height) || entries.Select(e => e.Definition).Distinct().Count() != count)
-			throw new InvalidDataException("Inventory requires one valid footprint per preview definition, within 10×4 cells.");
+		if (entries.Length != count || entries.Any(e => e is null || !Enum.IsDefined(e.Definition) || ItemCatalog.IsConsumable(e.Definition) || e.Code is null || e.Code.Length > 4 || e.Code.Any(c => !char.IsAsciiLetterOrDigit(c)) || e.Width is < 1 or > Width || e.Height is < 1 or > Height) || entries.Select(e => e.Definition).Distinct().Count() != count)
+			throw new InvalidDataException("Inventory requires one valid footprint per equipment definition, within 10×4 cells.");
 		Array.Sort(entries, (a, b) => a.Definition.CompareTo(b.Definition)); Entries = Array.AsReadOnly(entries);
 		using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream);
 		writer.Write(Width); writer.Write(Height);
 		foreach (var entry in entries) { writer.Write((int)entry.Definition); writer.Write(entry.Code); writer.Write(entry.Width); writer.Write(entry.Height); }
 		writer.Flush(); ContentHash = Convert.ToHexStringLower(SHA256.HashData(stream.ToArray()));
 	}
-	public ItemFootprint Get(ItemDefinition definition) => Enum.IsDefined(definition) ? entries[(int)definition] : throw new ArgumentOutOfRangeException(nameof(definition));
+	private static readonly ItemFootprint HealthPotion = new(ItemDefinition.HealthPotion, "", 1, 1), ManaPotion = new(ItemDefinition.ManaPotion, "", 1, 1);
+	public ItemFootprint Get(ItemDefinition definition) => definition switch
+	{
+		ItemDefinition.HealthPotion => HealthPotion, ItemDefinition.ManaPotion => ManaPotion,
+		ItemDefinition.TrainingSword or ItemDefinition.TrainingVest => entries[(int)definition],
+		_ => throw new ArgumentOutOfRangeException(nameof(definition))
+	};
 	public ulong Mask(ItemDefinition definition, int slot)
 	{
 		var size = Get(definition);

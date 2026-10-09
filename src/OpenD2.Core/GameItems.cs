@@ -1,11 +1,11 @@
 namespace OpenD2.Core;
 
-public readonly record struct ItemId(uint Value);
-public enum ItemDefinition { TrainingSword, TrainingVest }
-public enum EquipmentSlot { Weapon, Body }
-public enum ItemLocation { Ground, Inventory, Equipped }
-public enum ItemFailure { Interrupted, InvalidLocation, WrongOwner, WrongRegion, OutOfRange, Obstructed, InventoryFull, InvalidPlacement }
-public readonly record struct ItemSpec(string Name, EquipmentSlot Slot, int DamageBonus, int Armor);
+public readonly record struct ItemId(ulong Value);
+public enum ItemDefinition { TrainingSword, TrainingVest, HealthPotion, ManaPotion }
+public enum EquipmentSlot { Weapon, Body, None }
+public enum ItemLocation { Ground, Inventory, Equipped, Belt, Consumed }
+public enum ItemFailure { Interrupted, InvalidLocation, WrongOwner, WrongRegion, OutOfRange, Obstructed, InventoryFull, InvalidPlacement, NotConsumable, ResourceFull, AlreadyUsed, EmptyBelt }
+public readonly record struct ItemSpec(string Name, EquipmentSlot Slot, int DamageBonus, int Armor, int HealthRecovery = 0, int ManaRecovery = 0);
 public readonly record struct ItemState(ItemId Id, ItemDefinition Definition, ItemLocation Location,
 	EntityId Owner, int Slot, RegionId Region, GamePosition Position);
 public readonly record struct CombatStats(int MinimumDamage, int MaximumDamage, int Armor);
@@ -13,10 +13,13 @@ public readonly record struct CombatStats(int MinimumDamage, int MaximumDamage, 
 // Deliberately synthetic, immutable content. Rule changes require a RulesVersion bump.
 public static class ItemCatalog
 {
+	public static bool IsConsumable(ItemDefinition definition) => definition is ItemDefinition.HealthPotion or ItemDefinition.ManaPotion;
 	public static ItemSpec Get(ItemDefinition definition) => definition switch
 	{
 		ItemDefinition.TrainingSword => new("Training sword", EquipmentSlot.Weapon, 6, 0),
 		ItemDefinition.TrainingVest => new("Training vest", EquipmentSlot.Body, 0, 2),
+		ItemDefinition.HealthPotion => new("Health potion", EquipmentSlot.None, 0, 0, HealthRecovery: 40),
+		ItemDefinition.ManaPotion => new("Mana potion", EquipmentSlot.None, 0, 0, ManaRecovery: 30),
 		_ => throw new ArgumentOutOfRangeException(nameof(definition))
 	};
 }
@@ -59,7 +62,7 @@ public sealed partial class GameSimulation
 	public bool CanMoveItem(EntityId owner, ItemId id, int slot)
 	{
 		int index = FindItem(id);
-		return index >= 0 && items[index].Owner == owner && items[index].Location is ItemLocation.Inventory or ItemLocation.Equipped && PlanMove(index, slot, out _, out _);
+		return index >= 0 && items[index].Owner == owner && items[index].Location is ItemLocation.Inventory or ItemLocation.Equipped or ItemLocation.Belt && PlanMove(index, slot, out _, out _);
 	}
 	private bool PlanMove(int index, int slot, out int replaced, out int replacementSlot)
 	{
@@ -76,17 +79,21 @@ public sealed partial class GameSimulation
 	private void DropLoot(EntityState victim, long tick)
 	{
 		if (victim.Kind != EntityKind.Monster) return;
-		// One item per monster's alive-to-dead transition; no respawn in this slice.
+		// One equipment item and one potion per alive-to-dead transition; no respawn in this slice.
 		// Separate typed ID namespace, stable across region visits, no combat RNG consumption.
 		var id = new ItemId(victim.Id.Value);
 		var definition = (victim.Id.Value & 1) == 0 ? ItemDefinition.TrainingSword : ItemDefinition.TrainingVest;
 		items[itemCount++] = new(id, definition, ItemLocation.Ground, default, -1, victim.Region, victim.Position);
 		EmitItem(tick, SimulationEventKind.ItemDropped, victim, id);
+		var potion = PotionId(victim.Id);
+		items[itemCount++] = new(potion, PotionDefinition(victim.Id), ItemLocation.Ground, default, -1, victim.Region, victim.Position);
+		EmitItem(tick, SimulationEventKind.ItemDropped, victim, potion);
 	}
 	private void EmitItem(long tick, SimulationEventKind kind, EntityState actor, ItemId item, int value = 0)
 	{ events[eventCount++] = new(tick, kind, actor.Id, actor.Region, actor.Position, actor.Position, value, Item: item); }
 	private void ApplyItemCommand(int actorIndex, GameCommand command, long tick)
 	{
+		if (command.Kind is CommandKind.UseItem or CommandKind.BeltItem) { ApplyPotionCommand(actorIndex, command, tick); return; }
 		var actor = entities[actorIndex]; int index = FindItem(command.Item); var item = items[index];
 		ItemFailure? failure = !canAct[actorIndex] ? ItemFailure.Interrupted : null;
 		int slot = -1, replaced = -1, replacementSlot = -1;
@@ -101,7 +108,7 @@ public sealed partial class GameSimulation
 		else if (failure is null)
 		{
 			failure = item.Owner != actor.Id ? ItemFailure.WrongOwner :
-				(command.Kind == CommandKind.MoveItem ? item.Location is not (ItemLocation.Inventory or ItemLocation.Equipped) : item.Location != (command.Kind == CommandKind.Unequip ? ItemLocation.Equipped : ItemLocation.Inventory)) ? ItemFailure.InvalidLocation : null;
+				!ValidTransferSource(item, command.Kind) ? ItemFailure.InvalidLocation : null;
 			if (failure is null && command.Kind == CommandKind.Unequip && (slot = FindInventorySpace(actor.Id, item.Definition)) < 0) failure = ItemFailure.InventoryFull;
 			if (failure is null && command.Kind == CommandKind.Equip)
 			{
@@ -134,13 +141,23 @@ public sealed partial class GameSimulation
 		};
 		EmitItem(tick, SimulationEventKind.ItemChanged, actor, item.Id, (int)command.Kind);
 	}
-	private static bool IsItemCommand(CommandKind kind) => kind is CommandKind.Pickup or CommandKind.Equip or CommandKind.Unequip or CommandKind.DropItem or CommandKind.MoveItem;
-	private void WriteItems(BinaryWriter writer)
+	private static bool ValidTransferSource(ItemState item, CommandKind kind) => kind switch
+	{
+		CommandKind.MoveItem => item.Location is ItemLocation.Inventory or ItemLocation.Equipped or ItemLocation.Belt,
+		CommandKind.Unequip => item.Location is ItemLocation.Equipped or ItemLocation.Belt,
+		CommandKind.DropItem => item.Location is ItemLocation.Inventory or ItemLocation.Belt,
+		CommandKind.Equip => item.Location == ItemLocation.Inventory && !ItemCatalog.IsConsumable(item.Definition),
+		_ => false
+	};
+	private static bool IsItemCommand(CommandKind kind) => kind is CommandKind.Pickup or CommandKind.Equip or CommandKind.Unequip or CommandKind.DropItem or CommandKind.MoveItem or CommandKind.UseItem or CommandKind.BeltItem;
+	private static void WriteItemId(BinaryWriter writer, ItemId id, int version)
+	{ if (version >= 7) writer.Write(id.Value); else writer.Write(checked((uint)id.Value)); }
+	private void WriteItems(BinaryWriter writer, int version)
 	{
 		writer.Write(itemCount);
 		foreach (var item in Items)
 		{
-			writer.Write(item.Id.Value); writer.Write((int)item.Definition); writer.Write((int)item.Location);
+			WriteItemId(writer, item.Id, version); writer.Write((int)item.Definition); writer.Write((int)item.Location);
 			writer.Write(item.Owner.Value); writer.Write(item.Slot); writer.Write(item.Region.Value); writer.Write(item.Position.X); writer.Write(item.Position.Y);
 		}
 	}

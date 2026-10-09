@@ -14,9 +14,9 @@ public sealed partial class GameSimulation
 	}
 	private static GameSimulation RestoreChecked(SimulationSnapshot state, bool legacy = false)
 	{
-		if ((legacy ? state.RulesVersion is not (4 or 5) : state.RulesVersion != RulesVersion) || (state.RulesVersion >= 5 && state.Inventory is null) || state.Tick < 0 || state.Tick > long.MaxValue - CommandHorizon || state.RandomState == 0 ||
+		if ((legacy ? state.RulesVersion is not (4 or 5 or 6) : state.RulesVersion != RulesVersion) || (state.RulesVersion >= 5 && state.Inventory is null) || state.Tick < 0 || state.Tick > long.MaxValue - CommandHorizon || state.RandomState == 0 ||
 			state.Entities is null || state.Entities.Count is < 1 or > MaxEntities || state.Inputs is null || state.Inputs.Count != state.Entities.Count ||
-			state.PendingCommands is null || state.PendingCommands.Count > MaxPendingCommands || state.Items is null || state.Items.Count > state.Entities.Count || !Enum.IsDefined(state.QuestState))
+			state.PendingCommands is null || state.PendingCommands.Count > MaxPendingCommands || state.Items is null || state.Items.Count > (legacy ? 1 : 2) * state.Entities.Count || !Enum.IsDefined(state.QuestState))
 			throw new InvalidDataException("Invalid checkpoint header or budgets.");
 		var original = state.Entities.ToArray();
 		var initial = original.Select(e => e with { Mode = MonsterMode.Idle, Target = default }).ToArray();
@@ -44,16 +44,20 @@ public sealed partial class GameSimulation
 		foreach (var item in state.Items)
 		{
 			if (!ids.Add(item.Id) || !Enum.IsDefined(item.Definition) || !Enum.IsDefined(item.Location) ||
-				!game.indices.TryGetValue(new(item.Id.Value), out int source) || game.entities[source].Kind != EntityKind.Monster || game.entities[source].IsAlive ||
-				item.Definition != ((item.Id.Value & 1) == 0 ? ItemDefinition.TrainingSword : ItemDefinition.TrainingVest))
+				!ValidItemIdentity(item, legacy) || !game.indices.TryGetValue(new((uint)item.Id.Value), out int source) || game.entities[source].Kind != EntityKind.Monster || game.entities[source].IsAlive ||
+				item.Definition != (item.Id.Value > uint.MaxValue ? PotionDefinition(new((uint)item.Id.Value)) : (item.Id.Value & 1) == 0 ? ItemDefinition.TrainingSword : ItemDefinition.TrainingVest))
 				throw new InvalidDataException("Invalid or duplicate item identity.");
-			if (item.Location == ItemLocation.Ground)
+			if (item.Location == ItemLocation.Consumed)
+			{
+				if (!ItemCatalog.IsConsumable(item.Definition) || item.Owner != default || item.Slot != -1 || item.Region != default || item.Position != default) throw new InvalidDataException("Invalid consumed item.");
+			}
+			else if (item.Location == ItemLocation.Ground)
 			{
 				var grid = state.World is null ? state.Collision : state.World.GetRegion(item.Region).Collision;
 				if (item.Owner != default || item.Slot != -1 || grid is null || item.Region != grid.Region || !grid.CanOccupy(item.Position)) throw new InvalidDataException("Invalid ground item.");
 			}
 			else if (!game.indices.TryGetValue(item.Owner, out int owner) || game.entities[owner].Kind != EntityKind.Player || item.Region != default || item.Position != default ||
-				item.Slot < 0 || (item.Location == ItemLocation.Inventory ? item.Slot >= (state.RulesVersion == 4 ? 8 : InventoryCapacity) : item.Slot != (int)ItemCatalog.Get(item.Definition).Slot) || !slots.Add((item.Owner, item.Location, item.Slot)))
+				!ValidSavedSlot(item, state.RulesVersion) || !slots.Add((item.Owner, item.Location, item.Slot)))
 				throw new InvalidDataException("Invalid item owner or occupied slot.");
 			if (item.Location == ItemLocation.Inventory)
 			{
@@ -66,7 +70,7 @@ public sealed partial class GameSimulation
 		// original payload/scheduling with a temporary live flag, then preserve the dead state.
 		foreach (var command in state.PendingCommands.OrderBy(c => c.Tick).ThenBy(c => c.Actor.Value).ThenBy(c => c.Sequence))
 		{
-			if ((state.RulesVersion == 4 && command.Kind == CommandKind.MoveItem) || (legacy && command.Kind is CommandKind.SelectSkill or CommandKind.CastSkill) || !game.indices.TryGetValue(command.Actor, out int actor)) throw new InvalidDataException("Unknown queued actor.");
+			if ((state.RulesVersion == 4 && command.Kind == CommandKind.MoveItem) || (state.RulesVersion < 6 && command.Kind is CommandKind.SelectSkill or CommandKind.CastSkill) || (legacy && command.Kind is CommandKind.BeltItem or CommandKind.UseItem or CommandKind.UseBelt) || !game.indices.TryGetValue(command.Actor, out int actor)) throw new InvalidDataException("Unknown queued actor.");
 			var entity = game.entities[actor]; var cursor = state.Inputs[actor];
 			if (command.Sequence > cursor.Sequence || command.Tick > cursor.Tick) throw new InvalidDataException("Queued command exceeds its cursor.");
 			game.entities[actor] = entity with { Health = Math.Max(1, entity.Health) };
@@ -76,6 +80,13 @@ public sealed partial class GameSimulation
 		for (int i = 0; i < game.inputs.Length; i++) game.inputs[i] = state.Inputs[i];
 		return game;
 	}
+	private static bool ValidSavedSlot(ItemState item, int version) => item.Slot >= 0 && (item.Location switch
+	{
+		ItemLocation.Inventory => item.Slot < (version == 4 ? 8 : InventoryCapacity),
+		ItemLocation.Equipped => !ItemCatalog.IsConsumable(item.Definition) && item.Slot == (int)ItemCatalog.Get(item.Definition).Slot,
+		ItemLocation.Belt => version >= 7 && ItemCatalog.IsConsumable(item.Definition) && item.Slot < BeltCapacity,
+		_ => false
+	});
 	public static GameSimulation Replay(SimulationSnapshot checkpoint, IReadOnlyList<RecordedCommand> trace, long targetTick)
 	{
 		ArgumentNullException.ThrowIfNull(trace);

@@ -55,6 +55,7 @@ public sealed class LegacyAudioBank
 	{
 		SimulationEventKind.AttackStarted or SimulationEventKind.SkillCast => AudioCue.Attack, SimulationEventKind.Hit => AudioCue.Hit,
 		SimulationEventKind.Died => AudioCue.Death, SimulationEventKind.ItemDropped => AudioCue.Loot,
+		SimulationEventKind.ItemConsumed => AudioCue.Loot,
 		SimulationEventKind.ItemChanged when (CommandKind)e.Value == CommandKind.Pickup => AudioCue.Loot,
 		SimulationEventKind.QuestChanged => AudioCue.Quest, SimulationEventKind.RegionChanged => AudioCue.Portal,
 		_ => null

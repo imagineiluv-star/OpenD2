@@ -23,7 +23,7 @@ public partial class SceneArtworkEditor
 		var fields = new VBoxContainer { Visible = false }; form.AddChild(fields); toggle.Toggled += value => fields.Visible = value;
 		fields.AddChild(new Label { Text = "Read weapons, armor, misc, itemtypes and bodylocs TXT from your owned data. Search a code/name and associate it with a preview item.\nThe 10×4 bag uses preview sizes by default. Enable bound codes/sizes below to use the table dimensions. Combat stats and equipment requirements remain preview rules. Names are source labels, not localized TBL names.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		fields.AddChild(definitionsEnabled); fields.AddChild(dimensionsEnabled);
-		foreach (var id in Enum.GetValues<ItemDefinition>())
+		foreach (var id in Enum.GetValues<ItemDefinition>().Where(id => !ItemCatalog.IsConsumable(id)))
 		{
 			var code = new LineEdit { PlaceholderText = "Original code (blank = unbound)", MaxLength = 4 }; definitionCodes.Add(id, code);
 			fields.AddChild(new Label { Text = ItemCatalog.Get(id).Name }); fields.AddChild(code); definitionsTarget.AddItem(ItemCatalog.Get(id).Name, (int)id);

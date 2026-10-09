@@ -23,7 +23,7 @@ public partial class SceneArtworkEditor
 	{
 		var toggle = new Button { Text = "Item artwork settings", ToggleMode = true }; form.AddChild(toggle);
 		var fields = new VBoxContainer { Visible = false }; form.AddChild(fields); toggle.Toggled += value => fields.Visible = value;
-		fields.AddChild(new Label { Text = "Choose an inventory DC6 frame for each preview item. Verify paths, palette and frames in the DC6 tab. Unmapped items keep their names.\nIcons scale to fit slots with transparency and aspect ratio preserved. Item stats and the eight-slot bag use preview rules.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		fields.AddChild(new Label { Text = "Choose an inventory DC6 frame for each preview item. Verify paths, palette and frames in the DC6 tab. Unmapped items keep their names.\nIcons scale to fit slots with transparency and aspect ratio preserved. Item stats use preview rules. The bag has 10×4 cells; the belt has four potion slots.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		fields.AddChild(itemsEnabled); fields.AddChild(itemsPalette);
 		foreach (var definition in Enum.GetValues<ItemDefinition>())
 		{
