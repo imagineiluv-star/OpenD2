@@ -73,6 +73,9 @@ PLAY-10 이후 같은 목록의 **Guide**는 **Idle** 한 동작과 **Guide fixe
 
 PLAY-11 이후 **Scene art → HUD artwork settings**에서 소유 자료의 UI 팔레트·DC6 프레임·배치를 지정한다. Decoration/Health/Menu/Inventory를 지원하며 Preview HUD at 50% health → 새 복사본 저장 → Load saved copy로 연결한다. 게임 아래에 비율을 유지해 표시하며 체력과 기존 메뉴/인벤토리 동작을 사용한다. [설정/범위](docs/migration/PLAY_INTEGRATION.md#play-11-원본-hud-이미지-연결). 마나·스킬·벨트·원작 UI 전체 재현은 미구현이며 rc.3에는 포함되지 않는다.
 
+PLAY-12 이후 **Scene art → Item artwork settings**에서 Use item artwork·아이템별 사용을 켜고 팔레트/DC6 경로/프레임을 입력한다. Preview item icons → 새 복사본 저장 → Load saved copy로 기존 가방/장비 슬롯에 적용한다. 매핑 없는 항목은 이름으로 표시된다. 원작 다중 칸 격자·아이템 수치 이관과 별도이며 rc.3에는 없다. [설정/범위](docs/migration/PLAY_INTEGRATION.md#play-12-원본-아이템-아이콘-연결).
+
+
 ## 실행과 배포
 
 출시 후보는 Actions의 **Release candidate and QA handoff** (`release.yml`)를 사용한다.

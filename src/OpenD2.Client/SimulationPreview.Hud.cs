@@ -30,8 +30,10 @@ public partial class SimulationPreview
 	private void SetSceneArt(LegacyPlayScene? scene)
 	{
 		var prepared = scene?.HudArtwork is { } art ? new LegacyHudView.Prepared(art) : null;
-		try { view.SetTerrain(scene); }
-		catch { prepared?.Dispose(); throw; }
+		LegacyItemTextures? items = null;
+		try { items = scene?.ItemArtwork is { } icons ? new(icons) : null; view.SetTerrain(scene); }
+		catch { prepared?.Dispose(); items?.Dispose(); throw; }
+		SetItemTextures(items);
 		legacyHud.SetArtwork(prepared); healthBar.Visible = scene?.HudArtwork?.HasHealth != true;
 	}
 	public void SetDiagnosticsVisible(bool visible)

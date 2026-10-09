@@ -293,6 +293,7 @@ public partial class SimulationPreview : VBoxContainer
 	}
 	public override void _ExitTree()
 	{
+		SetItemTextures(null);
 		var cancelled = npcCancellation?.CancelAsync() ?? Task.CompletedTask;
 		npcMind.Dispose(); npcRuntime.Dispose(); npcStore.Dispose();
 		if (npcOperation is { } pending)

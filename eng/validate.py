@@ -58,6 +58,8 @@ assert "OPEND2_PLAY08_SETUP_READY" in output, "Scene setup marker missing"
 assert "OPEND2_PLAY09_ART_SETUP_READY" in output, "Actor artwork setup marker missing"
 assert "OPEND2_PLAY10_NPC_READY" in output, "NPC artwork marker missing"
 assert "OPEND2_PLAY11_HUD_READY" in output, "Legacy HUD artwork marker missing"
+assert "OPEND2_PLAY12_ITEMS_READY" in output, "Legacy item artwork marker missing"
+assert "OPEND2_PLAY12_ITEM_SETUP_READY" in output, "Item artwork setup marker missing"
 if args.export:
     names = {"Linux": "OpenD2.x86_64", "Windows": "OpenD2.exe", "macOS": "OpenD2.zip"}
     destination = root / "artifacts" / args.export / names[args.export]
