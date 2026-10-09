@@ -64,10 +64,9 @@ public partial class AssetPreview : VBoxContainer
 		}
 		catch (Exception error) { picture.Texture = null; texture?.Dispose(); texture = null; details.Text = "Decode failed: " + error.Message; }
 	}
-	private void LoadSyntheticSample()
+	internal static byte[] SampleDc6()
 	{
 		// Owned fixture, generated in memory. Never substitutes for real compatibility evidence.
-		var colors = new byte[768]; colors[3] = 40; colors[4] = 170; colors[5] = 240;
 		int length = 34 * 32; var raw = new byte[60 + length + 3];
 		void Set(int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(raw.AsSpan(offset), value);
 		Set(0, 6); Set(4, 1); Set(12, 0xeeeeeeee); Set(16, 1); Set(20, 1); Set(24, 28);
@@ -78,7 +77,12 @@ public partial class AssetPreview : VBoxContainer
 			for (int x = 0; x < 32; x++) raw[at + 1 + x] = (byte)((x / 4 + y / 4) % 2);
 			raw[at + 33] = 0x80;
 		}
-		current = Dc6Image.Parse(raw); palette = Palette.Parse(colors); ShowFrame();
+		return raw;
+	}
+	private void LoadSyntheticSample()
+	{
+		var colors = new byte[768]; colors[3] = 40; colors[4] = 170; colors[5] = 240;
+		current = Dc6Image.Parse(SampleDc6()); palette = Palette.Parse(colors); ShowFrame();
 		if (texture is null) throw new InvalidDataException("Preview sample failed.");
 		using var actual = texture.GetImage();
 		var pixel = actual.GetPixel(4, 0);

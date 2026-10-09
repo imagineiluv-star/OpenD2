@@ -85,10 +85,10 @@ public partial class SimulationPreview : VBoxContainer
 		smokeTest = OS.GetCmdlineUserArgs().Contains("--smoke-test");
 		AddChild(audio); BuildMenu(); AddChild(playPanel);
 		playPanel.AddChild(new Label { Text = "Camp / Cellar — offline play" });
-		BuildHud(); playPanel.AddChild(questInfo); playPanel.AddChild(view); playPanel.AddChild(status);
+		BuildHud(); playPanel.AddChild(questInfo); playPanel.AddChild(view); BuildLegacyHud(); playPanel.AddChild(status);
 		view.MoveRequested += ClickMove; view.AttackRequested += ClickAttack;
 		var controls = new HFlowContainer(); playPanel.AddChild(controls);
-		foreach (var button in new[] { menuButton, restart, pause, attack, interact, save, load }) controls.AddChild(button);
+		foreach (var button in new[] { menuButton, inventoryButton, restart, pause, attack, interact, save, load }) controls.AddChild(button);
 		playPanel.AddChild(new Label { Text = "Click ground to move; click a monster to attack. Arrows move · Space attacks · E talks / uses a portal · F picks up loot.\nGreen: NPC · Gold: portal · Gray / purple: blocked cells. Click the game view to use the keyboard.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		BuildInventory();
 		BuildContentControls();
@@ -113,7 +113,7 @@ public partial class SimulationPreview : VBoxContainer
 	}
 	private void NewRun()
 	{
-		ResetDialogue(); ClearRoute(); lastHud = null; selectedItem = default; sessionStarted = true;
+		ResetDialogue(); ClearRoute(); lastHud = null; selectedItem = default; sessionStarted = true; inventoryPanel.Show();
 		audio.SetBank(legacyScene?.Audio, legacyScene is null);
 		seed = (uint)seedInput.Value; simulation = new(seed, ActiveActors, world: ActiveWorld); view.SetSimulation(simulation);
 		recording = new(simulation); sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;

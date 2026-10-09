@@ -156,18 +156,24 @@ public partial class SimulationPreview
 			restartDialog.Hide(); restartDialog.EmitSignal(ConfirmationDialog.SignalName.Canceled);
 			if (simulation.ComputeStateHash() != retained || !menuOpen || !paused) throw new InvalidDataException("Cancelled scene load changed the session.");
 			var sample = MapPreview.SampleData();
-			byte[] Read(string path) => path.EndsWith(".ds1") ? sample.Ds1 : path.EndsWith(".dt1") ? sample.Dt1 : sample.Colors;
-			var request = LegacySceneSetup.Create(new(1, "lod-1.10f", "test.ds1", "data/global/palette/act1/pal.dat", ["test.dt1"]), "Setup smoke", 1, 1, 6, 2, 2, 1);
+			byte[] Read(string path) => path.EndsWith(".ds1") ? sample.Ds1 : path.EndsWith(".dt1") ? sample.Dt1 : path.EndsWith(".dc6") ? AssetPreview.SampleDc6() : sample.Colors;
+			var request = LegacySceneSetup.Create(new(1, "lod-1.10f", "test.ds1", "data/global/palette/act1/pal.dat", ["test.dt1"]), "Setup smoke", 1, 1, 6, 2, 2, 1) with { HudArtwork = SampleHud() };
 			string sceneFile = Path.Combine(folder, "generated.json");
 			LegacySceneSetup.SaveNew(sceneFile, request, Read);
 			await LoadLegacyScene(sceneFile, Read);
-			if (!menuOpen || !paused || menuContinue.Disabled || legacyScene is null || ScenePath != sceneFile || ActiveSavePath == savePath)
+			if (!menuOpen || !paused || menuContinue.Disabled || legacyScene is null || ScenePath != sceneFile || ActiveSavePath == savePath || !legacyHud.CheckTexture())
 				throw new InvalidDataException("Generated scene did not load into a paused menu with its own checkpoint slot.");
 			retained = simulation.ComputeStateHash(); _Process(3);
 			if (simulation.ComputeStateHash() != retained) throw new InvalidDataException("Generated scene advanced behind its menu.");
+			var keptScene = legacyScene; string invalidHudFile = Path.Combine(folder, "invalid-hud.json");
+			var invalidHud = request with { HudArtwork = request.HudArtwork with { Elements = [request.HudArtwork.Elements[0] with { Frame = 999 }] } };
+			File.WriteAllText(invalidHudFile, System.Text.Json.JsonSerializer.Serialize(invalidHud));
+			await LoadLegacyScene(invalidHudFile, Read);
+			if (legacyScene != keptScene || simulation.ComputeStateHash() != retained || ScenePath != sceneFile || !legacyHud.CheckTexture() || !menuOpen || !paused)
+				throw new InvalidDataException("Failed HUD scene replacement changed the live scene, texture or menu state.");
 			ContinueMenuSession(); _Process(0.04);
 			if (paused || simulation.Tick != 1) throw new InvalidDataException("Generated scene could not continue from its menu.");
-			view.SetTerrain(null); legacyScene = null; NewRun(); SetScenePath(remembered);
+			SetSceneArt(null); legacyScene = null; NewRun(); SetScenePath(remembered);
 			GD.Print("OPEND2_M206_MENU_READY");
 			npcSmokePending = true; dialogueInput.Text = "안녕"; SendDialogue();
 		}

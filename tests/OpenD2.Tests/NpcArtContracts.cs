@@ -9,7 +9,7 @@ internal static class NpcArtContracts
 	private static void Check(bool value) { if (!value) throw new Exception("NPC artwork assertion failed."); }
 	private static void Bad(Action action)
 	{ try { action(); } catch (Exception e) when (e is ArgumentException or InvalidDataException) { return; } throw new Exception("Expected invalid NPC artwork."); }
-	private static byte[] LargeDcc(int size)
+	internal static byte[] LargeDcc(int size)
 	{
 		// A legal unused gap before direction data increases input without adding decoded pixels.
 		// Appending bytes would instead make the final direction's bitstream invalid.

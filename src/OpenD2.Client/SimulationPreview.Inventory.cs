@@ -10,17 +10,26 @@ public partial class SimulationPreview
 	private readonly ItemId[] slotItems = new ItemId[10];
 	private readonly Label itemDetails = new() { Text = "Select an item to inspect it.", AutowrapMode = TextServer.AutowrapMode.WordSmart };
 	private ItemId selectedItem;
+	private readonly VBoxContainer inventoryPanel = new();
+	private readonly Button inventoryButton = new() { Text = "Inventory" };
+	private void ToggleInventory()
+	{
+		if (verifying || menuOpen || pendingRestart is not null) return;
+		StopInput(); inventoryPanel.Visible = !inventoryPanel.Visible;
+		if (inventoryPanel.Visible) inventoryButton.GrabFocus(); else view.GrabFocus();
+	}
 	private void BuildInventory()
 	{
-		playPanel.AddChild(new Label { Text = "Inventory & equipment — preview rules" });
-		var grid = new GridContainer { Columns = 2, SizeFlagsHorizontal = SizeFlags.ExpandFill }; playPanel.AddChild(grid);
+		inventoryButton.Pressed += ToggleInventory; playPanel.AddChild(inventoryPanel);
+		inventoryPanel.AddChild(new Label { Text = "Inventory & equipment — preview rules" });
+		var grid = new GridContainer { Columns = 2, SizeFlagsHorizontal = SizeFlags.ExpandFill }; inventoryPanel.AddChild(grid);
 		for (int i = 0; i < itemSlots.Length; i++)
 		{
 			int slot = i; grid.AddChild(itemSlots[i]);
 			itemSlots[i].Pressed += () => { selectedItem = slotItems[slot]; RefreshItems(); };
 		}
-		playPanel.AddChild(itemDetails); playPanel.AddChild(gearInfo);
-		var actions = new HFlowContainer(); playPanel.AddChild(actions);
+		inventoryPanel.AddChild(itemDetails); inventoryPanel.AddChild(gearInfo);
+		var actions = new HFlowContainer(); inventoryPanel.AddChild(actions);
 		foreach (var button in new[] { pickup, equip, unequip, drop }) actions.AddChild(button);
 		pickup.Pressed += PickupNearest; equip.Pressed += () => UseSelected(CommandKind.Equip);
 		unequip.Pressed += () => UseSelected(CommandKind.Unequip); drop.Pressed += () => UseSelected(CommandKind.DropItem);

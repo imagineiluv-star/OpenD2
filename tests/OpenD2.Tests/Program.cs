@@ -29,6 +29,7 @@ try
 	SceneSetupContracts.Run(root, Test);
 	ActorArtContracts.Run(Test);
 	NpcArtContracts.Run(root, Test);
+	HudArtContracts.Run(root, Test);
 	ArtworkSetupContracts.Run(root, Test);
 	AudioContracts.Run(Test);
 	NavigationContracts.Run(Test);
