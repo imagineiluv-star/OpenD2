@@ -85,12 +85,14 @@ public sealed class Dc6Image
 		return new Dc6Image(data.ToArray(), offsets, (int)directions, (int)frames);
 	}
 	// Decode one frame at a time; retain offsets for later animation/atlas work.
-	public Dc6Frame DecodeFrame(int direction, int frame)
+	public Dc6Frame DecodeFrame(int direction, int frame, int maxDimension = 4096)
 	{
+		if (maxDimension is < 1 or > 4096) throw new ArgumentOutOfRangeException(nameof(maxDimension));
 		if ((uint)direction >= Directions || (uint)frame >= FramesPerDirection) throw new ArgumentOutOfRangeException(nameof(frame));
 		int position = offsets[direction * FramesPerDirection + frame];
 		var header = data.AsSpan(position, 32);
 		int width = (int)AssetBinary.U32(header, 4), height = (int)AssetBinary.U32(header, 8);
+		AssetBinary.Require(width <= maxDimension && height <= maxDimension, "DC6 frame exceeds requested dimension limit.");
 		var encoded = AssetBinary.Slice(data, position + 32L, AssetBinary.U32(header, 28));
 		var indices = new byte[width * height]; var opacity = new byte[indices.Length];
 		bool topDown = AssetBinary.U32(header, 0) == 1;

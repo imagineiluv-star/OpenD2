@@ -1,4 +1,5 @@
 using Godot;
+using OpenD2.Assets;
 using OpenD2.Core;
 
 namespace OpenD2.Client;
@@ -6,12 +7,19 @@ namespace OpenD2.Client;
 public partial class SimulationPreview
 {
 	private readonly Button[] itemSlots = Enumerable.Range(0, 10).Select(_ => new Button
-	{ ToggleMode = true, ClipText = true, CustomMinimumSize = new Vector2(180, 48), SizeFlagsHorizontal = SizeFlags.ExpandFill }).ToArray();
+	{ ToggleMode = true, ClipText = true, ExpandIcon = true, TextureFilter = TextureFilterEnum.Nearest,
+		CustomMinimumSize = new Vector2(180, 48), SizeFlagsHorizontal = SizeFlags.ExpandFill }).ToArray();
+	private LegacyItemTextures? itemTextures;
 	private readonly ItemId[] slotItems = new ItemId[10];
 	private readonly Label itemDetails = new() { Text = "Select an item to inspect it.", AutowrapMode = TextServer.AutowrapMode.WordSmart };
 	private ItemId selectedItem;
 	private readonly VBoxContainer inventoryPanel = new();
 	private readonly Button inventoryButton = new() { Text = "Inventory" };
+	private void SetItemTextures(LegacyItemTextures? next)
+	{
+		foreach (var button in itemSlots) button.Icon = null;
+		itemTextures?.Dispose(); itemTextures = next;
+	}
 	private void ToggleInventory()
 	{
 		if (verifying || menuOpen || pendingRestart is not null) return;
@@ -25,7 +33,7 @@ public partial class SimulationPreview
 		var grid = new GridContainer { Columns = 2, SizeFlagsHorizontal = SizeFlags.ExpandFill }; inventoryPanel.AddChild(grid);
 		for (int i = 0; i < itemSlots.Length; i++)
 		{
-			int slot = i; grid.AddChild(itemSlots[i]);
+			int slot = i; itemSlots[i].AddThemeConstantOverride("icon_max_width", 40); grid.AddChild(itemSlots[i]);
 			itemSlots[i].Pressed += () => { selectedItem = slotItems[slot]; RefreshItems(); };
 		}
 		inventoryPanel.AddChild(itemDetails); inventoryPanel.AddChild(gearInfo);
@@ -54,6 +62,7 @@ public partial class SimulationPreview
 		{
 			string label = i < 2 ? ((EquipmentSlot)i).ToString() : $"Bag {i - 1}";
 			string name = slotItems[i] == default ? "Empty" : ItemCatalog.Get(simulation.GetItem(slotItems[i]).Definition).Name;
+			itemSlots[i].Icon = slotItems[i] == default ? null : itemTextures?.Get(simulation.GetItem(slotItems[i]).Definition);
 			itemSlots[i].Text = label + "\n" + name; itemSlots[i].TooltipText = itemSlots[i].Text;
 			itemSlots[i].Disabled = verifying || slotItems[i] == default; itemSlots[i].SetPressedNoSignal(selectedItem != default && slotItems[i] == selectedItem);
 		}
@@ -84,5 +93,31 @@ public partial class SimulationPreview
 		UseSelected(CommandKind.DropItem); RunTick(); RefreshItems();
 		if (selectedItem != default || !drop.Disabled || slotItems.Any(id => id != default)) throw new InvalidDataException("Dropped selection was retained.");
 		NewRun(); GD.Print("OPEND2_M206_PANELS_READY");
+	}
+	internal static LegacyItemRequest SampleItems() => new("data/global/palette/act1/pal.dat", [new("TrainingSword", "item.dc6", 0)]);
+	private void ItemArtworkSmoke()
+	{
+		if (itemTextures?.CheckTexture() != true) throw new InvalidDataException("Item icon RGBA upload failed.");
+		NewRun(); var snapshot = simulation.CaptureSnapshot();
+		simulation = GameSimulation.Restore(snapshot with { Entities = snapshot.Entities.Select(e => e.Id == new EntityId(2) ? e with { Health = 0, Mode = MonsterMode.Dead } : e).ToArray(),
+			Items = [new(new(2), ItemDefinition.TrainingSword, ItemLocation.Inventory, Player, 0, default, default)] });
+		recording = new(simulation); view.SetSimulation(simulation); selectedItem = new(2); RefreshItems();
+		var texture = itemTextures.Get(ItemDefinition.TrainingSword);
+		if (itemSlots[2].Icon != texture || itemSlots[0].Icon is not null || !itemSlots[2].Text.Contains("Training sword")) throw new InvalidDataException("Bag icon/name binding failed.");
+		UseSelected(CommandKind.Equip); RunTick(); RefreshItems();
+		if (itemSlots[0].Icon != texture || itemSlots[2].Icon is not null) throw new InvalidDataException("Equipped icon retained the old bag image.");
+		UseSelected(CommandKind.Unequip); RunTick(); RefreshItems();
+		if (itemSlots[2].Icon != texture || itemSlots[0].Icon is not null) throw new InvalidDataException("Unequip icon binding failed.");
+		UseSelected(CommandKind.DropItem); RunTick(); RefreshItems();
+		if (itemSlots.Any(b => b.Icon is not null)) throw new InvalidDataException("Dropped icon was retained.");
+		Submit(CommandKind.Pickup, item: new(2)); RunTick(); RefreshItems();
+		if (itemSlots[2].Icon != texture) throw new InvalidDataException("Pickup did not restore the icon.");
+		// Icons follow definitions; missing mappings retain the catalog label.
+		snapshot = simulation.CaptureSnapshot();
+		simulation = GameSimulation.Restore(snapshot with { Entities = snapshot.Entities.Append(snapshot.Entities.Single(e => e.Id == new EntityId(2)) with { Id = new(3) }).ToArray(),
+			Inputs = snapshot.Inputs.Append(new CommandCursor(new(3), 0, 0)).ToArray(), Items = [new(new(3), ItemDefinition.TrainingVest, ItemLocation.Inventory, Player, 0, default, default)] });
+		recording = new(simulation); view.SetSimulation(simulation); RefreshItems();
+		if (itemSlots[2].Icon is not null || !itemSlots[2].Text.Contains("Training vest")) throw new InvalidDataException("Missing icon fallback failed.");
+		NewRun(); GD.Print("OPEND2_PLAY12_ITEMS_READY");
 	}
 }

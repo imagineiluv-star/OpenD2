@@ -16,6 +16,37 @@
 | 9 | `feat/play-09-actor-art-setup` | 장면별 캐릭터/몬스터 아트 입력·방향 미리보기·복사본 저장 | 구현; 실제 자료/GUI 인수 대기 |
 | 10 | `feat/play-10-npc-artwork` | Guide 대기 아트·고정 방향·깊이 정렬·설정 저장 | 구현; 실제 자료/GUI 인수 대기 |
 | 11 | `feat/play-11-legacy-hud` | DC6 HUD 배치·체력 표시·메뉴/인벤토리 동작·설정 미리보기 | 구현; 실제 자료/GUI 인수 대기 |
+| 12 | `feat/play-12-item-artwork` | 아이템별 DC6 아이콘·슬롯 표시·설정 미리보기/저장 | 구현; 실제 자료/GUI 인수 대기 |
+
+## PLAY-12: 원본 아이템 아이콘 연결
+
+Scene art에서 장면을 열고 **Item artwork settings**를 펼친다. 공개 rc.3에는 없다.
+
+1. **Use item artwork**를 켜고 소유 자료의 아이템 팔레트를 입력한다.
+2. DC6 탭에서 아이콘 경로와 프레임을 확인한다. Training sword / Training vest 중 연결할 항목을 켜고 경로·프레임을 입력한다.
+3. **Preview item icons**로 슬롯 표시를 확인한다. 변경 후 다시 Preview해야 갱신된다.
+4. **Validate and save a new scene copy → Load saved copy**로 적용한다. 새 설정은 별도 체크포인트 슬롯을 사용한다.
+5. 아이템 획득/장착/해제/버리기 후 아이콘과 이름을 확인한다. 매핑 없는 항목은 이름으로 표시한다.
+   아이콘을 끄려면 전체 또는 개별 항목을 끄고 새 복사본으로 저장한다. 전체 사용을 켜면 최소 한 항목이 필요하다.
+
+scene schema 1의 선택 필드 예시다. 경로는 실제 소유 자료에서 확인한 값으로 바꿔야 한다.
+
+```json
+"ItemArtwork": {
+  "PalettePath": "data/global/palette/units/pal.dat",
+  "Icons": [
+    { "Definition": "TrainingSword", "Path": "verified-sword.dc6", "Frame": 0 },
+    { "Definition": "TrainingVest", "Path": "verified-vest.dc6", "Frame": 0 }
+  ]
+}
+```
+
+현재 catalog의 정확한 이름만 허용한다. 프레임은 방향 순서로 평탄화한 0 기반 번호이며 DC6 offset은 슬롯에 더하지 않는다.
+아이콘은 비율을 유지하고 최대 폭 40px/버튼 높이에 맞춘다. 투명도를 보존하며 기존 텍스트·툴팁을 유지한다.
+파일당 32MiB·아이템 입력 64MiB·각 프레임 256×256 이하, 전체 scene 입력/픽셀 예산도 적용한다.
+설정/소스 해시는 ContentId에 반영한다. `ItemArtworkCount`는 매핑 개수이며 원작 인벤토리 완성을 뜻하지 않는다.
+원작 다중 칸 격자·드래그/드롭·바닥 이미지·장비별 캐릭터 외형·원본 아이템 수치 이관은 별도다.
+실제 MPQ/GUI 인수는 NOT_RUN이며 [검증/제한](PLAY_12_RESULTS.md)을 따른다.
 
 ## PLAY-11: 원본 HUD 이미지 연결
 

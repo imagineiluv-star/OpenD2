@@ -30,6 +30,7 @@ try
 	ActorArtContracts.Run(Test);
 	NpcArtContracts.Run(root, Test);
 	HudArtContracts.Run(root, Test);
+	ItemArtContracts.Run(root, Test);
 	ArtworkSetupContracts.Run(root, Test);
 	AudioContracts.Run(Test);
 	NavigationContracts.Run(Test);

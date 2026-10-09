@@ -12,7 +12,7 @@ public sealed record PlaySpawn(uint Id, uint Region, int X, int Y, bool Player, 
 public sealed record PlayNpc(uint Id, uint Region, int X, int Y, string Name);
 public sealed record PlayPortal(uint Id, uint Region, int X, int Y, uint Destination, int ArrivalX, int ArrivalY);
 public sealed record LegacySceneRequest(int SchemaVersion, string Title, PlayRegion[] Regions, PlaySpawn[] Actors,
-	PlayNpc Npc, PlayPortal[] Portals, uint[] QuestTargets, LegacyActorRequest[]? Artwork = null, bool NavigateWalls = false, LegacyAudioRequest? Audio = null, LegacyNpcRequest? NpcArtwork = null, LegacyHudRequest? HudArtwork = null)
+	PlayNpc Npc, PlayPortal[] Portals, uint[] QuestTargets, LegacyActorRequest[]? Artwork = null, bool NavigateWalls = false, LegacyAudioRequest? Audio = null, LegacyNpcRequest? NpcArtwork = null, LegacyHudRequest? HudArtwork = null, LegacyItemRequest? ItemArtwork = null)
 {
 	public static LegacySceneRequest Read(string file)
 	{
@@ -38,8 +38,10 @@ public sealed class LegacyPlayScene
 	public IReadOnlyList<LegacyAssetSource> NpcArtworkSources { get; }
 	public LegacyHudArt? HudArtwork { get; }
 	public IReadOnlyList<LegacyAssetSource> HudArtworkSources { get; }
-	private LegacyPlayScene(WorldDefinition world, EntityState[] actors, Dictionary<RegionId, LegacyMapAsset> terrain, Dictionary<EntityId, LegacyActorArt> artwork, LegacyAssetSource[] artworkSources, string id, LegacyAudioBank? audio, LegacyActorArt? npcArtwork, int npcFacing, LegacyAssetSource[] npcSources, LegacyHudArt? hudArtwork, LegacyAssetSource[] hudSources)
-	{ World = world; Actors = Array.AsReadOnly(actors); Terrain = new ReadOnlyDictionary<RegionId, LegacyMapAsset>(terrain); Artwork = new ReadOnlyDictionary<EntityId, LegacyActorArt>(artwork); ArtworkSources = Array.AsReadOnly(artworkSources); ContentId = id; Audio = audio; NpcArtwork = npcArtwork; NpcFacing = npcFacing; NpcArtworkSources = Array.AsReadOnly(npcSources); HudArtwork = hudArtwork; HudArtworkSources = Array.AsReadOnly(hudSources); }
+	public LegacyItemArt? ItemArtwork { get; }
+	public IReadOnlyList<LegacyAssetSource> ItemArtworkSources { get; }
+	private LegacyPlayScene(WorldDefinition world, EntityState[] actors, Dictionary<RegionId, LegacyMapAsset> terrain, Dictionary<EntityId, LegacyActorArt> artwork, LegacyAssetSource[] artworkSources, string id, LegacyAudioBank? audio, LegacyActorArt? npcArtwork, int npcFacing, LegacyAssetSource[] npcSources, LegacyHudArt? hudArtwork, LegacyAssetSource[] hudSources, LegacyItemArt? itemArtwork, LegacyAssetSource[] itemSources)
+	{ World = world; Actors = Array.AsReadOnly(actors); Terrain = new ReadOnlyDictionary<RegionId, LegacyMapAsset>(terrain); Artwork = new ReadOnlyDictionary<EntityId, LegacyActorArt>(artwork); ArtworkSources = Array.AsReadOnly(artworkSources); ContentId = id; Audio = audio; NpcArtwork = npcArtwork; NpcFacing = npcFacing; NpcArtworkSources = Array.AsReadOnly(npcSources); HudArtwork = hudArtwork; HudArtworkSources = Array.AsReadOnly(hudSources); ItemArtwork = itemArtwork; ItemArtworkSources = Array.AsReadOnly(itemSources); }
 	public GameSimulation Create(uint seed) => new(seed, Actors, world: World);
 	public static LegacyPlayScene Load(string directory, LegacySceneRequest request) => Load(request, path => AssetDecoders.ReadFromInstall(directory, path));
 	public static LegacyPlayScene Load(LegacySceneRequest request, Func<string, byte[]> read)
@@ -51,6 +53,7 @@ public sealed class LegacyPlayScene
 			request.Npc is null || request.Portals is null || request.Portals.Length > WorldDefinition.MaxPortals || request.Portals.Any(p => p is null) ||
 			request.QuestTargets is null || request.QuestTargets.Length is < 1 or > WorldDefinition.MaxQuestTargets)
 			throw new InvalidDataException("Invalid scene schema, title or content counts.");
+		var itemRequest = request.ItemArtwork is null ? null : LegacyItemArt.Snapshot(request.ItemArtwork);
 		var hudRequest = request.HudArtwork is null ? null : LegacyHudArt.Snapshot(request.HudArtwork);
 		var npcRequest = request.NpcArtwork;
 		if (npcRequest is not null)
@@ -120,6 +123,16 @@ public sealed class LegacyPlayScene
 			pixels += hudArtwork.PixelCount;
 			if (pixels > Dt1Tileset.MaxPixels) throw new InvalidDataException("Combined scene/HUD pixel budget exceeded.");
 		}
+		LegacyItemArt? itemArtwork = null; var itemSources = new List<LegacyAssetSource>();
+		if (itemRequest is not null)
+		{
+			itemArtwork = LegacyItemArt.Load(itemRequest, path =>
+			{
+				var bytes = Read(path); itemSources.Add(new(path, bytes.Length, Convert.ToHexStringLower(SHA256.HashData(bytes)))); return bytes;
+			});
+			pixels += itemArtwork.PixelCount;
+			if (pixels > Dt1Tileset.MaxPixels) throw new InvalidDataException("Combined scene/item pixel budget exceeded.");
+		}
 		using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 		hash.AppendData(Encoding.UTF8.GetBytes(world.ContentHash)); hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(actors));
 		foreach (var pair in terrain.OrderBy(p => p.Key.Value)) foreach (var source in pair.Value.Check.Sources)
@@ -136,8 +149,13 @@ public sealed class LegacyPlayScene
 			hash.AppendData(Encoding.UTF8.GetBytes("hud-artwork-v1\n")); hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(hudRequest));
 			foreach (var source in hudSources) hash.AppendData(Encoding.UTF8.GetBytes(source.Path + "\n" + source.Sha256 + "\n"));
 		}
+		if (itemRequest is not null)
+		{
+			hash.AppendData(Encoding.UTF8.GetBytes("item-artwork-v1\n")); hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(itemRequest));
+			foreach (var source in itemSources) hash.AppendData(Encoding.UTF8.GetBytes(source.Path + "\n" + source.Sha256 + "\n"));
+		}
 		var audio = request.Audio is null ? null : LegacyAudioBank.Load(request.Audio, regions.Select(r => new RegionId(r.Id)), Read);
-		return new(world, actors, terrain, artwork, artworkSources.ToArray(), Convert.ToHexStringLower(hash.GetHashAndReset()), audio, npcArtwork, npcRequest?.Facing ?? 0, npcSources.ToArray(), hudArtwork, hudSources.ToArray());
+		return new(world, actors, terrain, artwork, artworkSources.ToArray(), Convert.ToHexStringLower(hash.GetHashAndReset()), audio, npcArtwork, npcRequest?.Facing ?? 0, npcSources.ToArray(), hudArtwork, hudSources.ToArray(), itemArtwork, itemSources.ToArray());
 	}
 }
 

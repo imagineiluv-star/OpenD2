@@ -157,7 +157,7 @@ public partial class SimulationPreview
 			if (simulation.ComputeStateHash() != retained || !menuOpen || !paused) throw new InvalidDataException("Cancelled scene load changed the session.");
 			var sample = MapPreview.SampleData();
 			byte[] Read(string path) => path.EndsWith(".ds1") ? sample.Ds1 : path.EndsWith(".dt1") ? sample.Dt1 : path.EndsWith(".dc6") ? AssetPreview.SampleDc6() : sample.Colors;
-			var request = LegacySceneSetup.Create(new(1, "lod-1.10f", "test.ds1", "data/global/palette/act1/pal.dat", ["test.dt1"]), "Setup smoke", 1, 1, 6, 2, 2, 1) with { HudArtwork = SampleHud() };
+			var request = LegacySceneSetup.Create(new(1, "lod-1.10f", "test.ds1", "data/global/palette/act1/pal.dat", ["test.dt1"]), "Setup smoke", 1, 1, 6, 2, 2, 1) with { HudArtwork = SampleHud(), ItemArtwork = SampleItems() };
 			string sceneFile = Path.Combine(folder, "generated.json");
 			LegacySceneSetup.SaveNew(sceneFile, request, Read);
 			await LoadLegacyScene(sceneFile, Read);
@@ -171,6 +171,13 @@ public partial class SimulationPreview
 			await LoadLegacyScene(invalidHudFile, Read);
 			if (legacyScene != keptScene || simulation.ComputeStateHash() != retained || ScenePath != sceneFile || !legacyHud.CheckTexture() || !menuOpen || !paused)
 				throw new InvalidDataException("Failed HUD scene replacement changed the live scene, texture or menu state.");
+			var keptIcons = itemTextures;
+			string invalidItemsFile = Path.Combine(folder, "invalid-items.json");
+			var invalidItems = request with { ItemArtwork = request.ItemArtwork with { Icons = [request.ItemArtwork.Icons[0] with { Frame = 999 }] } };
+			File.WriteAllText(invalidItemsFile, System.Text.Json.JsonSerializer.Serialize(invalidItems));
+			await LoadLegacyScene(invalidItemsFile, Read);
+			if (itemTextures != keptIcons || itemTextures?.CheckTexture() != true || legacyScene != keptScene || simulation.ComputeStateHash() != retained || ScenePath != sceneFile || !menuOpen || !paused)
+				throw new InvalidDataException("Failed item scene replacement changed the live scene or icons.");
 			ContinueMenuSession(); _Process(0.04);
 			if (paused || simulation.Tick != 1) throw new InvalidDataException("Generated scene could not continue from its menu.");
 			SetSceneArt(null); legacyScene = null; NewRun(); SetScenePath(remembered);
