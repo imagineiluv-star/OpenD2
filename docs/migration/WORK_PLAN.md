@@ -229,7 +229,7 @@ NPC 다음 작업은 **NPC-02b 품질 개선과 목표 PC 성능/배포 인수**
 
 ### 다음 작업 — 배포본과 실제 플레이 인수
 
-1. PLAY-08~17 및 CI-01을 포함하는 새 테스트 RC 준비. 현재 공개 rc.3과 CI 패키지를 구분한다.
+1. PLAY-08~17 및 CI-01을 포함하는 새 테스트 RC 실행/발행. 필수 QA-11~14·FEATURE_QA·manifest 필수 목록 준비는 [RC4_QA](RC4_QA.md)를 따른다. 문서 준비와 실제 후보 발행을 구분한다.
 2. 세 OS 실제 GUI QA와 소유한 LoD 자료의 대표 장면/아이템/음원 인수, Intel Mac 실행·장시간 플레이 기록.
 3. 인수에서 발견한 결함을 우선 처리하고 원본 규칙·세이브 본문·NPC 품질 등 기존 미완료 범위를 이어간다.
 
@@ -240,3 +240,10 @@ NPC 다음 작업은 **NPC-02b 품질 개선과 목표 PC 성능/배포 인수**
 - 모든 ERROR 실패를 유지하고 macOS cold import/export 반복 검사·단계별 로그 아티팩트를 추가했다.
 - 4.6.3의 동일 오류를 로컬 11번째 import에서 재현했다. 4.7.2 로컬 12+12 반복 통과와 원격 검증/인수 경계는 [CI_EDITOR_LIFECYCLE](CI_EDITOR_LIFECYCLE.md), 최종 3개 OS와 패키지 결과는 [PR #31](https://github.com/imagineiluv-star/OpenD2/pull/31)에 기록한다.
 - 실제 GUI/원본 자료/장시간 플레이 완료로 간주하지 않으며 PLAY-17 결과와 실제 GUI 인수 잔건은 위 항목을 따른다.
+
+### RELEASE-QA-03 새 후보 인수 자료
+
+- [x] 격자 가방·마나/강타·물약/벨트·선택 줍기를 QA-11~14 필수 사례로 분리.
+- [x] manifest의 `qa_plan`/필수 ID 목록, 결과 템플릿과 배포 FEATURE_QA 문서 일치 및 체크섬 계약 확인.
+- [ ] `v0.2.0-rc.4` 후보 workflow 실행, 세 OS 검증 및 release handoff 아티팩트/발행 확인.
+- [ ] 실제 GUI 결과 회수·검토. 헤드리스·자료 생성만으로 완료 처리하지 않는다.
