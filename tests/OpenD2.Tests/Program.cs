@@ -42,6 +42,7 @@ try
 	CombatContracts.Run(Test);
 	WorldContracts.Run(Test);
 	ItemContracts.Run(Test);
+	GridInventoryContracts.Run(root, Test);
 	SaveContracts.Run(root, Test);
 	LegacySaveContracts.Run(root, Test);
 	NpcContracts.Run(Test);

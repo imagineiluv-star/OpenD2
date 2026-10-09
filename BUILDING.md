@@ -63,7 +63,7 @@ dotnet run --project tools/OpenD2.AssetAudit -- --tables-bin-110f /path/to/game
 전체/효과/음악 음량(0~100)과 Mute audio도 즉시 적용되며 Save settings로 유지한다. 합성 장면은 짧은 효과 톤만 재생한다. 원본 scene PCM WAV 효과·지역 음악은 [오디오 연결 절차](docs/migration/PLAY_INTEGRATION.md)를 따른다.
 실제 DPI·다중 모니터·전체화면 전환·키보드 포커스·청취는 QA-06/09의 GUI 인수 대상이다.
 
-가방 8칸과 Weapon/Body 슬롯에서 아이템을 선택하면 상세 수치와 가능한 장착/해제/버리기 조작이 나타난다.
+10×4 격자 가방과 Weapon/Body 슬롯에서 아이템을 선택하면 상세 수치와 가능한 장착/해제/버리기 조작이 나타난다.
 New run과 장면 교체는 확인 후 실행한다. 취소하면 이전 일시정지 상태로 돌아간다.
 원본 지형 장면은 **Check data directory → Map → Load map → 셀 위치 지정 → Validate and create scene → Load generated scene**으로 만들 수 있다. 아트/오디오 없는 지형 프리뷰이며 원작 화면 전체를 재현하지 않는다. 자세한 절차는 [PLAY-08](docs/migration/PLAY_INTEGRATION.md#play-08-json-수동-작성-없는-첫-지형-장면)을 따른다. 시작 메뉴에서도 **Load original scene JSON / Load remembered scene**을 사용할 수 있다.
 
@@ -75,7 +75,7 @@ PLAY-10 이후 같은 목록의 **Guide**는 **Idle** 한 동작과 **Guide fixe
 
 PLAY-11 이후 **Scene art → HUD artwork settings**에서 소유 자료의 UI 팔레트·DC6 프레임·배치를 지정한다. Decoration/Health/Menu/Inventory를 지원하며 Preview HUD at 50% health → 새 복사본 저장 → Load saved copy로 연결한다. 게임 아래에 비율을 유지해 표시하며 체력과 기존 메뉴/인벤토리 동작을 사용한다. [설정/범위](docs/migration/PLAY_INTEGRATION.md#play-11-원본-hud-이미지-연결). 마나·스킬·벨트·원작 UI 전체 재현은 미구현이며 rc.3에는 포함되지 않는다.
 
-PLAY-12 이후 **Scene art → Item artwork settings**에서 Use item artwork·아이템별 사용을 켜고 팔레트/DC6 경로/프레임을 입력한다. Preview item icons → 새 복사본 저장 → Load saved copy로 기존 가방/장비 슬롯에 적용한다. 매핑 없는 항목은 이름으로 표시된다. 원작 다중 칸 격자·아이템 수치 이관과 별도이며 rc.3에는 없다. [설정/범위](docs/migration/PLAY_INTEGRATION.md#play-12-원본-아이템-아이콘-연결).
+PLAY-12 이후 **Scene art → Item artwork settings**에서 Use item artwork·아이템별 사용을 켜고 팔레트/DC6 경로/프레임을 입력한다. Preview item icons → 새 복사본 저장 → Load saved copy로 기존 가방/장비 슬롯에 적용한다. 매핑 없는 항목은 이름으로 표시된다. 격자는 PLAY-14에서 추가했고 원본 전투 수치 이관과 별도이며 rc.3에는 없다. [설정/범위](docs/migration/PLAY_INTEGRATION.md#play-12-원본-아이템-아이콘-연결).
 
 
 ## 실행과 배포
@@ -111,7 +111,7 @@ CI 다운로드는 `OpenD2-M2-<OS>` 아티팩트 안의 OS별 압축 파일 전�
 
 빌드 출력·사용자 게임 데이터·추출 캐시는 커밋하지 않는다. 의존성을 바꿀 때 lock 파일을 의도적으로 갱신하고 출처를 [의존성 기록](docs/migration/M0_DEPENDENCIES.md)에 추가한다. 실제 수행한 결과와 남은 인수는 [M0 검증 기록](docs/migration/M0_RESULTS.md)을 참조한다.
 
-몬스터 처치 후 청록색 아이템 표식에 접근해 **F / Pick up nearest**로 줍는다. 아이템 목록에서 선택하고 **Equip selected / Unequip selected / Drop selected**로 장착·해제·버리기를 수행한다. 가방은 8칸이며 장비는 무기·몸통 두 슬롯이다. 피해 범위와 방어력은 장착 결과에 따라 바뀐다. 아이템·장비도 체크포인트에 포함된다. 저장하지 않은 진행은 앱 종료 시 잃는다.
+몬스터 처치 후 청록색 아이템 표식에 접근해 **F / Pick up nearest**로 줍는다. 아이템 목록에서 선택하고 **Equip selected / Unequip selected / Drop selected**로 장착·해제·버리기를 수행한다. 가방은 10×4 격자이며 기본 검은 1×3, 방어구는 2×3칸이다. 장비는 무기·몸통 두 슬롯이다. 피해 범위와 방어력은 장착 결과에 따라 바뀐다. 아이템·장비도 체크포인트에 포함된다. 저장하지 않은 진행은 앱 종료 시 잃는다.
 
 원본 세이브 사전검사: `dotnet run --project tools/OpenD2.AssetAudit -- --inspect-save /path/to/character.d2s`. v96 헤더/전체 checksum을 읽기 전용으로 검사하며 원본 캐릭터 가져오기나 본문 검증은 지원하지 않는다. 자체 체크포인트와는 별개 형식이다.
 
@@ -134,4 +134,20 @@ dotnet run --project tools/OpenD2.NpcEval -- evaluate qwen3-06b-q4 .local-tools/
 # 비교: 두 명령의 model-id를 qwen3-17b-q8로 변경
 ```
 
-PLAY-13 이후 **Scene art → Original item definitions**에서 소유 LoD TXT 5종을 읽고 코드/이름을 검색한다. 대상 preview 아이템을 선택해 **Use selected definition and inventory image path**로 연결한 뒤 Item artwork의 팔레트/프레임을 확인하고 미리보기 → 새 복사본 저장 → 로드를 진행한다. 가방 상세 정보에 원본 크기·수치가 참조용으로 표시된다. 현재 전투 수치·8칸 점유·저장 규칙은 유지한다. [설정/제약](docs/migration/PLAY_INTEGRATION.md#play-13-원본-아이템-정의-조회와-연결).
+PLAY-13 이후 **Scene art → Original item definitions**에서 소유 LoD TXT 5종을 읽고 코드/이름을 검색한다. 대상 preview 아이템을 선택해 **Use selected definition and inventory image path**로 연결한 뒤 Item artwork의 팔레트/프레임을 확인하고 미리보기 → 새 복사본 저장 → 로드를 진행한다. 가방 상세 정보에 원본 크기·수치가 참조용으로 표시된다. 전투 수치는 preview 규칙이다. PLAY-14의 선택 설정으로 원본 크기를 격자에 적용할 수 있다. [설정/제약](docs/migration/PLAY_INTEGRATION.md#play-13-원본-아이템-정의-조회와-연결).
+
+PLAY-14 인벤토리에서는 아이템을 드래그하거나 **아이템 선택 → Move selected → 목적 칸 선택**으로 이동한다.
+키보드는 Tab/Enter로 같은 동작을 수행하며 칸 버튼에서 Escape로 이동 모드를 취소한다. 목적 칸은 왼쪽 위 기준이다.
+빈 장비 칸으로 드래그하면 장착하고 장비에서 가방의 빈 영역으로 드래그하면 지정 위치에 해제한다.
+교환은 두 사각형이 모두 들어갈 때만 적용하며 실패하면 원래 위치를 유지한다. 가방 밖으로 끌어내도 삭제하지 않는다.
+버리기는 **Drop selected**를 사용한다. 회전·자동 정렬·스택 분할은 미지원이다.
+
+소유 TXT 크기를 쓰려면 Scene art → Original item definitions에서 연결을 설정하고
+**Use bound item codes and sizes in the 10×4 bag**를 켠 뒤 새 복사본을 저장한다. 표에서 정의된 크기가 격자를 넘으면 저장을 거부한다.
+끄면 기본 preview 크기를 사용한다. 전투·요구치·스택 규칙은 가져오지 않는다.
+
+새 저장은 schema 2 / rules 5다. 이전 schema 1 / rules 4는 이전 상태 hash를 먼저 검증하고 기존 슬롯 순서대로 배치한다.
+로드만으로 파일을 바꾸지 않는다. 명시적으로 저장하면 이전 정상 파일은 `.bak`에 남고 새 형식으로 저장된다.
+큰 아이템 때문에 들어가지 않으면 변환을 거부한다. 이전 앱으로 짐을 줄이고 저장한 뒤 다시 로드한다.
+크기/코드가 다른 장면의 저장은 호환 오류로 보존하며, 새 형식은 이전 앱에서 열 수 없다.
+[구현·검증·제약](docs/migration/PLAY_14_RESULTS.md).

@@ -107,15 +107,15 @@ public partial class SimulationPreview : VBoxContainer
 		replay.Pressed += VerifyReplay; save.Pressed += async () => await CheckpointFile(false, ActiveSavePath);
 		load.Pressed += () => ConfirmRestart(() => _ = CheckpointFile(true, ActiveSavePath));
 		Smoke(); CombatSmoke(); WorldSmoke(); ItemSmoke(); SaveSmoke(); NewRun();
-		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); HudSmoke(); AudioSmoke(); InventorySmoke(); }
+		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); HudSmoke(); AudioSmoke(); InventorySmoke(); GridInventorySmoke(); }
 		OpenMenu(initial: true);
 		if (smokeTest) Callable.From(() => { _ = MenuSmoke(); }).CallDeferred();
 	}
 	private void NewRun()
 	{
-		ResetDialogue(); ClearRoute(); lastHud = null; selectedItem = default; sessionStarted = true; inventoryPanel.Show();
+		ResetDialogue(); ClearRoute(); lastHud = null; selectedItem = default; inventoryGeneration++; movingItem.SetPressedNoSignal(false); sessionStarted = true; inventoryPanel.Show();
 		audio.SetBank(legacyScene?.Audio, legacyScene is null);
-		seed = (uint)seedInput.Value; simulation = new(seed, ActiveActors, world: ActiveWorld); view.SetSimulation(simulation);
+		seed = (uint)seedInput.Value; simulation = new(seed, ActiveActors, world: ActiveWorld, inventory: legacyScene?.Inventory); view.SetSimulation(simulation);
 		recording = new(simulation); sequence = 0; lastAttackTick = -GameSimulation.PlayerAttackInterval; requestedX = requestedY = 0; clock.Reset(); tickMetrics = new(); elapsed = 0;
 		previous = current = simulation.GetEntity(Player); view.SignalValue = -1; interactDown = pickupDown = false; SetPaused(false);
 		status.Text = "Talk to the quest giver, defeat the marked targets, then return."; ShowFrame(); Refresh();
@@ -349,10 +349,10 @@ public partial class SimulationPreview : VBoxContainer
 			if (!IsInstanceValid(this) || !IsInsideTree()) return false;
 			if (loading)
 			{
-				var result = await Task.Run(() => GameSave.Load(file, world: world));
+				var result = await Task.Run(() => GameSave.Load(file, world: world, inventory: checkpoint.Inventory));
 				if (!IsInstanceValid(this) || !IsInsideTree()) return false;
 				if (result.Simulation.WorldPlayer != Player) throw new InvalidDataException("Checkpoint belongs to an unsupported player identity.");
-				simulation = result.Simulation; selectedItem = default; sessionStarted = true; view.SetSimulation(simulation);
+				simulation = result.Simulation; selectedItem = default; inventoryGeneration++; movingItem.SetPressedNoSignal(false); sessionStarted = true; view.SetSimulation(simulation);
 				recording = new(simulation);
 				sequence = recording.Baseline.Inputs.First(c => c.Actor == Player).Sequence;
 				previous = current = simulation.GetEntity(Player); requestedX = current.MoveX; requestedY = current.MoveY;
@@ -360,6 +360,7 @@ public partial class SimulationPreview : VBoxContainer
 				clock.Reset(); tickMetrics = new(); view.SignalValue = -1; audio.SetBank(legacyScene?.Audio, legacyScene is null); SyncAudio(); ShowFrame();
 				status.Text = result.RecoveredFromBackup ? "Recovered the previous valid backup. Files preserved; paused for review." :
 					menuOpen ? "Checkpoint loaded; paused for review." : "Checkpoint loaded. Press Resume to continue.";
+				if (result.Migrated) status.Text += " Previous save verified and converted to the grid in memory; Save checkpoint writes v2 and keeps the previous file as .bak.";
 				log("game_loaded", $"tick={simulation.Tick}, backup={result.RecoveredFromBackup}");
 			}
 			else

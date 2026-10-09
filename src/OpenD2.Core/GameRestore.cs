@@ -3,22 +3,24 @@ namespace OpenD2.Core;
 public sealed partial class GameSimulation
 {
 	// Restore into a new owner; malformed state can never partially replace a live game.
-	public static GameSimulation Restore(SimulationSnapshot state)
+	public static GameSimulation Restore(SimulationSnapshot state) => RestoreValidated(state, false);
+	internal static GameSimulation RestoreLegacy(SimulationSnapshot state) => RestoreValidated(state, true);
+	private static GameSimulation RestoreValidated(SimulationSnapshot state, bool legacy)
 	{
 		ArgumentNullException.ThrowIfNull(state);
-		try { return RestoreChecked(state); }
+		try { return RestoreChecked(state, legacy); }
 		catch (Exception error) when (error is ArgumentException or InvalidOperationException or OverflowException)
 		{ throw new InvalidDataException("Invalid simulation checkpoint.", error); }
 	}
-	private static GameSimulation RestoreChecked(SimulationSnapshot state)
+	private static GameSimulation RestoreChecked(SimulationSnapshot state, bool legacy = false)
 	{
-		if (state.RulesVersion != RulesVersion || state.Tick < 0 || state.Tick > long.MaxValue - CommandHorizon || state.RandomState == 0 ||
+		if (state.RulesVersion != (legacy ? 4 : RulesVersion) || (!legacy && state.Inventory is null) || state.Tick < 0 || state.Tick > long.MaxValue - CommandHorizon || state.RandomState == 0 ||
 			state.Entities is null || state.Entities.Count is < 1 or > MaxEntities || state.Inputs is null || state.Inputs.Count != state.Entities.Count ||
 			state.PendingCommands is null || state.PendingCommands.Count > MaxPendingCommands || state.Items is null || state.Items.Count > state.Entities.Count || !Enum.IsDefined(state.QuestState))
 			throw new InvalidDataException("Invalid checkpoint header or budgets.");
 		var original = state.Entities.ToArray();
 		var initial = original.Select(e => e with { Mode = MonsterMode.Idle, Target = default }).ToArray();
-		var game = new GameSimulation(state.RandomState, initial, state.World is null ? state.Collision : null, state.World);
+		var game = new GameSimulation(state.RandomState, initial, state.World is null ? state.Collision : null, state.World, legacy ? InventoryLayout.Legacy : state.Inventory);
 		if (state.WorldPlayer != game.WorldPlayer || (state.World is null && state.QuestState != QuestStage.Available)) throw new InvalidDataException("Invalid world owner or quest.");
 		for (int i = 0; i < original.Length; i++)
 		{
@@ -51,15 +53,20 @@ public sealed partial class GameSimulation
 				if (item.Owner != default || item.Slot != -1 || grid is null || item.Region != grid.Region || !grid.CanOccupy(item.Position)) throw new InvalidDataException("Invalid ground item.");
 			}
 			else if (!game.indices.TryGetValue(item.Owner, out int owner) || game.entities[owner].Kind != EntityKind.Player || item.Region != default || item.Position != default ||
-				item.Slot < 0 || (item.Location == ItemLocation.Inventory ? item.Slot >= InventoryCapacity : item.Slot != (int)ItemCatalog.Get(item.Definition).Slot) || !slots.Add((item.Owner, item.Location, item.Slot)))
+				item.Slot < 0 || (item.Location == ItemLocation.Inventory ? item.Slot >= (legacy ? 8 : InventoryCapacity) : item.Slot != (int)ItemCatalog.Get(item.Definition).Slot) || !slots.Add((item.Owner, item.Location, item.Slot)))
 				throw new InvalidDataException("Invalid item owner or occupied slot.");
+			if (item.Location == ItemLocation.Inventory)
+			{
+				ulong mask = game.Inventory.Mask(item.Definition, item.Slot);
+				if (mask == 0 || (mask & game.Occupied(item.Owner)) != 0) throw new InvalidDataException("Inventory rectangles overlap or exceed the grid.");
+			}
 			game.items[game.itemCount++] = item;
 		}
 		// Queued commands may belong to a player who died after submission. Validate their
 		// original payload/scheduling with a temporary live flag, then preserve the dead state.
 		foreach (var command in state.PendingCommands.OrderBy(c => c.Tick).ThenBy(c => c.Actor.Value).ThenBy(c => c.Sequence))
 		{
-			if (!game.indices.TryGetValue(command.Actor, out int actor)) throw new InvalidDataException("Unknown queued actor.");
+			if ((legacy && command.Kind == CommandKind.MoveItem) || !game.indices.TryGetValue(command.Actor, out int actor)) throw new InvalidDataException("Unknown queued actor.");
 			var entity = game.entities[actor]; var cursor = state.Inputs[actor];
 			if (command.Sequence > cursor.Sequence || command.Tick > cursor.Tick) throw new InvalidDataException("Queued command exceeds its cursor.");
 			game.entities[actor] = entity with { Health = Math.Max(1, entity.Health) };

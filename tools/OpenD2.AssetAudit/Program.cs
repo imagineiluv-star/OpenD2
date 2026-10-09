@@ -15,7 +15,7 @@ try
 		var scene = LegacyPlayScene.Load(args[1], LegacySceneRequest.Read(args[2]));
 		var readiness = PlaySceneReadiness.Check(scene);
 		Console.WriteLine(JsonSerializer.Serialize(new { Installation = installation, Readiness = readiness, scene.ContentId, VersionStatus = "unverified", GameplayValidated = false,
-			scene.ArtworkSources, scene.NpcArtworkSources, scene.NpcFacing, scene.HudArtworkSources, scene.ItemArtworkSources, ItemDefinitionSources = scene.ItemDefinitions?.Tables.Sources, ItemDefinitions = scene.ItemDefinitions?.Bindings.Select(p => new { Definition = p.Key.ToString(), Item = p.Value }), ArtworkActors = scene.Artwork.Keys.Select(id => id.Value), Maps = scene.Terrain.Select(p => new { Region = p.Key.Value, p.Value.Check }) }, new JsonSerializerOptions { WriteIndented = true }));
+			InventoryLayout = scene.Inventory.Entries, scene.Inventory.ContentHash, scene.ArtworkSources, scene.NpcArtworkSources, scene.NpcFacing, scene.HudArtworkSources, scene.ItemArtworkSources, ItemDefinitionSources = scene.ItemDefinitions?.Tables.Sources, ItemDefinitions = scene.ItemDefinitions?.Bindings.Select(p => new { Definition = p.Key.ToString(), Item = p.Value }), ArtworkActors = scene.Artwork.Keys.Select(id => id.Value), Maps = scene.Terrain.Select(p => new { Region = p.Key.Value, p.Value.Check }) }, new JsonSerializerOptions { WriteIndented = true }));
 		return installation.MissingArchives.Count == 0 && (args[0] != "--check-play-ready" || readiness.ReadyForSceneGuiCheck) ? 0 : 3;
 	}
 	if (args[0] == "--check-map")

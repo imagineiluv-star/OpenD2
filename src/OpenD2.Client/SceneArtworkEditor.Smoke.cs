@@ -58,12 +58,13 @@ public partial class SceneArtworkEditor
 				throw new InvalidDataException("Failed table read discarded edits or prior results.");
 			definitionCodes[ItemDefinition.TrainingSword].Text = "nope";
 			if (await SaveCopy(Read, copy) || File.Exists(copy)) throw new InvalidDataException("Unknown item code saved a scene.");
-			definitionCodes[ItemDefinition.TrainingSword].Text = "fws";
+			definitionCodes[ItemDefinition.TrainingSword].Text = "fws"; dimensionsEnabled.SetPressedNoSignal(true);
 			var saving = SaveCopy(Read, copy);
 			if (!definitionsLoad.Disabled || definitionCodes[ItemDefinition.TrainingSword].Editable) throw new InvalidDataException("Definition save allowed concurrent edits.");
 			if (!busy || !save.Disabled || !actor.Disabled || !motions[0].Preview.Disabled || !hudAdd.Disabled || hudRows[0].Path.Editable || !itemsInspect.Disabled || itemRows[ItemDefinition.TrainingSword].Path.Editable) throw new InvalidDataException("Artwork save allowed concurrent edits.");
 			if (!await saving || savedFile != copy || loadSaved.Disabled) throw new InvalidDataException("Valid artwork copy could not be saved.");
 			var loaded = LegacyPlayScene.Load(LegacySceneRequest.Read(copy), Read);
+			if (!LegacySceneRequest.Read(copy).UseItemDimensions || loaded.Inventory.Get(ItemDefinition.TrainingSword).Code != "fws") throw new InvalidDataException("Item dimensions were not applied to the saved scene.");
 			if (loaded.NpcArtwork is null || loaded.NpcFacing != 4 || !PlaySceneReadiness.Check(loaded).ReadyForAllSpritesGuiCheck || loaded.Artwork.Count != 2 || !PlaySceneReadiness.Check(loaded).ReadyForSceneGuiCheck || !File.ReadAllBytes(original).SequenceEqual(before)) throw new InvalidDataException("Artwork copy lost actors or changed source JSON.");
 			if (loaded.HudArtwork is null || !PlaySceneReadiness.Check(loaded).HudArtworkConfigured) throw new InvalidDataException("Saved HUD was lost.");
 			if (loaded.ItemArtwork?.Icons.Count != 1 || PlaySceneReadiness.Check(loaded).ItemArtworkCount != 1) throw new InvalidDataException("Saved item artwork was lost.");
@@ -78,11 +79,13 @@ public partial class SceneArtworkEditor
 			if (!hudEnabled.ButtonPressed || hudRows.Count != 4 || hudRows[2].Role.Selected != (int)HudRole.Inventory || hudWidth.Value != 128) throw new InvalidDataException("HUD form was not restored.");
 			if (!itemsEnabled.ButtonPressed || !itemRows[ItemDefinition.TrainingSword].Enabled.ButtonPressed || itemRows[ItemDefinition.TrainingSword].Path.Text != iconPath || itemRows[ItemDefinition.TrainingVest].Enabled.ButtonPressed)
 				throw new InvalidDataException("Item form was not restored.");
-			if (!definitionsEnabled.ButtonPressed || definitionCodes[ItemDefinition.TrainingSword].Text != "fws" || itemTables is not null) throw new InvalidDataException("Definition form was not restored.");
-			definitionsEnabled.SetPressedNoSignal(false); string withoutDefinitions = Path.Combine(folder, "without-definitions.json");
+			if (!dimensionsEnabled.ButtonPressed || !definitionsEnabled.ButtonPressed || definitionCodes[ItemDefinition.TrainingSword].Text != "fws" || itemTables is not null) throw new InvalidDataException("Definition form was not restored.");
+			definitionsEnabled.SetPressedNoSignal(false);
+			if (await SaveCopy(Read, Path.Combine(folder, "dimensions-without-definitions.json"))) throw new InvalidDataException("Dimensions without bindings were saved.");
+			dimensionsEnabled.SetPressedNoSignal(false); string withoutDefinitions = Path.Combine(folder, "without-definitions.json");
 			if (!await SaveCopy(Read, withoutDefinitions) || LegacySceneRequest.Read(withoutDefinitions).ItemDefinitions is not null || LegacySceneRequest.Read(withoutDefinitions).ItemArtwork is null)
 				throw new InvalidDataException("Definition disable changed artwork or retained bindings.");
-			GD.Print("OPEND2_PLAY13_DEFINITION_SETUP_READY");
+			GD.Print("OPEND2_PLAY13_DEFINITION_SETUP_READY"); GD.Print("OPEND2_PLAY14_GRID_SETUP_READY");
 			itemsEnabled.SetPressedNoSignal(false); string withoutItems = Path.Combine(folder, "without-items.json");
 			if (!await SaveCopy(Read, withoutItems) || LegacySceneRequest.Read(withoutItems).ItemArtwork is not null) throw new InvalidDataException("Item disable was not saved.");
 			GD.Print("OPEND2_PLAY12_ITEM_SETUP_READY");

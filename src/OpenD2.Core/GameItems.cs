@@ -4,7 +4,7 @@ public readonly record struct ItemId(uint Value);
 public enum ItemDefinition { TrainingSword, TrainingVest }
 public enum EquipmentSlot { Weapon, Body }
 public enum ItemLocation { Ground, Inventory, Equipped }
-public enum ItemFailure { Interrupted, InvalidLocation, WrongOwner, WrongRegion, OutOfRange, Obstructed, InventoryFull }
+public enum ItemFailure { Interrupted, InvalidLocation, WrongOwner, WrongRegion, OutOfRange, Obstructed, InventoryFull, InvalidPlacement }
 public readonly record struct ItemSpec(string Name, EquipmentSlot Slot, int DamageBonus, int Armor);
 public readonly record struct ItemState(ItemId Id, ItemDefinition Definition, ItemLocation Location,
 	EntityId Owner, int Slot, RegionId Region, GamePosition Position);
@@ -23,7 +23,7 @@ public static class ItemCatalog
 
 public sealed partial class GameSimulation
 {
-	public const int InventoryCapacity = 8;
+	public const int InventoryCapacity = InventoryLayout.Cells;
 	private readonly ItemState[] items;
 	private int itemCount;
 	public ReadOnlySpan<ItemState> Items => items.AsSpan(0, itemCount);
@@ -41,13 +41,37 @@ public sealed partial class GameSimulation
 			{ var spec = ItemCatalog.Get(item.Definition); bonus += spec.DamageBonus; armor += spec.Armor; }
 		return actor.Kind == EntityKind.Player ? new(14 + bonus, 20 + bonus, armor) : new(4, 7, armor);
 	}
-	private int FreeInventorySlot(EntityId owner)
+	private ulong Occupied(EntityId owner, int except = -1, int other = -1)
 	{
-		uint used = 0;
+		ulong mask = 0;
+		for (int i = 0; i < itemCount; i++)
+			if (i != except && i != other && items[i].Owner == owner && items[i].Location == ItemLocation.Inventory) mask |= Inventory.Mask(items[i].Definition, items[i].Slot);
+		return mask;
+	}
+	public int FindInventorySpace(EntityId owner, ItemDefinition definition) => Inventory.FirstFit(definition, Occupied(owner));
+	public ItemId ItemAt(EntityId owner, int slot)
+	{
+		if (slot is < 0 or >= InventoryCapacity) return default;
 		foreach (var item in Items)
-			if (item.Owner == owner && item.Location == ItemLocation.Inventory) used |= 1u << item.Slot;
-		for (int i = 0; i < InventoryCapacity; i++) if ((used & (1u << i)) == 0) return i;
-		return -1;
+			if (item.Owner == owner && item.Location == ItemLocation.Inventory && (Inventory.Mask(item.Definition, item.Slot) & (1UL << slot)) != 0) return item.Id;
+		return default;
+	}
+	public bool CanMoveItem(EntityId owner, ItemId id, int slot)
+	{
+		int index = FindItem(id);
+		return index >= 0 && items[index].Owner == owner && items[index].Location is ItemLocation.Inventory or ItemLocation.Equipped && PlanMove(index, slot, out _, out _);
+	}
+	private bool PlanMove(int index, int slot, out int replaced, out int replacementSlot)
+	{
+		var item = items[index]; replaced = -1; replacementSlot = -1; ulong wanted = Inventory.Mask(item.Definition, slot);
+		if (wanted == 0) return false;
+		for (int i = 0; i < itemCount; i++)
+			if (i != index && items[i].Owner == item.Owner && items[i].Location == ItemLocation.Inventory && (Inventory.Mask(items[i].Definition, items[i].Slot) & wanted) != 0)
+			{ if (replaced >= 0) return false; replaced = i; }
+		if (replaced < 0) return true;
+		if (item.Location != ItemLocation.Inventory) return false;
+		replacementSlot = item.Slot; ulong replacement = Inventory.Mask(items[replaced].Definition, replacementSlot);
+		return replacement != 0 && (replacement & (wanted | Occupied(item.Owner, index, replaced))) == 0;
 	}
 	private void DropLoot(EntityState victim, long tick)
 	{
@@ -65,41 +89,52 @@ public sealed partial class GameSimulation
 	{
 		var actor = entities[actorIndex]; int index = FindItem(command.Item); var item = items[index];
 		ItemFailure? failure = !canAct[actorIndex] ? ItemFailure.Interrupted : null;
-		int slot = -1, replaced = -1;
+		int slot = -1, replaced = -1, replacementSlot = -1;
 		if (failure is null && command.Kind == CommandKind.Pickup)
 		{
 			failure = item.Location != ItemLocation.Ground ? ItemFailure.InvalidLocation :
 				item.Region != actor.Region ? ItemFailure.WrongRegion :
 				DistanceSquared(actor.Position, item.Position) > (long)AttackRange * AttackRange ? ItemFailure.OutOfRange :
 				Collision is null || !Collision.HasMeleeLine(actor.Position, item.Position) ? ItemFailure.Obstructed : null;
-			if (failure is null && (slot = FreeInventorySlot(actor.Id)) < 0) failure = ItemFailure.InventoryFull;
+			if (failure is null && (slot = FindInventorySpace(actor.Id, item.Definition)) < 0) failure = ItemFailure.InventoryFull;
 		}
 		else if (failure is null)
 		{
 			failure = item.Owner != actor.Id ? ItemFailure.WrongOwner :
-				item.Location != (command.Kind == CommandKind.Unequip ? ItemLocation.Equipped : ItemLocation.Inventory) ? ItemFailure.InvalidLocation : null;
-			if (failure is null && command.Kind == CommandKind.Unequip && (slot = FreeInventorySlot(actor.Id)) < 0) failure = ItemFailure.InventoryFull;
+				(command.Kind == CommandKind.MoveItem ? item.Location is not (ItemLocation.Inventory or ItemLocation.Equipped) : item.Location != (command.Kind == CommandKind.Unequip ? ItemLocation.Equipped : ItemLocation.Inventory)) ? ItemFailure.InvalidLocation : null;
+			if (failure is null && command.Kind == CommandKind.Unequip && (slot = FindInventorySpace(actor.Id, item.Definition)) < 0) failure = ItemFailure.InventoryFull;
 			if (failure is null && command.Kind == CommandKind.Equip)
 			{
 				slot = (int)ItemCatalog.Get(item.Definition).Slot;
 				for (int i = 0; i < itemCount; i++)
 					if (items[i].Owner == actor.Id && items[i].Location == ItemLocation.Equipped && items[i].Slot == slot) { replaced = i; break; }
+				if (replaced >= 0)
+				{
+					ulong occupied = Occupied(actor.Id, index), mask = Inventory.Mask(items[replaced].Definition, item.Slot);
+					replacementSlot = mask != 0 && (mask & occupied) == 0 ? item.Slot : Inventory.FirstFit(items[replaced].Definition, occupied);
+					if (replacementSlot < 0) failure = ItemFailure.InventoryFull;
+				}
 			}
 		}
+		if (failure is null && command.Kind == CommandKind.MoveItem)
+		{
+			slot = command.Y * InventoryLayout.Width + command.X;
+			if (!PlanMove(index, slot, out replaced, out replacementSlot)) failure = ItemFailure.InvalidPlacement;
+		}
 		if (failure is { } reason) { EmitItem(tick, SimulationEventKind.ItemFailed, actor, item.Id, (int)reason); return; }
-		// Validate first, then commit the complete transfer. Swaps reuse the incoming bag slot.
-		if (replaced >= 0) items[replaced] = items[replaced] with { Location = ItemLocation.Inventory, Slot = item.Slot };
+		// Validate both rectangles first; rejected transfers never lose or duplicate an item.
+		if (replaced >= 0) items[replaced] = items[replaced] with { Location = ItemLocation.Inventory, Slot = replacementSlot };
 		items[index] = command.Kind switch
 		{
 			CommandKind.Pickup => item with { Location = ItemLocation.Inventory, Owner = actor.Id, Slot = slot, Region = default, Position = default },
 			CommandKind.Equip => item with { Location = ItemLocation.Equipped, Slot = slot },
-			CommandKind.Unequip => item with { Location = ItemLocation.Inventory, Slot = slot },
+			CommandKind.Unequip or CommandKind.MoveItem => item with { Location = ItemLocation.Inventory, Slot = slot },
 			CommandKind.DropItem => item with { Location = ItemLocation.Ground, Owner = default, Slot = -1, Region = actor.Region, Position = actor.Position },
 			_ => throw new InvalidOperationException("Unexpected item command.")
 		};
 		EmitItem(tick, SimulationEventKind.ItemChanged, actor, item.Id, (int)command.Kind);
 	}
-	private static bool IsItemCommand(CommandKind kind) => kind is CommandKind.Pickup or CommandKind.Equip or CommandKind.Unequip or CommandKind.DropItem;
+	private static bool IsItemCommand(CommandKind kind) => kind is CommandKind.Pickup or CommandKind.Equip or CommandKind.Unequip or CommandKind.DropItem or CommandKind.MoveItem;
 	private void WriteItems(BinaryWriter writer)
 	{
 		writer.Write(itemCount);

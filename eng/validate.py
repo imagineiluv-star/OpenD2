@@ -62,6 +62,8 @@ assert "OPEND2_PLAY12_ITEMS_READY" in output, "Legacy item artwork marker missin
 assert "OPEND2_PLAY12_ITEM_SETUP_READY" in output, "Item artwork setup marker missing"
 assert "OPEND2_PLAY13_DEFINITIONS_READY" in output, "Item reference definitions marker missing"
 assert "OPEND2_PLAY13_DEFINITION_SETUP_READY" in output, "Item definition setup marker missing"
+assert "OPEND2_PLAY14_GRID_READY" in output, "Grid inventory marker missing"
+assert "OPEND2_PLAY14_GRID_SETUP_READY" in output, "Grid setup marker missing"
 if args.export:
     names = {"Linux": "OpenD2.x86_64", "Windows": "OpenD2.exe", "macOS": "OpenD2.zip"}
     destination = root / "artifacts" / args.export / names[args.export]

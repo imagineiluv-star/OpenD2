@@ -147,8 +147,8 @@ internal static class SimulationContracts
 			var game = New(); Accept(game, Move(1, 1, 1)); Accept(game, Signal(2, 2)); Accept(game, Move(3, 3, 0, -1));
 			for (int i = 0; i < 4; i++) game.Step();
 			Check(game.GetEntity(Actor).Position == new GamePosition(64, -64) && game.RandomState == 270369);
-			const string expected = "832a17f4df92011eecdabaabffc48477926d041646c8f584683fa29e675f0d5c";
-			Check(game.ComputeStateHash() == expected); Console.WriteLine("SIMULATION_V4_GOLDEN " + expected);
+			const string expected = "618d9b182b8d779ffc31f5e08dbefcbf099ddc61dc65deca015d24aad62ac803";
+			Check(game.ComputeStateHash() == expected); Console.WriteLine("SIMULATION_V5_GOLDEN " + expected);
 		});
 		test("State hashes include intent, region, RNG, queued payloads and accepted input watermarks", () =>
 		{
