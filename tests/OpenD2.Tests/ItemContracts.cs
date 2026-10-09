@@ -37,7 +37,7 @@ internal static class ItemContracts
 		Check(items.Where(i => i.Location != ItemLocation.Ground).GroupBy(i => (i.Owner, i.Location, i.Slot)).All(g => g.Count() == 1));
 		foreach (var item in items)
 			Check(item.Location == ItemLocation.Ground ? item.Owner == default && item.Slot == -1 && item.Region != default :
-				item.Owner != default && item.Region == default && item.Position == default && item.Slot >= 0 && item.Slot < (item.Location == ItemLocation.Inventory ? 8 : 2));
+				item.Owner != default && item.Region == default && item.Position == default && item.Slot >= 0 && item.Slot < (item.Location == ItemLocation.Inventory ? InventoryLayout.Cells : 2));
 	}
 	public static void Run(Action<string, Action> test)
 	{
@@ -77,7 +77,7 @@ internal static class ItemContracts
 		});
 		test("Inventory overflow and full-bag unequip preserve items; swap reuses the incoming slot", () =>
 		{
-			var game = Farm(); for (uint id = 2; id <= 9; id++) Act(game, CommandKind.Pickup, new(id));
+			var game = Farm(); for (uint id = 2; id <= 8; id++) Act(game, CommandKind.Pickup, new(id));
 			var before = game.Items.ToArray(); Act(game, CommandKind.Pickup, new(10));
 			Check(game.Events[^1].Value == (int)ItemFailure.InventoryFull && game.Items.SequenceEqual(before));
 			Act(game, CommandKind.Equip, new(2)); Act(game, CommandKind.Pickup, new(10));

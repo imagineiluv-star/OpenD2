@@ -7,6 +7,7 @@ namespace OpenD2.Client;
 public partial class SceneArtworkEditor
 {
 	private readonly CheckButton definitionsEnabled = new() { Text = "Attach original item reference definitions" };
+	private readonly CheckButton dimensionsEnabled = new() { Text = "Use bound item codes and sizes in the 10×4 bag" };
 	private readonly Button definitionsLoad = new() { Text = "Read item TXT tables (LoD 1.10f profile)" };
 	private readonly LineEdit definitionsSearch = new() { PlaceholderText = "Search original code or source name", MaxLength = 80 };
 	private readonly OptionButton definitionsResults = new(), definitionsTarget = new();
@@ -20,8 +21,8 @@ public partial class SceneArtworkEditor
 	{
 		var toggle = new Button { Text = "Original item definitions", ToggleMode = true }; form.AddChild(toggle);
 		var fields = new VBoxContainer { Visible = false }; form.AddChild(fields); toggle.Toggled += value => fields.Visible = value;
-		fields.AddChild(new Label { Text = "Read weapons, armor, misc, itemtypes and bodylocs TXT from your owned data. Search a code/name and associate it with a preview item.\nBase sizes, slots and values appear as reference data in the inventory. Combat still uses preview stats; the bag still has eight single slots. Names are source labels, not localized TBL names.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
-		fields.AddChild(definitionsEnabled);
+		fields.AddChild(new Label { Text = "Read weapons, armor, misc, itemtypes and bodylocs TXT from your owned data. Search a code/name and associate it with a preview item.\nThe 10×4 bag uses preview sizes by default. Enable bound codes/sizes below to use the table dimensions. Combat stats and equipment requirements remain preview rules. Names are source labels, not localized TBL names.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		fields.AddChild(definitionsEnabled); fields.AddChild(dimensionsEnabled);
 		foreach (var id in Enum.GetValues<ItemDefinition>())
 		{
 			var code = new LineEdit { PlaceholderText = "Original code (blank = unbound)", MaxLength = 4 }; definitionCodes.Add(id, code);
@@ -34,7 +35,7 @@ public partial class SceneArtworkEditor
 	}
 	private void ShowDefinitions(LegacyItemDefinitionsRequest? request)
 	{
-		definitionsEnabled.SetPressedNoSignal(request is not null);
+		definitionsEnabled.SetPressedNoSignal(request is not null); dimensionsEnabled.SetPressedNoSignal(false);
 		foreach (var pair in definitionCodes) pair.Value.Text = request?.Bindings.SingleOrDefault(b => b.Definition == pair.Key.ToString())?.Code ?? "";
 		itemTables = null; itemTablesDirectory = ""; definitionsSearch.Text = ""; FilterDefinitions(); SetDefinitionsBusy(busy);
 	}
@@ -42,7 +43,7 @@ public partial class SceneArtworkEditor
 		definitionCodes.Where(p => p.Value.Text.Trim().Length > 0).Select(p => new LegacyItemBinding(p.Key.ToString(), p.Value.Text.Trim())).ToArray()));
 	private void SetDefinitionsBusy(bool value)
 	{
-		definitionsEnabled.Disabled = value; definitionsLoad.Disabled = value; definitionsSearch.Editable = !value; definitionsResults.Disabled = value; definitionsTarget.Disabled = value;
+		definitionsEnabled.Disabled = value; dimensionsEnabled.Disabled = value; definitionsLoad.Disabled = value; definitionsSearch.Editable = !value; definitionsResults.Disabled = value; definitionsTarget.Disabled = value;
 		foreach (var input in definitionCodes.Values) input.Editable = !value;
 		ShowDefinition();
 	}

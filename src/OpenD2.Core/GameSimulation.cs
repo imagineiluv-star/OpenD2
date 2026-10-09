@@ -13,7 +13,7 @@ public readonly record struct EntityState(EntityId Id, RegionId Region, GamePosi
 {
 	public bool IsAlive => Health > 0;
 }
-public enum CommandKind { SetMove, Signal, Attack, Interact, Pickup, Equip, Unequip, DropItem }
+public enum CommandKind { SetMove, Signal, Attack, Interact, Pickup, Equip, Unequip, DropItem, MoveItem }
 public readonly record struct GameCommand(long Tick, ulong Sequence, EntityId Actor, RegionId Region, CommandKind Kind, int X = 0, int Y = 0, EntityId Target = default, ItemId Item = default);
 public enum CommandResult { Accepted, InvalidCommand, UnknownActor, WrongRegion, ExpiredTick, TooFarAhead, StaleSequence, OutOfOrderTick, TickFull, QueueFull, DeadActor, NotPlayerControlled, InvalidTarget }
 public enum SimulationEventKind { Moved, Signaled, Blocked, AttackStarted, Hit, Died, AttackFailed, MonsterChanged, RegionChanged, NpcTalked, QuestChanged, InteractionFailed, ItemDropped, ItemChanged, ItemFailed }
@@ -22,12 +22,12 @@ public readonly record struct SimulationEvent(long Tick, SimulationEventKind Kin
 public readonly record struct CommandCursor(EntityId Actor, ulong Sequence, long Tick);
 public readonly record struct RecordedCommand(long SubmittedAfterTick, GameCommand Command);
 public sealed record SimulationSnapshot(int RulesVersion, long Tick, uint RandomState, IReadOnlyList<EntityState> Entities,
-	IReadOnlyList<CommandCursor> Inputs, IReadOnlyList<GameCommand> PendingCommands, CollisionGrid? Collision, WorldDefinition? World, EntityId WorldPlayer, QuestStage QuestState, IReadOnlyList<ItemState> Items);
+	IReadOnlyList<CommandCursor> Inputs, IReadOnlyList<GameCommand> PendingCommands, CollisionGrid? Collision, WorldDefinition? World, EntityId WorldPlayer, QuestStage QuestState, IReadOnlyList<ItemState> Items, InventoryLayout? Inventory = null);
 
 // A single owner advances authoritative state. No wall clock, rendering, I/O or callbacks in Step.
 public sealed partial class GameSimulation
 {
-	public const int RulesVersion = 4, UnitsPerTile = 256, PositionLimit = 16777216;
+	public const int RulesVersion = 5, UnitsPerTile = 256, PositionLimit = 16777216;
 	public const int MaxEntities = 1024, MaxPendingCommands = 4096, MaxCommandsPerTick = 128, CommandHorizon = 250;
 	public const int MaxReplayCommands = 16384, MaxReplayTicks = 100000;
 	private readonly EntityState[] entities;
@@ -48,9 +48,10 @@ public sealed partial class GameSimulation
 	// Spans are borrowed until the next Step; value snapshots below own their copies.
 	public ReadOnlySpan<EntityState> Entities => entities;
 	public ReadOnlySpan<SimulationEvent> Events => events.AsSpan(0, eventCount);
-	public GameSimulation(uint seed, IEnumerable<EntityState> initialEntities, CollisionGrid? collision = null, WorldDefinition? world = null)
+	public InventoryLayout Inventory { get; }
+	public GameSimulation(uint seed, IEnumerable<EntityState> initialEntities, CollisionGrid? collision = null, WorldDefinition? world = null, InventoryLayout? inventory = null)
 	{
-		ArgumentNullException.ThrowIfNull(initialEntities); random = new(seed);
+		ArgumentNullException.ThrowIfNull(initialEntities); random = new(seed); Inventory = inventory ?? InventoryLayout.Default;
 		entities = initialEntities.Take(MaxEntities + 1).OrderBy(e => e.Id.Value).ToArray();
 		if (entities.Length is < 1 or > MaxEntities) throw new ArgumentException("Expected 1..1024 entities.", nameof(initialEntities));
 		if (world is not null && collision is not null) throw new ArgumentException("Select either a single collision grid or a world.");
@@ -93,7 +94,7 @@ public sealed partial class GameSimulation
 	public CommandResult Submit(GameCommand command)
 	{
 		if (command.Sequence == 0 || !Enum.IsDefined(command.Kind) ||
-			(command.Kind == CommandKind.SetMove ? !ValidDirection(command.X, command.Y) : command.X != 0 || command.Y != 0) ||
+			(command.Kind == CommandKind.SetMove ? !ValidDirection(command.X, command.Y) : command.Kind == CommandKind.MoveItem ? command.X is < 0 or >= InventoryLayout.Width || command.Y is < 0 or >= InventoryLayout.Height : command.X != 0 || command.Y != 0) ||
 			(command.Kind is not (CommandKind.Attack or CommandKind.Interact) && command.Target != default) ||
 			(IsItemCommand(command.Kind) ? command.Item == default : command.Item != default)) return CommandResult.InvalidCommand;
 		if (!indices.TryGetValue(command.Actor, out int index)) return CommandResult.UnknownActor;
@@ -158,12 +159,12 @@ public sealed partial class GameSimulation
 		Tick = nextTick;
 	}
 	public SimulationSnapshot CaptureSnapshot() => new(RulesVersion, Tick, random.State, Array.AsReadOnly((EntityState[])entities.Clone()),
-		Array.AsReadOnly((CommandCursor[])inputs.Clone()), Array.AsReadOnly(OrderedCommands()), Collision, World, WorldPlayer, QuestState, Array.AsReadOnly(Items.ToArray()));
-	public static GameSimulation Replay(uint seed, IEnumerable<EntityState> initialEntities, IReadOnlyList<RecordedCommand> trace, long targetTick, CollisionGrid? collision = null, WorldDefinition? world = null)
+		Array.AsReadOnly((CommandCursor[])inputs.Clone()), Array.AsReadOnly(OrderedCommands()), Collision, World, WorldPlayer, QuestState, Array.AsReadOnly(Items.ToArray()), Inventory);
+	public static GameSimulation Replay(uint seed, IEnumerable<EntityState> initialEntities, IReadOnlyList<RecordedCommand> trace, long targetTick, CollisionGrid? collision = null, WorldDefinition? world = null, InventoryLayout? inventory = null)
 	{
 		ArgumentNullException.ThrowIfNull(trace);
 		if (targetTick is < 0 or > MaxReplayTicks || trace.Count > MaxReplayCommands) throw new ArgumentOutOfRangeException(nameof(targetTick), "Replay exceeds work budget.");
-		var result = new GameSimulation(seed, initialEntities, collision, world);
+		var result = new GameSimulation(seed, initialEntities, collision, world, inventory);
 		foreach (var entry in trace)
 		{
 			if (entry.SubmittedAfterTick < result.Tick || entry.SubmittedAfterTick > targetTick) throw new InvalidDataException("Replay submission times must be ordered and within target tick.");
@@ -175,12 +176,13 @@ public sealed partial class GameSimulation
 		return result;
 	}
 	private GameCommand[] OrderedCommands() => commands.UnorderedItems.OrderBy(p => p.Priority).Select(p => p.Element).ToArray();
-	// Canonical little-endian v4 state, including scheduling, world content, quest and item ownership.
+	// Canonical little-endian v5 state, including scheduling, world content, quest and item ownership.
 	// Explicit diagnostic operation: allocates, so callers must not invoke it for every render frame.
-	public string ComputeStateHash()
+	public string ComputeStateHash() => ComputeStateHash(RulesVersion);
+	internal string ComputeStateHash(int version)
 	{
 		using var stream = new MemoryStream(); using var writer = new BinaryWriter(stream);
-		writer.Write(RulesVersion); writer.Write(Tick); writer.Write(random.State); writer.Write(Collision is not null);
+		writer.Write(version); writer.Write(Tick); writer.Write(random.State); writer.Write(Collision is not null);
 		if (Collision is { } grid)
 		{
 			writer.Write(grid.Region.Value); writer.Write(grid.Origin.X); writer.Write(grid.Origin.Y); writer.Write(grid.Width); writer.Write(grid.Height);
@@ -201,6 +203,7 @@ public sealed partial class GameSimulation
 		writer.Write(World is not null);
 		if (World is { } world) { writer.Write(world.ContentHash); writer.Write(WorldPlayer.Value); writer.Write(ActiveRegion.Value); writer.Write((int)QuestState); }
 		WriteItems(writer);
+		if (version >= 5) writer.Write(Inventory.ContentHash);
 		writer.Flush(); return Convert.ToHexStringLower(SHA256.HashData(stream.GetBuffer().AsSpan(0, (int)stream.Length)));
 	}
 	private static bool ValidDirection(int x, int y) => x is >= -1 and <= 1 && y is >= -1 and <= 1;

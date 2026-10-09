@@ -128,7 +128,7 @@ public partial class SceneArtworkEditor : VBoxContainer
 			source = request; sourceDirectory = directory; drafts = nextDrafts; selectedActor = -1; savedFile = ""; actor.Clear();
 			foreach (var spawn in request.Actors) actor.AddItem($"{(spawn.Player ? "Player" : "Monster")} {spawn.Id} · region {spawn.Region}");
 			actor.AddItem($"Guide {request.Npc.Id} · {request.Npc.Name} · Idle only");
-			ShowActor(0); ShowHud(request.HudArtwork, "data/global/palette/units/pal.dat"); ShowItems(request.ItemArtwork, "data/global/palette/units/pal.dat"); ShowDefinitions(request.ItemDefinitions); form.Show(); sourceInfo.Text = "Source: " + Path.GetFullPath(file);
+			ShowActor(0); ShowHud(request.HudArtwork, "data/global/palette/units/pal.dat"); ShowItems(request.ItemArtwork, "data/global/palette/units/pal.dat"); ShowDefinitions(request.ItemDefinitions); dimensionsEnabled.SetPressedNoSignal(request.UseItemDimensions); form.Show(); sourceInfo.Text = "Source: " + Path.GetFullPath(file);
 			status.Text = "Scene opened. Existing artwork is preserved. Palette defaults to the actor's region; verify it for each actor. Saving always creates a new file.";
 			return true;
 		}
@@ -159,7 +159,7 @@ public partial class SceneArtworkEditor : VBoxContainer
 			var npcDraft = drafts[source.Npc.Id]; var idle = npcDraft.Motions[0];
 			LegacyNpcRequest? npcArt = npcDraft.Enabled ? new(source.Npc.Id, npcDraft.Palette,
 				LegacyArtworkSetup.ParseMotion("Idle", idle.Path, idle.Layers, idle.Directions, idle.Fps), npcDraft.Facing) : null;
-			var request = source with { Artwork = artwork, NpcArtwork = npcArt, HudArtwork = hudEnabled.ButtonPressed ? CaptureHud() : null, ItemArtwork = itemsEnabled.ButtonPressed ? CaptureItems() : null, ItemDefinitions = definitionsEnabled.ButtonPressed ? CaptureDefinitions() : null }; string directory = sourceDirectory;
+			var request = source with { Artwork = artwork, NpcArtwork = npcArt, HudArtwork = hudEnabled.ButtonPressed ? CaptureHud() : null, ItemArtwork = itemsEnabled.ButtonPressed ? CaptureItems() : null, ItemDefinitions = definitionsEnabled.ButtonPressed ? CaptureDefinitions() : null, UseItemDimensions = dimensionsEnabled.ButtonPressed }; string directory = sourceDirectory;
 			file ??= Path.Combine(sceneDirectory, "artwork-" + Guid.NewGuid().ToString("N") + ".json");
 			await Task.Yield();
 			var ready = await Task.Run(() => LegacySceneSetup.SaveNew(file, request, read ?? (path => AssetDecoders.ReadFromInstall(directory, path))));

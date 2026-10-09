@@ -12,11 +12,13 @@ The [PLAY integration work](docs/migration/PLAY_INTEGRATION.md) connects explici
 
 [PLAY-11](docs/migration/PLAY_11_RESULTS.md) adds explicit DC6 HUD frames and placement in Scene art, a composite preview, health clipping and links to the existing menu/inventory controls. It does not implement original mana, skills, belt slots, fonts or the complete UI. LoD means the original **Lord of Destruction** expansion; its MPQ input is distinct from Resurrected's high-resolution 3D assets.
 
-[PLAY-12](docs/migration/PLAY_12_RESULTS.md) connects explicitly configured DC6 item icons to the existing bag/equipment slots, with Scene art preview/save controls and text fallback. It keeps the two preview item definitions and eight-slot bag; original item rules, multi-cell inventory and equipment-dependent character art remain pending.
+[PLAY-12](docs/migration/PLAY_12_RESULTS.md) connects explicitly configured DC6 item icons to the existing bag/equipment slots, with Scene art preview/save controls and text fallback. It retains the two preview item definitions; PLAY-14 below replaces the original eight-slot preview bag. Original combat/item rules and equipment-dependent character art remain pending.
 
-[PLAY-13](docs/migration/PLAY_13_RESULTS.md) reads owned LoD item TXT definitions, validates type/slot references and lets Scene art search original codes/names and associate them with preview items and DC6 paths. The inventory shows base dimensions, requirements and ranges as reference information. Combat stats and eight-slot occupancy remain unchanged; original item rules and grid/save migration are subsequent work.
+[PLAY-13](docs/migration/PLAY_13_RESULTS.md) reads owned LoD item TXT definitions, validates type/slot references and lets Scene art search original codes/names and associate them with preview items and DC6 paths. The inventory shows base dimensions, requirements and ranges as reference information. Combat stats remain preview rules. PLAY-14 adds optional table-derived dimensions and grid/save migration.
 
-See [release testing](docs/migration/RELEASE_QA.md) for packaged builds and the separate synthetic, legacy-scene and two-hour GUI acceptance cases. `v0.2.0-rc.3` includes the basic HUD, audio, inventory and startup menu. PLAY-08 through PLAY-13 require newer CI packages or a future release.
+[PLAY-14](docs/migration/PLAY_14_RESULTS.md) adds a 10×4 inventory with rectangular occupancy, atomic moves/swaps, drag/drop and keyboard cell selection. Scene art can opt into bound original item codes/sizes. Save schema 2 / rules 5 verifies and converts previous schema-1/rules-4 saves in memory, preserves the source until an explicit save, and refuses conversion if the bag cannot fit. Combat values remain synthetic.
+
+See [release testing](docs/migration/RELEASE_QA.md) for packaged builds and the separate synthetic, legacy-scene and two-hour GUI acceptance cases. `v0.2.0-rc.3` includes the basic HUD, audio, inventory and startup menu. PLAY-08 through PLAY-14 require newer CI packages or a future release.
 
 The historical image and CMake/TCP-IP instructions below describe the original C++ project. They are not evidence of C# GUI gameplay acceptance.
 
@@ -26,7 +28,7 @@ The historical image and CMake/TCP-IP instructions below describe the original C
 
 [M2-06d](docs/migration/M2_06D_RESULTS.md) adds a paused startup/session menu, in-memory continue and validated checkpoint loading. Choose **New game** to begin; **Menu (Esc)** returns to the menu.
 
-[M2-06c](docs/migration/M2_06C_RESULTS.md) adds eight bag slots, weapon/body slots, item details, restart confirmation and an explicitly loaded remembered scene path. Save settings to retain the path.
+[M2-06c](docs/migration/M2_06C_RESULTS.md) introduced eight bag slots (superseded by PLAY-14), weapon/body slots, item details, restart confirmation and an explicitly loaded remembered scene path. Save settings to retain the path.
 
 ![Diablo II Main Menu in OpenD2](https://i.imgur.com/RFNbRiT.png)
 

@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType></PropertyGroup>
   <ItemGroup>
+    <None Update="Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="../../src/OpenD2.Core/OpenD2.Core.csproj" />
     <ProjectReference Include="../../src/OpenD2.Assets/OpenD2.Assets.csproj" />
     <ProjectReference Include="../../src/OpenD2.Npc/OpenD2.Npc.csproj" />

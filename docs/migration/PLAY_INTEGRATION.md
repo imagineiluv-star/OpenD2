@@ -18,6 +18,32 @@
 | 11 | `feat/play-11-legacy-hud` | DC6 HUD 배치·체력 표시·메뉴/인벤토리 동작·설정 미리보기 | 구현; 실제 자료/GUI 인수 대기 |
 | 12 | `feat/play-12-item-artwork` | 아이템별 DC6 아이콘·슬롯 표시·설정 미리보기/저장 | 구현; 실제 자료/GUI 인수 대기 |
 | 13 | `feat/play-13-item-definitions` | 원본 아이템 TXT 참조 정의·검색·아이콘 경로 연결·상세 표시 | 구현; 실제 자료/GUI·원본 규칙 적용 대기 |
+| 14 | `feat/play-14-grid-inventory` | 10×4 점유·이동/교환·드래그·저장 v1→v2 변환 | 구현; 실제 GUI/원본 자료 인수 대기 |
+
+## PLAY-14: 격자 인벤토리와 저장 변환
+
+현재 가방은 10×4칸이다. 기본 preview 크기는 검 1×3·방어구 2×3이며 무기/몸통 장비 칸을 유지한다.
+아이템에 마우스를 올리면 이름을 확인하고 선택하면 크기·연결 코드·전투 수치가 표시된다.
+
+1. 아이템을 원하는 칸에 끌어 놓는다. 목적 칸은 아이템의 왼쪽 위가 된다. 자기 기존 영역과 겹치는 이동은 가능하다.
+2. 다른 아이템과 교환하려면 대상 위치와 돌아갈 위치가 모두 맞아야 한다. 둘 이상과 겹치거나 경계를 넘으면 원래 위치를 유지한다.
+3. 키보드는 Tab/Enter로 아이템 → **Move selected** → 목적 칸을 선택한다. 칸 버튼에서 Escape로 이동 모드를 취소한다.
+4. 무기/몸통 칸으로 끌어 장착하거나, 장비에서 가방의 빈 영역으로 끌어 지정 위치에 해제한다.
+   기존 Equip/Unequip/Drop/Pickup 버튼도 사용할 수 있다. 자동 배치는 위에서 아래, 왼쪽에서 오른쪽으로 찾는다.
+5. **Scene art → Original item definitions → Use bound item codes and sizes in the 10×4 bag**를 켜면
+   연결한 정의의 코드·크기만 적용한다. 참조 정의 연결이 필요하고 10×4 안에 들어가는 크기만 허용한다.
+
+scene schema 1에서 `"UseItemDimensions": true`를 기존 `ItemDefinitions`와 함께 지정한다. 기본 false다.
+활성화 설정은 scene ContentId에 반영되어 별도 체크포인트 슬롯을 사용한다. 옵션이 없는 이전 scene identity는 유지된다.
+저장에는 실제 사용한 크기/코드도 포함된다. 불일치하면 다른 규칙으로 조용히 열지 않는다.
+
+이전 저장 **schema 1 / rules 4 → schema 2 / rules 5**: 콘텐츠·이전 hash/소유권/8칸 상태를 먼저 검증하고
+기존 슬롯 순서대로 재배치한다. 로드 시 원본 파일을 바꾸지 않는다. 다음 명시적 저장에서 이전 파일을 `.bak`에 보존한다.
+공간 부족은 호환 오류이며 이전 백업으로 조용히 돌아가지 않는다. 이전 앱에서 짐을 줄인 뒤 재시도한다.
+이미 변환한 파일은 다시 정렬하지 않는다. 이전 규칙의 전체 재생 엔진이나 원본 `.d2s` 본문 변환은 아니다.
+
+마나/스킬/벨트·원작 배경/글꼴·회전/스택 분할·원본 아이템 옵션은 후속이다.
+GUI 드래그/DPI/실제 파일 인수는 NOT_RUN이며 [PLAY_14_RESULTS](PLAY_14_RESULTS.md)를 따른다.
 
 ## PLAY-13: 원본 아이템 정의 조회와 연결
 
@@ -29,7 +55,7 @@ Scene art에서 소유 데이터 폴더의 장면을 열고 **Original item defi
 4. **Use selected definition and inventory image path**를 누르면 코드와 TXT의 invfile에서 만든 DC6 경로를 채운다.
    이 동작은 선택 대상의 기존 아이콘 경로를 바꾼다. 프레임 0은 초기값이므로 소유 자료에서 정확한 팔레트/프레임을 확인하고 **Preview item icons**를 누른다.
 5. **Validate and save a new scene copy → Load saved copy** 후 아이템 상세의 원본 크기·장착 부위·요구치·기본 범위를 확인한다.
-   **Reference only** 표시처럼 전투 피해·방어·장착 요구치와 8칸 가방 점유에는 아직 적용하지 않는다.
+   **Reference only** 표시처럼 전투 피해·방어·장착 요구치는 아직 적용하지 않는다. 가방 크기 적용은 위 PLAY-14 옵션을 따른다.
 6. 참조만 끄려면 **Attach original item reference definitions**를 끄고 새 복사본으로 저장한다. 아이콘 설정은 별도로 유지된다.
 
 코드를 직접 입력할 수도 있지만 존재 여부·분류는 저장 전에 검증한다. 읽기/저장 실패는 이전 결과·미리보기·원본 JSON을 보존한다.
@@ -51,7 +77,7 @@ scene schema 1의 선택 필드 예시다. 아래 코드 자리는 소유 표에
 `--check-scene`에는 ItemDefinitionSources/ItemDefinitions와 ItemDefinitionCount가 추가된다.
 개수나 종료 코드 0은 GUI/원본 규칙 PASS가 아니다. 설정과 모든 표의 해시는 scene identity와 체크포인트 슬롯에 반영된다.
 설정이 없는 이전 장면의 identity는 유지한다. 새 필드를 가진 장면은 구버전 앱에서 읽을 수 없다.
-원본 TXT/GUI, BIN/TBL, 규칙·다중 칸 가방·저장 변환의 잔건은 [PLAY_13_RESULTS](PLAY_13_RESULTS.md)에 기록한다.
+PLAY-13 시점의 원본 TXT/GUI, BIN/TBL, 규칙·격자/저장 잔건은 [PLAY_13_RESULTS](PLAY_13_RESULTS.md)에 기록한다.
 
 ## PLAY-12: 원본 아이템 아이콘 연결
 
@@ -80,7 +106,7 @@ scene schema 1의 선택 필드 예시다. 경로는 실제 소유 자료에서 
 아이콘은 비율을 유지하고 최대 폭 40px/버튼 높이에 맞춘다. 투명도를 보존하며 기존 텍스트·툴팁을 유지한다.
 파일당 32MiB·아이템 입력 64MiB·각 프레임 256×256 이하, 전체 scene 입력/픽셀 예산도 적용한다.
 설정/소스 해시는 ContentId에 반영한다. `ItemArtworkCount`는 매핑 개수이며 원작 인벤토리 완성을 뜻하지 않는다.
-원작 다중 칸 격자·드래그/드롭·바닥 이미지·장비별 캐릭터 외형·원본 아이템 수치 이관은 별도다.
+격자·드래그/드롭은 PLAY-14에서 추가했다. 바닥 이미지·장비별 캐릭터 외형·원본 전투 수치 이관은 별도다.
 실제 MPQ/GUI 인수는 NOT_RUN이며 [검증/제한](PLAY_12_RESULTS.md)을 따른다.
 
 ## PLAY-11: 원본 HUD 이미지 연결
