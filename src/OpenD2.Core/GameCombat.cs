@@ -53,17 +53,26 @@ public sealed partial class GameSimulation
 		AttackFailure? failure = !canAct[index] ? AttackFailure.Interrupted : e.AttackCooldown > 0 ? AttackFailure.Cooldown :
 			!target.IsAlive ? AttackFailure.DeadTarget : DistanceSquared(e.Position, target.Position) > (long)AttackRange * AttackRange ? AttackFailure.OutOfRange :
 			!Collision!.HasMeleeLine(e.Position, target.Position) ? AttackFailure.Obstructed : null;
-		if (failure is { } reason) { Emit(tick, SimulationEventKind.AttackFailed, e, target.Position, (int)reason, target.Id); return; }
+		bool skill = skillAttacks[index];
+		if (skill)
+		{
+			SkillFailure? skillFailure = failure is { } combatFailure ? (SkillFailure)(int)combatFailure :
+				castSkills[index] == SkillId.None ? SkillFailure.NoSkill : e.SkillCooldown > 0 ? SkillFailure.Cooldown : e.Mana < PowerStrikeManaCost ? SkillFailure.InsufficientMana : null;
+			if (skillFailure is { } reason) { Emit(tick, SimulationEventKind.SkillFailed, e, target.Position, (int)reason, target.Id); return; }
+		}
+		else if (failure is { } reason) { Emit(tick, SimulationEventKind.AttackFailed, e, target.Position, (int)reason, target.Id); return; }
 		var stats = GetStats(e.Id);
-		int damage = Math.Max(1, stats.MinimumDamage + random.NextInt(stats.MaximumDamage - stats.MinimumDamage + 1) - GetStats(target.Id).Armor);
+		int damage = Math.Max(1, stats.MinimumDamage + random.NextInt(stats.MaximumDamage - stats.MinimumDamage + 1) + (skill ? PowerStrikeBonusDamage : 0) - GetStats(target.Id).Armor);
 		int health = Math.Max(0, target.Health - damage);
-		entities[index] = e with { AttackCooldown = e.Kind == EntityKind.Player ? PlayerAttackInterval : MonsterAttackInterval };
+		entities[index] = e with { AttackCooldown = e.Kind == EntityKind.Player ? PlayerAttackInterval : MonsterAttackInterval,
+			Mana = skill ? e.Mana - PowerStrikeManaCost : e.Mana, SkillCooldown = skill ? PowerStrikeCooldownTicks : e.SkillCooldown,
+			ManaRecoveryTicks = skill ? 0 : e.ManaRecoveryTicks };
 		attacked[index] = true;
 		entities[targetIndex] = target with { Health = health, HitStun = health == 0 ? 0 : HitStunTicks,
 			MoveX = health == 0 ? 0 : target.MoveX, MoveY = health == 0 ? 0 : target.MoveY,
 			Mode = health == 0 ? MonsterMode.Dead : target.Mode, Target = health == 0 ? default : target.Target };
 		canAct[targetIndex] = false;
-		Emit(tick, SimulationEventKind.AttackStarted, e, target.Position, 0, target.Id);
+		Emit(tick, skill ? SimulationEventKind.SkillCast : SimulationEventKind.AttackStarted, e, target.Position, skill ? (int)castSkills[index] : 0, target.Id);
 		Emit(tick, SimulationEventKind.Hit, e, target.Position, Math.Min(damage, target.Health), target.Id);
 		if (health == 0)
 		{

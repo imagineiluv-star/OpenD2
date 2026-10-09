@@ -140,7 +140,9 @@ public sealed class LegacyPlayScene
 		var itemDefinitions = definitionsRequest is null ? null : LegacyItemDefinitions.Load(definitionsRequest, Read);
 		var inventory = request.UseItemDimensions ? new InventoryLayout(InventoryLayout.Default.Entries.Select(e => itemDefinitions!.Bindings.TryGetValue(e.Definition, out var definition) ? new ItemFootprint(e.Definition, definition.Code, definition.Width, definition.Height) : e)) : InventoryLayout.Default;
 		using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-		hash.AppendData(Encoding.UTF8.GetBytes(world.ContentHash)); hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(actors));
+		hash.AppendData(Encoding.UTF8.GetBytes(world.ContentHash)); // Freeze the pre-resource actor identity so existing scene save paths remain reachable.
+		hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(actors.Select(e => new { e.Id, e.Region, e.Position, e.MoveX, e.MoveY,
+			e.Kind, e.Health, e.MaxHealth, e.AttackCooldown, e.HitStun, e.Mode, e.Target, e.IsAlive })));
 		foreach (var pair in terrain.OrderBy(p => p.Key.Value)) foreach (var source in pair.Value.Check.Sources)
 		{ hash.AppendData(Encoding.UTF8.GetBytes(source.Path + "\n" + source.Sha256 + "\n")); }
 		if (artworkRequests.Length > 0) hash.AppendData(JsonSerializer.SerializeToUtf8Bytes(artworkRequests));

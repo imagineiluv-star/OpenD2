@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 
 namespace OpenD2.Assets;
 
-public enum HudRole { Decoration, Health, Menu, Inventory }
+public enum HudRole { Decoration, Health, Menu, Inventory, Mana }
 public sealed record LegacyHudElement(string Role, string Path, int Frame, int X, int Y);
 public sealed record LegacyHudRequest(string PalettePath, int Width, int Height, LegacyHudElement[] Elements);
 public sealed record LegacyHudSprite(HudRole Role, Dc6Frame Frame, int X, int Y);
@@ -17,6 +17,7 @@ public sealed class LegacyHudArt
 	public Palette Palette { get; }
 	public IReadOnlyList<LegacyHudSprite> Sprites { get; }
 	public long PixelCount { get; }
+	public bool HasMana => Sprites.Any(s => s.Role == HudRole.Mana);
 	public bool HasHealth => Sprites.Any(s => s.Role == HudRole.Health);
 	private LegacyHudArt(int width, int height, Palette palette, List<LegacyHudSprite> sprites, long pixels)
 	{ Width = width; Height = height; Palette = palette; Sprites = new ReadOnlyCollection<LegacyHudSprite>(sprites); PixelCount = pixels; }
@@ -31,7 +32,7 @@ public sealed class LegacyHudArt
 			if (element is null || !Enum.TryParse<HudRole>(element.Role, out var role) || !Enum.IsDefined(role) || element.Role != role.ToString() ||
 				(role != HudRole.Decoration && !roles.Add(role)) || AssetDecoders.Kind(element.Path) != "dc6" || element.Frame is < 0 or > 4095 ||
 				element.X < 0 || element.Y < 0 || element.X >= request.Width || element.Y >= request.Height)
-				throw new InvalidDataException("HUD elements need valid roles, unique Health/Menu/Inventory, DC6 paths, frames and canvas positions.");
+				throw new InvalidDataException("HUD elements need valid roles, unique Health/Mana/Menu/Inventory, DC6 paths, frames and canvas positions.");
 		}
 		return snapshot;
 	}

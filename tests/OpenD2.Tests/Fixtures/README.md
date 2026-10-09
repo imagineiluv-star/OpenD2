@@ -17,3 +17,13 @@ Core at master `c58e2352d7128d66f088a84b73b6e18f92bb52b0` using GameSave.Save
 The files deliberately retain old state hashes and are never rewritten by the
 new serializer. Tests copy them to temporary slots and verify conversion,
 command retention, corruption detection, overflow refusal and backup bytes.
+
+`save-v2-items.json` was written by the unchanged Core at master
+`df2703450a95ea52e351ba231566134c394fe51f` (schema 2, rules 5). It loaded
+`save-v1-items.json` through that version's grid migration, then queued a move of
+sword 2 to cell 2 at tick 3 / sequence 2. The original pickup at tick 2 remains.
+State SHA-256: `c80438b2b84b066276bb4b85288225ae3ad0c1c187699b9187afc4103f0db8b8`.
+PLAY-15 verifies this unchanged checksum before assigning resource defaults.
+The same baseline's synthetic PlaySceneContracts.Request content identity is
+`cb0c4c18a7fc408b70dec14f2526433447692c8827f5ab52c26ce1a4787b63e8`;
+the resource upgrade must preserve it so earlier scene save slots stay reachable.

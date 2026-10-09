@@ -11,7 +11,7 @@ public sealed record SaveLoadResult(GameSimulation Simulation, bool RecoveredFro
 // File I/O is outside Step. One writer per slot; crash remnants never become load candidates.
 public static class GameSave
 {
-	public const int SchemaVersion = 2, MaxFileBytes = 4 * 1024 * 1024;
+	public const int SchemaVersion = 3, MaxFileBytes = 4 * 1024 * 1024;
 	private sealed record Document(int SchemaVersion, int RulesVersion, string ContentHash, string StateHash, long Tick, uint RandomState,
 		EntityState[] Entities, CommandCursor[] Inputs, GameCommand[] PendingCommands, EntityId WorldPlayer, QuestStage QuestState, ItemState[] Items, ItemFootprint[]? Inventory = null);
 	private static readonly JsonSerializerOptions Options = new()
@@ -43,19 +43,34 @@ public static class GameSave
 			var root = header.RootElement;
 			if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("SchemaVersion", out var schema) || schema.ValueKind != JsonValueKind.Number || !schema.TryGetInt32(out int version) ||
 				!root.TryGetProperty("RulesVersion", out var rules) || rules.ValueKind != JsonValueKind.Number || !rules.TryGetInt32(out int rulesVersion)) throw new InvalidDataException("Save header missing.");
-			bool legacy = version == 1 && rulesVersion == 4;
+			bool oldGrid = version == 1 && rulesVersion == 4;
+			bool legacy = oldGrid || (version == 2 && rulesVersion == 5);
 			if (!legacy && (version != SchemaVersion || rulesVersion != GameSimulation.RulesVersion)) throw new SaveCompatibilityException("Unsupported save schema or game rules. File preserved.");
 			if (!root.TryGetProperty("ContentHash", out var content) || content.ValueKind != JsonValueKind.String) throw new InvalidDataException("Missing content identity.");
 			if (content.GetString() != ContentHash(collision, world)) throw new SaveCompatibilityException("Save requires different level content. File preserved.");
+			// Resource fields are mandatory in v3 and forbidden in old checksummed formats.
+			if (!root.TryGetProperty("Entities", out var actors) || actors.ValueKind != JsonValueKind.Array) throw new InvalidDataException("Missing entities.");
+			foreach (var actor in actors.EnumerateArray())
+			{
+				if (actor.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Invalid entity.");
+				foreach (string field in new[] { "Mana", "MaxMana", "SkillCooldown", "ManaRecoveryTicks", "SelectedSkill" })
+					if (actor.TryGetProperty(field, out _) == legacy) throw new InvalidDataException("Resource fields disagree with save version.");
+			}
 			var doc = JsonSerializer.Deserialize<Document>(data, Options) ?? throw new InvalidDataException("Empty save.");
-			if (legacy ? doc.Inventory is not null : doc.Inventory is null) throw new InvalidDataException("Invalid inventory layout for this save version.");
-			var layout = legacy ? InventoryLayout.Legacy : new InventoryLayout(doc.Inventory!);
-			if (!legacy && layout.ContentHash != inventory.ContentHash) throw new SaveCompatibilityException("Save requires different item dimensions/codes. File preserved.");
+			if (oldGrid ? doc.Inventory is not null : doc.Inventory is null) throw new InvalidDataException("Invalid inventory layout for this save version.");
+			var layout = oldGrid ? InventoryLayout.Legacy : new InventoryLayout(doc.Inventory!);
+			if (!oldGrid && layout.ContentHash != inventory.ContentHash) throw new SaveCompatibilityException("Save requires different item dimensions/codes. File preserved.");
 			var state = new SimulationSnapshot(doc.RulesVersion, doc.Tick, doc.RandomState, doc.Entities, doc.Inputs, doc.PendingCommands,
 				collision, world, doc.WorldPlayer, doc.QuestState, doc.Items, layout);
 			var game = legacy ? GameSimulation.RestoreLegacy(state) : GameSimulation.Restore(state);
 			if (doc.StateHash != game.ComputeStateHash(doc.RulesVersion)) throw new InvalidDataException("Save state checksum mismatch.");
-			if (legacy) game = Migrate(game, inventory);
+			if (oldGrid) game = Migrate(game, inventory);
+			if (legacy)
+			{
+				var upgraded = game.CaptureSnapshot();
+				game = GameSimulation.Restore(upgraded with { Entities = upgraded.Entities.Select(e => e with
+					{ Mana = 60, MaxMana = 60, SkillCooldown = 0, ManaRecoveryTicks = 0, SelectedSkill = SkillId.PowerStrike }).ToArray() });
+			}
 			return new(game, false, legacy);
 		}
 		catch (JsonException error) { throw new InvalidDataException("Malformed save JSON.", error); }

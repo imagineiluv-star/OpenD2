@@ -28,12 +28,18 @@ internal static class HudArtContracts
 			Check(art.Sprites[0].X == 0 && art.Sprites[0].Frame.OffsetX == -5 && art.Sprites[1].X == 3);
 			Check(art.Sprites[0].Frame.Opacity.SequenceEqual(new byte[] { 0, 255, 0, 255, 255, 0 }));
 		});
+		test("mana is an optional unique clipping role with no input action", () =>
+		{
+			var request = Request() with { Elements = [new("Mana", "hud.dc6", 0, 0, 0)] }; var art = LegacyHudArt.Load(request, Read);
+			Check(art.HasMana && !art.HasHealth && art.ActionAt(1, 1) is null);
+			Bad(() => LegacyHudArt.Load(request with { Elements = [request.Elements[0], request.Elements[0]] }, _ => throw new Exception("Duplicate reached I/O")));
+		});
 		test("HUD rejects unsafe or ambiguous definitions before resource I/O", () =>
 		{
 			var good = Request(); var element = good.Elements[0];
 			foreach (var bad in new[] { good with { Width = 0 }, good with { Height = 1025 }, good with { Elements = [] }, good with { Elements = null! },
 				good with { Elements = [null!] }, good with { PalettePath = "../pal.dat" }, good with { Elements = Enumerable.Repeat(element, 33).ToArray() },
-				good with { Elements = [element, element] }, good with { Elements = [element with { Role = "0" }] }, good with { Elements = [element with { Role = "Mana" }] },
+				good with { Elements = [element, element] }, good with { Elements = [element with { Role = "0" }] }, good with { Elements = [element with { Role = "Unknown" }] },
 				good with { Elements = [element with { Path = "../ui.dc6" }] }, good with { Elements = [element with { X = -1 }] }, good with { Elements = [element with { Frame = -1 }] } })
 				Bad(() => LegacyHudArt.Load(bad, _ => throw new Exception("Invalid HUD reached I/O.")));
 		});

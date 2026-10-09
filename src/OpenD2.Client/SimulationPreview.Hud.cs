@@ -7,13 +7,15 @@ namespace OpenD2.Client;
 public partial class SimulationPreview
 {
 	private readonly ProgressBar healthBar = new() { ShowPercentage = false, CustomMinimumSize = new Vector2(160, 22), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+	private readonly ProgressBar manaBar = new() { ShowPercentage = false, CustomMinimumSize = new Vector2(160, 22), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
 	private readonly Label playerStatus = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(240, 0), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
 	private readonly HFlowContainer diagnosticControls = new();
 	private readonly LegacyHudView legacyHud = new();
-	private (int Health, int Maximum, bool Paused, RegionId Region)? lastHud;
+	private (int Health, int Maximum, int Mana, int MaxMana, int Cooldown, SkillId Skill, bool Paused, RegionId Region)? lastHud;
 	private void BuildHud()
 	{
-		var row = new HBoxContainer(); playPanel.AddChild(row); row.AddChild(playerStatus); row.AddChild(healthBar);
+		var row = new HBoxContainer(); playPanel.AddChild(row); row.AddChild(playerStatus); row.AddChild(healthBar); row.AddChild(manaBar);
+		manaBar.AddThemeStyleboxOverride("fill", new StyleBoxFlat { BgColor = new Color(0.15f, 0.28f, 0.8f) });
 		healthBar.AddThemeStyleboxOverride("fill", new StyleBoxFlat { BgColor = new Color(0.65f, 0.12f, 0.17f) });
 		healthBar.AddThemeStyleboxOverride("background", new StyleBoxFlat { BgColor = new Color(0.15f, 0.06f, 0.07f) });
 	}
@@ -34,7 +36,7 @@ public partial class SimulationPreview
 		try { items = scene?.ItemArtwork is { } icons ? new(icons) : null; view.SetTerrain(scene); }
 		catch { prepared?.Dispose(); items?.Dispose(); throw; }
 		SetItemTextures(items);
-		legacyHud.SetArtwork(prepared); healthBar.Visible = scene?.HudArtwork?.HasHealth != true;
+		legacyHud.SetArtwork(prepared); healthBar.Visible = scene?.HudArtwork?.HasHealth != true; manaBar.Visible = scene?.HudArtwork?.HasMana != true;
 	}
 	public void SetDiagnosticsVisible(bool visible)
 	{
@@ -43,10 +45,12 @@ public partial class SimulationPreview
 	private void RefreshHud()
 	{
 		if (simulation is null) return;
-		var next = (current.Health, current.MaxHealth, paused, current.Region);
+		RefreshSkillControls();
+		var next = (current.Health, current.MaxHealth, current.Mana, current.MaxMana, current.SkillCooldown, current.SelectedSkill, paused, current.Region);
 		if (lastHud == next) return;
 		lastHud = next; healthBar.MaxValue = current.MaxHealth; healthBar.Value = current.Health; legacyHud.SetHealth(current.Health, current.MaxHealth);
-		playerStatus.Text = $"{simulation.World!.GetRegion(current.Region).Name} · {(current.IsAlive ? paused ? "Paused" : "Playing" : "Defeated")} · HP {current.Health}/{current.MaxHealth}";
+		manaBar.MaxValue = Math.Max(1, current.MaxMana); manaBar.Value = current.Mana; legacyHud.SetMana(current.Mana, current.MaxMana);
+		playerStatus.Text = $"{simulation.World!.GetRegion(current.Region).Name} · {(current.IsAlive ? paused ? "Paused" : "Playing" : "Defeated")} · HP {current.Health}/{current.MaxHealth} · MP {current.Mana}/{current.MaxMana}";
 	}
 	private void HudSmoke()
 	{

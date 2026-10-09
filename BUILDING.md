@@ -73,7 +73,7 @@ New run과 장면 교체는 확인 후 실행한다. 취소하면 이전 일시�
 
 PLAY-10 이후 같은 목록의 **Guide**는 **Idle** 한 동작과 **Guide fixed facing**을 설정한다. NPC는 정해진 위치에서 대기 애니메이션을 반복하며 Pause에서 멈춘다. 새 복사본을 저장하고 Load saved copy로 연결한다. 설정하지 않으면 원형 표시를 유지한다. [NPC 설정·JSON·준비 상태](docs/migration/PLAY_INTEGRATION.md#play-10-guide-npc-대기-아트). 공개 v0.2.0-rc.3에는 PLAY-08/09/10이 없다.
 
-PLAY-11 이후 **Scene art → HUD artwork settings**에서 소유 자료의 UI 팔레트·DC6 프레임·배치를 지정한다. Decoration/Health/Menu/Inventory를 지원하며 Preview HUD at 50% health → 새 복사본 저장 → Load saved copy로 연결한다. 게임 아래에 비율을 유지해 표시하며 체력과 기존 메뉴/인벤토리 동작을 사용한다. [설정/범위](docs/migration/PLAY_INTEGRATION.md#play-11-원본-hud-이미지-연결). 마나·스킬·벨트·원작 UI 전체 재현은 미구현이며 rc.3에는 포함되지 않는다.
+PLAY-11 이후 **Scene art → HUD artwork settings**에서 소유 자료의 UI 팔레트·DC6 프레임·배치를 지정한다. Decoration/Health/Mana/Menu/Inventory를 지원하며 Preview HUD at 50% health/mana → 새 복사본 저장 → Load saved copy로 연결한다. 게임 아래에 비율을 유지해 표시하며 체력과 기존 메뉴/인벤토리 동작을 사용한다. [설정/범위](docs/migration/PLAY_INTEGRATION.md#play-11-원본-hud-이미지-연결). 마나와 첫 preview 스킬은 PLAY-15에 추가했고 원본 스킬/벨트/UI 전체 재현은 미구현이며 rc.3에는 포함되지 않는다.
 
 PLAY-12 이후 **Scene art → Item artwork settings**에서 Use item artwork·아이템별 사용을 켜고 팔레트/DC6 경로/프레임을 입력한다. Preview item icons → 새 복사본 저장 → Load saved copy로 기존 가방/장비 슬롯에 적용한다. 매핑 없는 항목은 이름으로 표시된다. 격자는 PLAY-14에서 추가했고 원본 전투 수치 이관과 별도이며 rc.3에는 없다. [설정/범위](docs/migration/PLAY_INTEGRATION.md#play-12-원본-아이템-아이콘-연결).
 
@@ -146,8 +146,18 @@ PLAY-14 인벤토리에서는 아이템을 드래그하거나 **아이템 선택
 **Use bound item codes and sizes in the 10×4 bag**를 켠 뒤 새 복사본을 저장한다. 표에서 정의된 크기가 격자를 넘으면 저장을 거부한다.
 끄면 기본 preview 크기를 사용한다. 전투·요구치·스택 규칙은 가져오지 않는다.
 
-새 저장은 schema 2 / rules 5다. 이전 schema 1 / rules 4는 이전 상태 hash를 먼저 검증하고 기존 슬롯 순서대로 배치한다.
+현재 PLAY-15 저장은 schema 3 / rules 6다. schema 2 / rules 5는 가방 배치를 유지하면서 마나 기본값을 추가한다. 이전 schema 1 / rules 4는 이전 상태 hash를 먼저 검증하고 기존 슬롯 순서대로 배치한다.
 로드만으로 파일을 바꾸지 않는다. 명시적으로 저장하면 이전 정상 파일은 `.bak`에 남고 새 형식으로 저장된다.
 큰 아이템 때문에 들어가지 않으면 변환을 거부한다. 이전 앱으로 짐을 줄이고 저장한 뒤 다시 로드한다.
 크기/코드가 다른 장면의 저장은 호환 오류로 보존하며, 새 형식은 이전 앱에서 열 수 없다.
 [구현·검증·제약](docs/migration/PLAY_14_RESULTS.md).
+
+
+PLAY-15의 스킬 목록에서 **Power strike · 12 MP**를 선택하고 근접한 적 옆에서 **Q** 또는 **Cast nearest**를 누른다.
+한 번 누를 때마다 한 번 요청하며 가장 가까운 살아 있는 적을 대상으로 한다. 자동 접근은 하지 않는다.
+기본 마나 60, 강타 비용 12, 일반 무기 피해 +12, 재사용 대기 1초다. 기존 일반 공격 대기/사거리/벽/피격 중단도 적용한다.
+마나는 플레이 중 1초마다 1 회복한다. 메뉴/일시정지는 tick을 멈추므로 회복도 멈춘다.
+MP 수치·푸른 바와 부족/대기 안내를 확인한다. HUD artwork에 Mana 역할을 연결하면 해당 DC6가 아래부터 채워진다.
+v1/v2 로드는 파일을 바꾸지 않고 메모리에서 검증/변환한다. 명시적 저장 때만 v3로 쓰고 이전 정상 파일을 `.bak`에 남긴다.
+백업은 1세대 회전이므로 다음 저장에서 교체된다. 원본 스킬 트리/이펙트/투사체 이관과 별도다.
+[판정·저장·검증 범위](docs/migration/PLAY_15_RESULTS.md).

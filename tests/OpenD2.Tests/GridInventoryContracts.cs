@@ -109,10 +109,10 @@ internal static class GridInventoryContracts
 			string file = CopyFixture(root, "save-v1-items.json", "migrate"); byte[] source = File.ReadAllBytes(file);
 			var result = GameSave.Load(file, Grid()); var game = result.Simulation;
 			Check(result.Migrated && !result.RecoveredFromBackup && File.ReadAllBytes(file).SequenceEqual(source) && !File.Exists(file + ".bak"));
-			Check(game.GetItem(new(2)).Slot == 0 && game.GetItem(new(3)).Location == ItemLocation.Equipped && game.PendingCommands == 1 && game.RandomState == 1);
+			Check(game.GetItem(new(2)).Slot == 0 && game.GetItem(new(3)).Location == ItemLocation.Equipped && game.PendingCommands == 1 && game.RandomState == 1 && game.GetEntity(Player).Mana == 60);
 			game.Step(); game.Step(); Check(game.GetItem(new(4)).Location == ItemLocation.Inventory && game.GetItem(new(4)).Slot == 1);
 			GameSave.Save(file, game.CaptureSnapshot()); Check(File.ReadAllBytes(file + ".bak").SequenceEqual(source));
-			Check(!GameSave.Load(file, Grid()).Migrated && JsonNode.Parse(File.ReadAllText(file))!["SchemaVersion"]!.GetValue<int>() == 2);
+			Check(!GameSave.Load(file, Grid()).Migrated && JsonNode.Parse(File.ReadAllText(file))!["SchemaVersion"]!.GetValue<int>() == GameSave.SchemaVersion);
 		});
 		test("legacy conversion overflow preserves both files and never silently falls back to an older checkpoint", () =>
 		{

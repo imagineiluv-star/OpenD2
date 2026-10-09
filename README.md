@@ -18,7 +18,9 @@ The [PLAY integration work](docs/migration/PLAY_INTEGRATION.md) connects explici
 
 [PLAY-14](docs/migration/PLAY_14_RESULTS.md) adds a 10×4 inventory with rectangular occupancy, atomic moves/swaps, drag/drop and keyboard cell selection. Scene art can opt into bound original item codes/sizes. Save schema 2 / rules 5 verifies and converts previous schema-1/rules-4 saves in memory, preserves the source until an explicit save, and refuses conversion if the bag cannot fit. Combat values remain synthetic.
 
-See [release testing](docs/migration/RELEASE_QA.md) for packaged builds and the separate synthetic, legacy-scene and two-hour GUI acceptance cases. `v0.2.0-rc.3` includes the basic HUD, audio, inventory and startup menu. PLAY-08 through PLAY-14 require newer CI packages or a future release.
+[PLAY-15](docs/migration/PLAY_15_RESULTS.md) adds tick-based mana recovery, a selectable melee Power strike, Q/button casting, resource/cooldown feedback and optional DC6 Mana clipping. Save schema 3 / rules 6 verifies old v1/v2 files before in-memory conversion and preserves existing scene save paths. This is a preview skill, not the original skill tree, projectiles or D2R effects.
+
+See [release testing](docs/migration/RELEASE_QA.md) for packaged builds and the separate synthetic, legacy-scene and two-hour GUI acceptance cases. `v0.2.0-rc.3` includes the basic HUD, audio, inventory and startup menu. PLAY-08 through PLAY-15 require newer CI packages or a future release.
 
 The historical image and CMake/TCP-IP instructions below describe the original C++ project. They are not evidence of C# GUI gameplay acceptance.
 
