@@ -50,7 +50,7 @@ Release 발행 이벤트가 다음 워크플로를 실행하리라 가정하지 
 이 OpenD2 출시 후보를 실제 사용 테스트해줘: <Release URL>
 release-manifest.json, SHA256SUMS, GROK_TASK.md, qa-result-template.json을 기준으로 해.
 Linux x64 배포 파일의 해시를 확인하고 새 테스트 프로필에서 일반 창으로 실행해.
-필수 QA-01~06/08을 최대 20분 동안 키보드·마우스로 시험해.
+필수 QA-01~06/08/11~14을 최대 20분 동안 키보드·마우스로 시험해.
 같은 run의 15,000 tick 경계를 지나도 자동 정지하지 않는지 확인하고 저장/재실행해.
 모델 다운로드는 하지 마. 실패 재시도는 1회까지만 해.
 qa-result.json, 입력 기록, 스크린샷/영상, 게임 로그를 첨부해줘.
@@ -71,7 +71,7 @@ qa-result.json, 입력 기록, 스크린샷/영상, 게임 로그를 첨부해�
 
 - 저장소 `imagineiluv-star/OpenD2`, 새 prerelease, 태그 `vX.Y.Z-rc.N`.
 - Release ID·태그·manifest commit을 확인하고 같은 후보는 한 번만 실행.
-- QA-01~06/08, 모델 다운로드 없음, 20분/실패 재시도 1회, 진행 중인 시험과 직렬 처리.
+- QA-01~06/08/11~14, 모델 다운로드 없음, 20분/실패 재시도 1회, 진행 중인 시험과 직렬 처리.
 - 실행 불가·시간 초과는 BLOCKED/NOT_RUN, 결과와 증거는 Bot 대화에 첨부.
 
 Release 이벤트/알림 필터가 없으면 링크를 전달하는 수동 경로를 쓴다.
@@ -132,3 +132,12 @@ Grok Bot/실제 원본 데이터 GUI 시험은 아직 수행하지 않았다.
 - [재사용 워크플로](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows)
 - [GITHUB_TOKEN 이벤트 동작](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
 - [GitHub CLI release create](https://cli.github.com/manual/gh_release_create)
+
+
+### rc.4 준비 — PLAY-17 QA 계획
+
+새 후보는 필수 QA-11~14(격자 가방·마나/강타·물약/벨트·선택 줍기)를 포함한다.
+manifest/result schema 2에 `qa_plan=PLAY-17`을 추가하고 manifest의 `required_case_ids`를 명시한다.
+기존 수집기는 고정 QA-01~10 목록 대신 이 필수 목록을 확인해야 한다. 누락 사례는 NOT_RUN이며 전체 PASS가 아니다.
+함께 배포하는 `FEATURE_QA.md`의 구체적인 조작과 판정을 따른다. 세 OS는 서로 다른 결과 파일로 기록한다.
+각 20분 회차에서 끝내지 못한 항목은 그대로 남긴다. 다른 커밋/해시의 결과는 합치지 않는다.

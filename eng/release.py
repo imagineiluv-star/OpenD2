@@ -25,6 +25,10 @@ CASES = [
     ("QA-08", "Play across a ten-minute replay rollover, verify, save and reload", True),
     ("QA-09", "Owned legacy scene: terrain, animation, audio mapping, quest loop and reload", False),
     ("QA-10", "Separately scheduled two-hour visible gameplay soak", False),
+    ("QA-11", "Grid inventory: drag, keyboard placement, cancellation and checkpoint", True),
+    ("QA-12", "Power strike: mana, cooldown, input focus and checkpoint", True),
+    ("QA-13", "Potions: bag/belt transfers, one use per key press and checkpoint", True),
+    ("QA-14", "Overlapping ground names: selected approach/pickup and cancellation", True),
 ]
 
 
@@ -124,13 +128,14 @@ def prepare(folder, version, commit, repository, run_url):
         "schema_version": 2, "version": version, "commit": commit,
         "repository": repository, "build_run": run_url, "release_url": release_url,
         "gui_qa_status": "NOT_RUN", "gui_qa_scope": "synthetic_preview",
+        "qa_plan": "PLAY-17", "required_case_ids": [key for key, _, required in CASES if required],
         "legacy_scene_qa_status": "NOT_RUN", "original_rules_validated": False,
         "two_hour_soak_status": "NOT_RUN", "packages": packages,
     })
     write_json(folder / "qa-result-template.json", {
         "schema_version": 2, "version": version, "commit": commit,
         "platform": "", "package_sha256": "", "status": "NOT_RUN",
-        "status_scope": "synthetic_preview",
+        "status_scope": "synthetic_preview", "qa_plan": "PLAY-17",
         "legacy_scene_qa": {"status": "NOT_RUN", "scene_json_sha256": "", "content_id": "",
                             "profile": "", "asset_report": "", "source_hashes": [],
                             "original_rules_validated": False},
@@ -143,6 +148,7 @@ def prepare(folder, version, commit, repository, run_url):
     for source, target in (("docs/migration/RELEASE_QA.md", "GROK_BOT_SETUP.md"),
                            ("eng/qa/grok-task.md", "GROK_TASK.md"),
                            ("docs/migration/PLAY_INTEGRATION.md", "LEGACY_PLAY_SETUP.md"),
+                           ("docs/migration/RC4_QA.md", "FEATURE_QA.md"),
                            ("LICENSE", "LICENSE"), ("THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md")):
         shutil.copyfile(ROOT / source, folder / target)
     notes = f"""# OpenD2 {version} — GUI QA pending
@@ -158,7 +164,18 @@ Linux: extract the tar.gz into a new directory and run `./OpenD2.x86_64`.
 Windows: extract the entire ZIP and run `OpenD2.exe`.
 macOS: extract the ZIP and open the app; this development build is not signed/notarized.
 SDK, Godot editor, Python and NPC model downloads are not needed to play the synthetic preview.
-The Simulation tab opens first. The HUD shows health, region and play/pause state.
+The Simulation tab opens first with New game / Continue / Load checkpoint.
+The HUD shows health, mana, region and play/pause state.
+
+Features since rc.3: scene creation and actor/NPC/HUD/item artwork configuration (PLAY-08–13),
+10x4 grid inventory (PLAY-14), Power strike and mana (PLAY-15), recovery potions and a four-slot
+belt (PLAY-16), separated ground names and selected-item approach/pickup (PLAY-17).
+Click a loot name to approach that item; L toggles names and right-click cancels movement.
+F picks up the nearest item in range. Q uses the selected skill; 1–4 use belt potions once per press.
+Godot 4.7.2 includes the desktop Android-polling lifecycle fix; strict ERROR checks remain enabled.
+Save schema 4 / rules 7 reads validated older preview saves; back up your profile before testing.
+Original Diablo II save-body import and original game rule parity are not implemented.
+See FEATURE_QA.md for the new mandatory GUI cases QA-11–14 and the candidate scope.
 FPS/fullscreen/diagnostics preferences apply immediately; choose Save settings to keep them.
 Use F11 to leave fullscreen and Show diagnostics for seed, replay, tick and state hashes.
 Master/effects/music volume and mute are saved with Save settings. Synthetic scenes use short effect tones.

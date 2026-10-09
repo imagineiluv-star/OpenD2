@@ -86,13 +86,18 @@ class ReleaseTests(unittest.TestCase):
         self.assertFalse(manifest["original_rules_validated"])
         report = json.loads((self.output / "qa-result-template.json").read_text())
         self.assertEqual(2, report["schema_version"])
+        self.assertEqual("PLAY-17", report["qa_plan"])
+        self.assertEqual(report["qa_plan"], manifest["qa_plan"])
+        self.assertEqual(manifest["required_case_ids"], [case["id"] for case in report["cases"] if case["required"]])
+        self.assertEqual((release.ROOT / "docs/migration/RC4_QA.md").read_bytes(),
+                         (self.output / "FEATURE_QA.md").read_bytes())
         self.assertEqual("NOT_RUN", report["status"])
         self.assertEqual("synthetic_preview", report["status_scope"])
         self.assertEqual("NOT_RUN", report["legacy_scene_qa"]["status"])
         self.assertFalse(report["legacy_scene_qa"]["original_rules_validated"])
         self.assertEqual("NOT_RUN", report["two_hour_soak"]["status"])
         self.assertEqual(0, report["two_hour_soak"]["active_seconds"])
-        self.assertEqual({"QA-01", "QA-02", "QA-03", "QA-04", "QA-05", "QA-06", "QA-08"},
+        self.assertEqual({"QA-01", "QA-02", "QA-03", "QA-04", "QA-05", "QA-06", "QA-08", "QA-11", "QA-12", "QA-13", "QA-14"},
                          {case["id"] for case in report["cases"] if case["required"]})
         self.assertEqual({"QA-07", "QA-09", "QA-10"},
                          {case["id"] for case in report["cases"] if not case["required"]})
