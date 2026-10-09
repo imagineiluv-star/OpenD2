@@ -17,6 +17,41 @@
 | 10 | `feat/play-10-npc-artwork` | Guide 대기 아트·고정 방향·깊이 정렬·설정 저장 | 구현; 실제 자료/GUI 인수 대기 |
 | 11 | `feat/play-11-legacy-hud` | DC6 HUD 배치·체력 표시·메뉴/인벤토리 동작·설정 미리보기 | 구현; 실제 자료/GUI 인수 대기 |
 | 12 | `feat/play-12-item-artwork` | 아이템별 DC6 아이콘·슬롯 표시·설정 미리보기/저장 | 구현; 실제 자료/GUI 인수 대기 |
+| 13 | `feat/play-13-item-definitions` | 원본 아이템 TXT 참조 정의·검색·아이콘 경로 연결·상세 표시 | 구현; 실제 자료/GUI·원본 규칙 적용 대기 |
+
+## PLAY-13: 원본 아이템 정의 조회와 연결
+
+Scene art에서 소유 데이터 폴더의 장면을 열고 **Original item definitions**를 펼친다. 공개 rc.3에는 없다.
+
+1. **Read item TXT tables (LoD 1.10f profile)**로 `data/global/excel`의 bodylocs, itemtypes, weapons, armor, misc TXT를 읽는다.
+2. 원본 코드 또는 원문 이름을 검색한다. 최대 100개 결과를 표시하므로 검색을 좁힌다. 이름은 TBL 지역화 전 source label이다.
+3. Training sword / Training vest 중 대상을 선택한다. 손 장착 무기 또는 몸통 방어구만 각각 연결할 수 있다.
+4. **Use selected definition and inventory image path**를 누르면 코드와 TXT의 invfile에서 만든 DC6 경로를 채운다.
+   이 동작은 선택 대상의 기존 아이콘 경로를 바꾼다. 프레임 0은 초기값이므로 소유 자료에서 정확한 팔레트/프레임을 확인하고 **Preview item icons**를 누른다.
+5. **Validate and save a new scene copy → Load saved copy** 후 아이템 상세의 원본 크기·장착 부위·요구치·기본 범위를 확인한다.
+   **Reference only** 표시처럼 전투 피해·방어·장착 요구치와 8칸 가방 점유에는 아직 적용하지 않는다.
+6. 참조만 끄려면 **Attach original item reference definitions**를 끄고 새 복사본으로 저장한다. 아이콘 설정은 별도로 유지된다.
+
+코드를 직접 입력할 수도 있지만 존재 여부·분류는 저장 전에 검증한다. 읽기/저장 실패는 이전 결과·미리보기·원본 JSON을 보존한다.
+데이터 폴더를 바꿨다면 장면을 다시 연다. 프로필 이름은 실제 파일의 버전/전체 호환을 인증하지 않는다.
+
+scene schema 1의 선택 필드 예시다. 아래 코드 자리는 소유 표에서 검증한 실제 코드로 대체한다.
+
+```json
+"ItemDefinitions": {
+  "Profile": "lod-1.10f",
+  "Bindings": [
+    { "Definition": "TrainingSword", "Code": "abc" },
+    { "Definition": "TrainingVest", "Code": "def" }
+  ]
+}
+```
+
+`--items-txt <game-data-directory>`는 참조 정의와 5개 소스 해시를 JSON으로 출력한다.
+`--check-scene`에는 ItemDefinitionSources/ItemDefinitions와 ItemDefinitionCount가 추가된다.
+개수나 종료 코드 0은 GUI/원본 규칙 PASS가 아니다. 설정과 모든 표의 해시는 scene identity와 체크포인트 슬롯에 반영된다.
+설정이 없는 이전 장면의 identity는 유지한다. 새 필드를 가진 장면은 구버전 앱에서 읽을 수 없다.
+원본 TXT/GUI, BIN/TBL, 규칙·다중 칸 가방·저장 변환의 잔건은 [PLAY_13_RESULTS](PLAY_13_RESULTS.md)에 기록한다.
 
 ## PLAY-12: 원본 아이템 아이콘 연결
 

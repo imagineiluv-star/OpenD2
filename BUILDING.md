@@ -44,6 +44,8 @@ M1-07 TXT/BIN·참조 검사·타일 캐시와 Map 탭의 **Resolve table paths*
 
 ```sh
 dotnet run --project tools/OpenD2.AssetAudit -- --tables-txt /path/to/game
+# Original item TXT reference definitions (not gameplay rule import)
+dotnet run --project tools/OpenD2.AssetAudit -- --items-txt /path/to/game
 # BIN은 사용자가 1.10f 스키마를 명시적으로 선택한다. 자동 버전 검출이 아니다.
 dotnet run --project tools/OpenD2.AssetAudit -- --tables-bin-110f /path/to/game
 ```
@@ -131,3 +133,5 @@ dotnet run --project tools/OpenD2.NpcEval -- install qwen3-06b-q4 .local-tools/n
 dotnet run --project tools/OpenD2.NpcEval -- evaluate qwen3-06b-q4 .local-tools/npc/models tools/OpenD2.NpcEval/korean-intents-v1.json artifacts/npc06-evaluation.json
 # 비교: 두 명령의 model-id를 qwen3-17b-q8로 변경
 ```
+
+PLAY-13 이후 **Scene art → Original item definitions**에서 소유 LoD TXT 5종을 읽고 코드/이름을 검색한다. 대상 preview 아이템을 선택해 **Use selected definition and inventory image path**로 연결한 뒤 Item artwork의 팔레트/프레임을 확인하고 미리보기 → 새 복사본 저장 → 로드를 진행한다. 가방 상세 정보에 원본 크기·수치가 참조용으로 표시된다. 현재 전투 수치·8칸 점유·저장 규칙은 유지한다. [설정/제약](docs/migration/PLAY_INTEGRATION.md#play-13-원본-아이템-정의-조회와-연결).
