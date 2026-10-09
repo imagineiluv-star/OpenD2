@@ -9,7 +9,7 @@ public partial class SimulationPreview
 	private IReadOnlyList<GamePosition> route = [];
 	private int routeIndex, blockedRouteTicks;
 	private EntityId chaseTarget;
-	private void ClearRoute() { route = []; routeIndex = 0; blockedRouteTicks = 0; chaseTarget = default; }
+	private void ClearRoute() { route = []; routeIndex = 0; blockedRouteTicks = 0; chaseTarget = default; pickupTarget = null; view.SelectedGroundItem = default; }
 	private void NavigationSmoke()
 	{
 		ClickMove(new(640, 640));
@@ -26,7 +26,7 @@ public partial class SimulationPreview
 	}
 	private void ClickMove(GamePosition destination)
 	{
-		if (verifying || paused || !current.IsAlive || simulation.Collision is not { } grid) return;
+		if (menuOpen || verifying || paused || !current.IsAlive || simulation.Collision is not { } grid) return;
 		ClearRoute(); var path = GridPathfinder.Find(grid, current.Position, destination);
 		if (path.Status != PathStatus.Found) { status.Text = "Click move: " + path.Status; return; }
 		// Align within the current cell before following center-to-center segments.
@@ -37,6 +37,7 @@ public partial class SimulationPreview
 	private (int X, int Y) FollowRoute(bool active, int keyX, int keyY)
 	{
 		if (!active || paused || keyX != 0 || keyY != 0) { ClearRoute(); return (keyX, keyY); }
+		if (FollowPickup()) return (0, 0);
 		if (chaseTarget != default)
 		{
 			var target = simulation.GetEntity(chaseTarget);
@@ -78,6 +79,8 @@ public partial class SimulationCanvas
 		if (simulation?.Collision is null) return;
 		try
 		{
+			var loot = HitGroundLabel(at);
+			if (loot != default) { PickupRequested?.Invoke(loot); return; }
 			var relative = at - Size / 2;
 			GamePosition position = terrainContent is null ? new((int)Math.Round(DisplayPosition.X + relative.X * 256 / 40), (int)Math.Round(DisplayPosition.Y + relative.Y * 256 / 40)) :
 				LegacyProjection.Unproject(Iso(DisplayPosition.X, DisplayPosition.Y).X + relative.X, Iso(DisplayPosition.X, DisplayPosition.Y).Y + relative.Y);
