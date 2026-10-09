@@ -7,7 +7,7 @@
 - .NET SDK **10.0.401** (`global.json`, 정확한 버전 필요)
 - Python **3.12+**, Git
 - CMake **3.25+**, C++17 컴파일러 (Windows: Visual Studio C++ Build Tools, macOS: Xcode Command Line Tools, Linux: GCC/Clang)
-- Godot **4.6.3 .NET** 및 같은 버전의 .NET export templates
+- Godot **4.7.2 .NET** 및 같은 버전의 .NET export templates
 
 저장소 루트에서 실행:
 
@@ -22,7 +22,14 @@ python eng/validate.py --export Linux
 
 bootstrap은 공식 Godot 배포본을 내려받아 `eng/toolchain.json`의 SHA-512로 검사한다. SDK는 별도 설치한다. bootstrap 출력의 실행 파일로 `src/OpenD2.Client/project.godot`를 열면 된다. 기존 Godot 설치를 사용하려면 `python eng/validate.py --godot <실행파일경로> --export Linux`를 사용한다.
 
-`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 268개 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export·SDK 검색 경로를 제거한 배포본 실행 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
+`eng/validate.py`는 참조 경계 검사 → locked restore → 전체 Debug 빌드 → 전체 계약 테스트 → Godot import → 헤드리스 시작 검사 → 선택한 OS export·SDK 검색 경로를 제거한 배포본 실행 순으로 실행한다. Godot이 오류를 출력하고도 종료 코드 0을 반환하는 경우도 실패로 취급한다. 작은 프로젝트의 재현성을 위해 MSBuild 병렬도를 제한했다.
+
+Godot 4.7.2는 Android 프리셋이 없는 desktop 프로젝트에서 불필요한 장치 감시 스레드를 시작하지 않는다.
+4.6.3에서 반복된 EditorSettings 종료 경합과 버전 선정 근거는 [CI 수명 검증 기록](docs/migration/CI_EDITOR_LIFECYCLE.md)을 참조한다.
+`python eng/check-editor-lifecycle.py --iterations 12`로 별도 임시 프로젝트의 cold import와 export 종료를 반복 검사한다.
+macOS CI에서는 이 검사를 항상 수행하고, 실제 게임의 .NET 내보내기·압축 해제 후 실행도 별도로 검사한다.
+오류 발생 시 즉시 실패하며 재시도나 ERROR 예외 목록은 없다. 단계별 원문 로그는 `artifacts/validation/`과
+`OpenD2-validation-<OS>` 아티팩트에 남긴다. 헤드리스 통과는 실제 GUI 플레이·오디오·DPI 검증을 뜻하지 않는다.
 
 Godot 없이 코어를 검증할 수 있다:
 

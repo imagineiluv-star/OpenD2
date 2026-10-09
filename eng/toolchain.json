@@ -1,24 +1,24 @@
 {
   "dotnet": "10.0.401",
-  "godot": "4.6.3",
-  "templateVersion": "4.6.3.stable.mono",
-  "baseUrl": "https://github.com/godotengine/godot-builds/releases/download/4.6.3-stable/",
+  "godot": "4.7.2",
+  "templateVersion": "4.7.2.stable.mono",
+  "baseUrl": "https://github.com/godotengine/godot-builds/releases/download/4.7.2-stable/",
   "archives": {
     "linux": {
-      "file": "Godot_v4.6.3-stable_mono_linux_x86_64.zip",
-      "sha512": "962c4f5fd3a704de36c9dedcb2f5f6c973065ac8ed8fd6e12c7ebf7e48c3852d774bcef2ccf76b50b206c0c564ceea54315e2943e76e397529923e7de680508e"
+      "file": "Godot_v4.7.2-stable_mono_linux_x86_64.zip",
+      "sha512": "1855960b27ee3ef5e66e5e228cced69d55637b24334a7411162687dcd077d8f9f645348cdb8eae984bec8135d49ed855a1e3a16476786b8bce60774fd8402d13"
     },
     "windows": {
-      "file": "Godot_v4.6.3-stable_mono_win64.zip",
-      "sha512": "87e265d354f3f71971a90eab70bcb18bcaf1698686c403051c57e30d6a8478cb670e25341867e7d9b66fa1f0761c9cc38d0ae7253154a4b2b21a84b09896625f"
+      "file": "Godot_v4.7.2-stable_mono_win64.zip",
+      "sha512": "79229fd112b0c9cbeab82363a4ef7be18ea70f1caf86bf912789335b136fbe7e01db0053a33461438c5da1c680c17bbb10040bd09bedc51221cd4423d0367757"
     },
     "macos": {
-      "file": "Godot_v4.6.3-stable_mono_macos.universal.zip",
-      "sha512": "8c4c1c83a7a3e1cfc845e0fd4b4cdefd6f1cc662f63378c22a551b50f31965f2a633b7bf7c84ab530847e0fddb5dadc1128e04e87918618dd76c75d66eb67bb9"
+      "file": "Godot_v4.7.2-stable_mono_macos.universal.zip",
+      "sha512": "0862c53d7158c7a67f745e2e46f90b68cf5343cbe8b95d6d4333c469e42ca104af9c121d1746a50e5d221a99d09d82ef7016495f8e0d09255842884ed0502795"
     },
     "templates": {
-      "file": "Godot_v4.6.3-stable_mono_export_templates.tpz",
-      "sha512": "6756c4c45cc711652fab0f5fbb75459f372f1f4b6cca6bb48e8953c25369418845c8cc39fcda0756effd69d0ecaf50e5653ebb9233b8e33f3bde5d8a81635168"
+      "file": "Godot_v4.7.2-stable_mono_export_templates.tpz",
+      "sha512": "bb5c41d72370ed743660361f6228006f808ab04ca33abdc545d740b044f3fe057f32ae8cb7873a1bc86ddcd82ae683b9f6dfdfe4179852f2c0f1acde2ff6bd5a"
     }
   }
 }

@@ -1,38 +1,39 @@
 """Build/test/import/smoke; optionally produce one desktop self-contained export."""
 import argparse
+import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+from godot_process import run_godot
 
 os.environ.setdefault("DOTNET_PROCESSOR_COUNT", "2")
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
-parser.add_argument("--godot", help="Pinned 4.6.3 .NET executable; default bootstrap output")
+parser.add_argument("--godot", help="Pinned .NET executable; default bootstrap output")
 parser.add_argument("--export", choices=["Linux", "Windows", "macOS"])
 args = parser.parse_args()
 godot = args.godot or (root / ".local-tools/godot-path.txt").read_text(encoding="utf-8").strip()
 
-def run(*command, capture=False):
-    result = subprocess.run(command, cwd=root, text=True, encoding="utf-8", stdout=subprocess.PIPE if capture else None, stderr=subprocess.STDOUT if capture else None)
+def run(*command, capture=False, stage="godot"):
     if capture:
-        print(result.stdout)
+        return run_godot(command, cwd=root, log=root / "artifacts/validation" / f"{stage}.log")
+    result = subprocess.run(command, cwd=root, text=True, encoding="utf-8")
     result.check_returncode()
-    if capture and ("ERROR:" in result.stdout or "SCRIPT ERROR:" in result.stdout):
-        raise SystemExit("Godot reported an error despite its exit code")
     return result.stdout
 
 run(sys.executable, "eng/verify.py")
 run(sys.executable, "eng/check-state-vectors.py")
-version = run(godot, "--version", capture=True)
-assert version.strip().startswith("4.6.3.stable.mono."), version
+version = run(godot, "--version", capture=True, stage="version")
+toolchain = json.loads((root / "eng/toolchain.json").read_text(encoding="utf-8"))
+assert version.strip().startswith(toolchain["templateVersion"] + "."), version
 run("dotnet", "restore", "OpenD2.sln", "--locked-mode", "-m:1", "-p:BuildInParallel=false")
 run("dotnet", "build", "OpenD2.sln", "-c", "Debug", "--no-restore", "-m:1", "-p:BuildInParallel=false")
 run("dotnet", "run", "--project", "tests/OpenD2.Tests", "-c", "Debug", "--no-build")
-# Let editor initialization settle before teardown (4.6.3 Android export polling race).
-# --import still waits for the resource scan; do not suppress any engine errors.
-run(godot, "--headless", "--path", "src/OpenD2.Client", "--import", "--quit-after", "120", "--max-fps", "60", capture=True)
-output = run(godot, "--headless", "--path", "src/OpenD2.Client", "--quit-after", "600", "--max-fps", "60", "--", "--smoke-test", capture=True)
+# 4.7.2 includes godotengine/godot#116548: no Android polling without its preset.
+# --import waits for the scan to finish; no timing-based teardown workaround.
+run(godot, "--headless", "--path", "src/OpenD2.Client", "--import", capture=True, stage="import")
+output = run(godot, "--headless", "--path", "src/OpenD2.Client", "--quit-after", "600", "--max-fps", "60", "--", "--smoke-test", capture=True, stage="project-smoke")
 assert "OPEND2_M0_READY" in output, "Startup marker missing"
 assert "OPEND2_M104_PREVIEW_READY" in output, "DC6 preview marker missing"
 assert "OPEND2_M105_ANIMATION_READY" in output, "DCC/COF animation marker missing"
@@ -70,7 +71,8 @@ if args.export:
     names = {"Linux": "OpenD2.x86_64", "Windows": "OpenD2.exe", "macOS": "OpenD2.zip"}
     destination = root / "artifacts" / args.export / names[args.export]
     destination.parent.mkdir(parents=True, exist_ok=True)
-    run(godot, "--headless", "--path", "src/OpenD2.Client", "--export-release", args.export, str(destination), capture=True)
+    destination.unlink(missing_ok=True)
+    run(godot, "--headless", "--path", "src/OpenD2.Client", "--export-release", args.export, str(destination), capture=True, stage="export")
     assert destination.is_file(), destination
     print(f"EXPORT OK: {destination}")
     run(sys.executable, "eng/smoke-export.py", args.export)
