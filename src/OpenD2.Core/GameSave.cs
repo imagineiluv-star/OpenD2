@@ -11,7 +11,7 @@ public sealed record SaveLoadResult(GameSimulation Simulation, bool RecoveredFro
 // File I/O is outside Step. One writer per slot; crash remnants never become load candidates.
 public static class GameSave
 {
-	public const int SchemaVersion = 3, MaxFileBytes = 4 * 1024 * 1024;
+	public const int SchemaVersion = 4, MaxFileBytes = 4 * 1024 * 1024;
 	private sealed record Document(int SchemaVersion, int RulesVersion, string ContentHash, string StateHash, long Tick, uint RandomState,
 		EntityState[] Entities, CommandCursor[] Inputs, GameCommand[] PendingCommands, EntityId WorldPlayer, QuestStage QuestState, ItemState[] Items, ItemFootprint[]? Inventory = null);
 	private static readonly JsonSerializerOptions Options = new()
@@ -44,7 +44,8 @@ public static class GameSave
 			if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("SchemaVersion", out var schema) || schema.ValueKind != JsonValueKind.Number || !schema.TryGetInt32(out int version) ||
 				!root.TryGetProperty("RulesVersion", out var rules) || rules.ValueKind != JsonValueKind.Number || !rules.TryGetInt32(out int rulesVersion)) throw new InvalidDataException("Save header missing.");
 			bool oldGrid = version == 1 && rulesVersion == 4;
-			bool legacy = oldGrid || (version == 2 && rulesVersion == 5);
+			bool oldResources = oldGrid || (version == 2 && rulesVersion == 5);
+			bool legacy = oldResources || (version == 3 && rulesVersion == 6);
 			if (!legacy && (version != SchemaVersion || rulesVersion != GameSimulation.RulesVersion)) throw new SaveCompatibilityException("Unsupported save schema or game rules. File preserved.");
 			if (!root.TryGetProperty("ContentHash", out var content) || content.ValueKind != JsonValueKind.String) throw new InvalidDataException("Missing content identity.");
 			if (content.GetString() != ContentHash(collision, world)) throw new SaveCompatibilityException("Save requires different level content. File preserved.");
@@ -54,7 +55,7 @@ public static class GameSave
 			{
 				if (actor.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Invalid entity.");
 				foreach (string field in new[] { "Mana", "MaxMana", "SkillCooldown", "ManaRecoveryTicks", "SelectedSkill" })
-					if (actor.TryGetProperty(field, out _) == legacy) throw new InvalidDataException("Resource fields disagree with save version.");
+					if (actor.TryGetProperty(field, out _) == oldResources) throw new InvalidDataException("Resource fields disagree with save version.");
 			}
 			var doc = JsonSerializer.Deserialize<Document>(data, Options) ?? throw new InvalidDataException("Empty save.");
 			if (oldGrid ? doc.Inventory is not null : doc.Inventory is null) throw new InvalidDataException("Invalid inventory layout for this save version.");
@@ -65,12 +66,13 @@ public static class GameSave
 			var game = legacy ? GameSimulation.RestoreLegacy(state) : GameSimulation.Restore(state);
 			if (doc.StateHash != game.ComputeStateHash(doc.RulesVersion)) throw new InvalidDataException("Save state checksum mismatch.");
 			if (oldGrid) game = Migrate(game, inventory);
-			if (legacy)
+			if (oldResources)
 			{
 				var upgraded = game.CaptureSnapshot();
 				game = GameSimulation.Restore(upgraded with { Entities = upgraded.Entities.Select(e => e with
 					{ Mana = 60, MaxMana = 60, SkillCooldown = 0, ManaRecoveryTicks = 0, SelectedSkill = SkillId.PowerStrike }).ToArray() });
 			}
+			else if (legacy) game = GameSimulation.Restore(game.CaptureSnapshot());
 			return new(game, false, legacy);
 		}
 		catch (JsonException error) { throw new InvalidDataException("Malformed save JSON.", error); }

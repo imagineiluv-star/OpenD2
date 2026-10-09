@@ -20,7 +20,7 @@ public sealed class LegacyItemDefinitions
 		var snapshot = request with { Bindings = request.Bindings.ToArray() }; var seen = new HashSet<ItemDefinition>();
 		foreach (var binding in snapshot.Bindings)
 		{
-			if (binding is null || !Enum.TryParse<ItemDefinition>(binding.Definition, out var id) || !Enum.IsDefined(id) || binding.Definition != id.ToString() || !seen.Add(id))
+			if (binding is null || !Enum.TryParse<ItemDefinition>(binding.Definition, out var id) || !Enum.IsDefined(id) || ItemCatalog.IsConsumable(id) || binding.Definition != id.ToString() || !seen.Add(id))
 				throw new InvalidDataException("Item definition bindings must reference unique preview catalog names.");
 			ItemTables.Code(binding.Code);
 		}

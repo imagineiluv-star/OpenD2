@@ -17,13 +17,13 @@ internal static class SkillContracts
 	{ var json = JsonNode.Parse(File.ReadAllText(file))!; change(json); File.WriteAllText(file, json.ToJsonString()); }
 	public static void Run(string root, Action<string, Action> test)
 	{
-		test("power strike shares damage/loot gates and pins independent v6 state", () =>
+		test("power strike shares damage/loot gates and pins independent v7 state", () =>
 		{
 			var game = Game(monster: Monster with { Health = 1, AttackCooldown = 0 }); Accept(game, Cast(game)); game.Step();
 			var player = game.GetEntity(Player.Id);
-			Check(player.Mana == 48 && player.SkillCooldown == 25 && player.AttackCooldown == 12 && game.Items.Length == 1);
+			Check(player.Mana == 48 && player.SkillCooldown == 25 && player.AttackCooldown == 12 && game.Items.Length == 2);
 			Check(game.Events.ToArray().Count(e => e.Kind == SimulationEventKind.SkillCast) == 1 && game.Events.ToArray().Any(e => e.Kind == SimulationEventKind.Died));
-			Check(game.ComputeStateHash() == "37a9133dd660fa610ec479c261b58b3db0ff14ea9c3f336488f96ce79b239ede");
+			Check(game.ComputeStateHash() == "d88d2b8f709d33b869ded3a8d6de78e701ec16110e7eb8ccc8947f545990d760");
 		});
 		test("power strike adds exactly twelve physical damage using the same RNG sample", () =>
 		{
@@ -109,7 +109,7 @@ internal static class SkillContracts
 				var state = new GameSimulation(1, [Player]).CaptureSnapshot(); Throws<InvalidDataException>(() => GameSimulation.Restore(state with { Entities = [actor] }));
 			}
 		});
-		test("queued selection/cast and fractional recovery survive v3 save and replay", () =>
+		test("queued selection/cast and fractional recovery survive current save and replay", () =>
 		{
 			var game = Game(Player with { Mana = 20, ManaRecoveryTicks = 24 }); var baseline = game.CaptureSnapshot(); var selection = Cast(game) with { Kind = CommandKind.SelectSkill, Target = default, X = 1 }; var cast = Cast(game, 2); Accept(game, selection); Accept(game, cast);
 			string file = Path.Combine(root, "skill-roundtrip.json"); GameSave.Save(file, game.CaptureSnapshot()); var loaded = GameSave.Load(file, Grid());
@@ -126,7 +126,7 @@ internal static class SkillContracts
 			for (int i = 0; i < 3; i++) game.Step(); Check(game.GetItem(new(2)).Slot == 2 && game.GetItem(new(4)).Slot == 1);
 			GameSave.Save(file, game.CaptureSnapshot()); Check(File.ReadAllBytes(file + ".bak").SequenceEqual(source) && !GameSave.Load(file, Grid()).Migrated);
 		});
-		test("old unchecksummed resource injection and v3 missing/tampered fields are rejected", () =>
+		test("old unchecksummed resource injection and current missing/tampered fields are rejected", () =>
 		{
 			string fixture = Path.Combine(AppContext.BaseDirectory, "Fixtures", "save-v2-items.json"); string file = Path.Combine(root, "skill-corrupt.json");
 			foreach (string field in new[] { "Mana", "MaxMana", "SkillCooldown", "ManaRecoveryTicks", "SelectedSkill" })
@@ -144,7 +144,7 @@ internal static class SkillContracts
 			var game = new GameSimulation(1, [Player, Monster with { Health = 1 }], world: world);
 			Accept(game, new(1, 1, Player.Id, Player.Region, CommandKind.Interact, Target: new(10))); game.Step(); Check(game.QuestState == QuestStage.Active);
 			Accept(game, Cast(game, 2)); Accept(game, new(2, 3, Player.Id, Player.Region, CommandKind.Interact, Target: new(10))); game.Step();
-			Check(game.QuestState == QuestStage.ReadyToTurnIn && game.Items.Length == 1 && game.GetEntity(Player.Id).Mana == 48);
+			Check(game.QuestState == QuestStage.ReadyToTurnIn && game.Items.Length == 2 && game.GetEntity(Player.Id).Mana == 48);
 			Check(game.Events.ToArray().Any(e => e.Kind == SimulationEventKind.InteractionFailed && e.Value == (int)InteractionFailure.Interrupted));
 		});
 		test("all resource fields affect the state hash and survive snapshot restoration", () =>

@@ -45,7 +45,7 @@ public partial class SimulationPreview
 	private void RefreshHud()
 	{
 		if (simulation is null) return;
-		RefreshSkillControls();
+		RefreshSkillControls(); RefreshPotionControls();
 		var next = (current.Health, current.MaxHealth, current.Mana, current.MaxMana, current.SkillCooldown, current.SelectedSkill, paused, current.Region);
 		if (lastHud == next) return;
 		lastHud = next; healthBar.MaxValue = current.MaxHealth; healthBar.Value = current.Health; legacyHud.SetHealth(current.Health, current.MaxHealth);

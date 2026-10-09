@@ -14,7 +14,7 @@ internal static class GridInventoryContracts
 	private static InventoryLayout Layout(int swordWidth = 1, int swordHeight = 3, int vestWidth = 2, int vestHeight = 3, string code = "") => new([new(ItemDefinition.TrainingSword, code, swordWidth, swordHeight), new(ItemDefinition.TrainingVest, "", vestWidth, vestHeight)]);
 	private static GameSimulation Game(ItemState[] items, InventoryLayout? layout = null)
 	{
-		var actors = new[] { new EntityState(Player, new(1), new(384, 384)) }.Concat(items.Select(i => new EntityState(new(i.Id.Value), new(1), new(640, 384), Kind: EntityKind.Monster, Health: 0)));
+		var actors = new[] { new EntityState(Player, new(1), new(384, 384)) }.Concat(items.Select(i => new EntityState(new((uint)i.Id.Value), new(1), new(640, 384), Kind: EntityKind.Monster, Health: 0)));
 		var game = new GameSimulation(1, actors, Grid(), inventory: layout);
 		return GameSimulation.Restore(game.CaptureSnapshot() with { Items = items });
 	}

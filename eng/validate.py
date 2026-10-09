@@ -62,6 +62,7 @@ assert "OPEND2_PLAY12_ITEMS_READY" in output, "Legacy item artwork marker missin
 assert "OPEND2_PLAY12_ITEM_SETUP_READY" in output, "Item artwork setup marker missing"
 assert "OPEND2_PLAY13_DEFINITIONS_READY" in output, "Item reference definitions marker missing"
 assert "OPEND2_PLAY13_DEFINITION_SETUP_READY" in output, "Item definition setup marker missing"
+assert "OPEND2_PLAY16_POTIONS_READY" in output, "Potion/belt controls marker missing"
 assert "OPEND2_PLAY15_SKILL_READY" in output, "Mana/skill controls marker missing"
 assert "OPEND2_PLAY14_GRID_READY" in output, "Grid inventory marker missing"
 assert "OPEND2_PLAY14_GRID_SETUP_READY" in output, "Grid setup marker missing"

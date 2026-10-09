@@ -21,7 +21,7 @@ public partial class SimulationPreview
 	private readonly Button inventoryButton = new() { Text = "Inventory" };
 	private void SetItemTextures(LegacyItemTextures? next)
 	{
-		foreach (var button in itemSlots) button.Icon = null;
+		foreach (var button in itemSlots.Concat(beltSlots)) button.Icon = null;
 		itemTextures?.Dispose(); itemTextures = next;
 	}
 	private void ToggleInventory()
@@ -66,7 +66,8 @@ public partial class SimulationPreview
 		}
 		inventoryPanel.AddChild(itemDetails); inventoryPanel.AddChild(gearInfo);
 		var actions = new HFlowContainer(); inventoryPanel.AddChild(actions);
-		foreach (var button in new[] { pickup, equip, unequip, drop, movingItem }) actions.AddChild(button);
+		foreach (var button in new[] { pickup, equip, unequip, drop, usePotion, movingItem }) actions.AddChild(button);
+		usePotion.Pressed += () => { if (CanUsePotions) UseSelected(CommandKind.UseItem); };
 		pickup.Pressed += PickupNearest; equip.Pressed += () => UseSelected(CommandKind.Equip);
 		unequip.Pressed += () => UseSelected(CommandKind.Unequip); drop.Pressed += () => UseSelected(CommandKind.DropItem);
 	}
@@ -76,9 +77,9 @@ public partial class SimulationPreview
 		item = default; if (!CanEditInventory || data.VariantType != Variant.Type.Dictionary) return false;
 		var fields = data.AsGodotDictionary();
 		if (!fields.TryGetValue("session", out var session) || session.VariantType != Variant.Type.Int || session.AsInt64() != inventoryGeneration ||
-			!fields.TryGetValue("item", out var id) || id.VariantType != Variant.Type.Int || id.AsInt64() is <= 0 or > uint.MaxValue) return false;
-		item = new((uint)id.AsInt64());
-		foreach (var entry in simulation.Items) if (entry.Id == item) return entry.Owner == Player && entry.Location is ItemLocation.Inventory or ItemLocation.Equipped;
+			!fields.TryGetValue("item", out var id) || id.VariantType != Variant.Type.Int || id.AsInt64() <= 0) return false;
+		item = new((ulong)id.AsInt64());
+		foreach (var entry in simulation.Items) if (entry.Id == item) return entry.Owner == Player && entry.Location is ItemLocation.Inventory or ItemLocation.Equipped or ItemLocation.Belt;
 		return false;
 	}
 	private bool CanDropInventory(int slot, Vector2 point, Variant data)
@@ -117,6 +118,8 @@ public partial class SimulationPreview
 		foreach (var item in simulation.Items)
 		{
 			if (item.Owner != Player) continue;
+			if (item.Id == selectedItem) selected = item;
+			if (item.Location == ItemLocation.Belt) continue;
 			int slot = item.Location == ItemLocation.Inventory ? item.Slot + 2 : item.Slot;
 			slotItems[slot] = item.Id;
 			if (item.Location == ItemLocation.Inventory)
@@ -124,7 +127,6 @@ public partial class SimulationPreview
 				bagCount++; var size = simulation.Inventory.Get(item.Definition); usedCells += size.Width * size.Height;
 				for (int y = 0; y < size.Height; y++) for (int x = 0; x < size.Width; x++) slotItems[2 + item.Slot + y * InventoryLayout.Width + x] = item.Id;
 			}
-			if (item.Id == selectedItem) selected = item;
 		}
 		if (selected is null) selectedItem = default;
 		for (int i = 0; i < itemSlots.Length; i++)
@@ -137,16 +139,16 @@ public partial class SimulationPreview
 			itemSlots[i].ZIndex = slotItems[i] == default ? 0 : 1;
 			itemSlots[i].Disabled = !CanEditInventory; itemSlots[i].SetPressedNoSignal(selectedItem != default && slotItems[i] == selectedItem);
 		}
-		equip.Disabled = !CanEditInventory || selected is not { Location: ItemLocation.Inventory };
-		unequip.Disabled = !CanEditInventory || selected is not { Location: ItemLocation.Equipped } || simulation.FindInventorySpace(Player, selected.Value.Definition) < 0;
-		drop.Disabled = !CanEditInventory || selected is not { Location: ItemLocation.Inventory };
+		equip.Disabled = !CanEditInventory || selected is not { Location: ItemLocation.Inventory } || ItemCatalog.IsConsumable(selected.Value.Definition);
+		unequip.Disabled = !CanEditInventory || selected is not { Location: ItemLocation.Equipped or ItemLocation.Belt } || simulation.FindInventorySpace(Player, selected.Value.Definition) < 0;
+		drop.Disabled = !CanEditInventory || selected is not { Location: ItemLocation.Inventory or ItemLocation.Belt };
 		movingItem.Disabled = !CanEditInventory || selected is null;
 		if (selected is null) movingItem.SetPressedNoSignal(false);
-		PositionInventory();
+		PositionInventory(); RefreshBelt(selected);
 		if (selected is { } chosen)
 		{
 			var spec = ItemCatalog.Get(chosen.Definition); var footprint = simulation.Inventory.Get(chosen.Definition);
-			itemDetails.Text = $"{spec.Name} · {chosen.Location}\n{spec.Slot} | damage bonus +{spec.DamageBonus} | armor {spec.Armor}\nBag footprint {footprint.Width}×{footprint.Height} · code {(footprint.Code.Length == 0 ? "preview" : footprint.Code)}";
+			itemDetails.Text = $"{spec.Name} · {chosen.Location}\n{(ItemCatalog.IsConsumable(chosen.Definition) ? $"Restores HP {spec.HealthRecovery} / MP {spec.ManaRecovery} instantly · one use" : $"{spec.Slot} | damage bonus +{spec.DamageBonus} | armor {spec.Armor}")}\nBag footprint {footprint.Width}×{footprint.Height} · code {(footprint.Code.Length == 0 ? "preview" : footprint.Code)}";
 			if (legacyScene?.ItemDefinitions?.Bindings.TryGetValue(chosen.Definition, out var original) == true)
 				itemDetails.Text += "\n\n" + ItemDefinitionText.Describe(original);
 		}

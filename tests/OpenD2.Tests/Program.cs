@@ -44,6 +44,7 @@ try
 	ItemContracts.Run(Test);
 	GridInventoryContracts.Run(root, Test);
 	SkillContracts.Run(root, Test);
+	PotionContracts.Run(root, Test);
 	SaveContracts.Run(root, Test);
 	LegacySaveContracts.Run(root, Test);
 	NpcContracts.Run(Test);
