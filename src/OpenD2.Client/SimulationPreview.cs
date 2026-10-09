@@ -86,10 +86,10 @@ public partial class SimulationPreview : VBoxContainer
 		AddChild(audio); BuildMenu(); AddChild(playPanel);
 		playPanel.AddChild(new Label { Text = "Camp / Cellar — offline play" });
 		BuildHud(); playPanel.AddChild(questInfo); playPanel.AddChild(view); BuildLegacyHud(); playPanel.AddChild(status);
-		view.MoveRequested += ClickMove; view.AttackRequested += ClickAttack;
+		BuildGroundItems(); view.MoveRequested += ClickMove; view.AttackRequested += ClickAttack;
 		var controls = new HFlowContainer(); playPanel.AddChild(controls);
-		foreach (var button in new[] { menuButton, inventoryButton, restart, pause, attack, interact, save, load }) controls.AddChild(button);
-		playPanel.AddChild(new Label { Text = "Click ground to move; click a monster to attack. Arrows move · Space attacks · Q casts selected skill · E talks / uses a portal · F picks up loot · 1–4 use belt potions.\nGreen: NPC · Gold: portal · Gray / purple: blocked cells. Click the game view to use the keyboard.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+		foreach (var button in new[] { menuButton, inventoryButton, restart, pause, attack, interact, save, load, groundNames }) controls.AddChild(button);
+		playPanel.AddChild(new Label { Text = "Click ground to move; click a monster to attack; click a loot name to approach and pick it up. L hides names; right-click cancels movement. Arrows move · Space attacks · Q casts selected skill · E talks / uses a portal · F picks up loot · 1–4 use belt potions.\nGreen: NPC · Gold: portal · Gray / purple: blocked cells. Click the game view to use the keyboard.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
 		BuildSkills(); BuildBelt(); BuildInventory();
 		BuildContentControls();
 		playPanel.AddChild(diagnosticControls);
@@ -107,7 +107,7 @@ public partial class SimulationPreview : VBoxContainer
 		replay.Pressed += VerifyReplay; save.Pressed += async () => await CheckpointFile(false, ActiveSavePath);
 		load.Pressed += () => ConfirmRestart(() => _ = CheckpointFile(true, ActiveSavePath));
 		Smoke(); CombatSmoke(); WorldSmoke(); ItemSmoke(); SaveSmoke(); NewRun();
-		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); HudSmoke(); AudioSmoke(); InventorySmoke(); GridInventorySmoke(); SkillSmoke(); PotionSmoke(); }
+		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); HudSmoke(); AudioSmoke(); InventorySmoke(); GridInventorySmoke(); SkillSmoke(); PotionSmoke(); GroundItemSmoke(); }
 		OpenMenu(initial: true);
 		if (smokeTest) Callable.From(() => { _ = MenuSmoke(); }).CallDeferred();
 	}
@@ -136,6 +136,7 @@ public partial class SimulationPreview : VBoxContainer
 	private void AttackNearest(bool skill)
 	{
 		if (!current.IsAlive || verifying) return;
+		StopInput();
 		EntityId nearest = default; long best = long.MaxValue;
 		foreach (var e in simulation.Entities)
 		{
@@ -149,6 +150,7 @@ public partial class SimulationPreview : VBoxContainer
 	private void InteractNearest()
 	{
 		if (!current.IsAlive || verifying || simulation.World is not { } world) return;
+		StopInput();
 		EntityId nearest = default; long best = long.MaxValue;
 		void Consider(EntityId id, RegionId region, GamePosition position)
 		{
@@ -162,6 +164,7 @@ public partial class SimulationPreview : VBoxContainer
 	}
 	private void PickupNearest()
 	{
+		StopInput();
 		ItemId nearest = default; long best = long.MaxValue;
 		foreach (var item in simulation.Items)
 		{
@@ -223,7 +226,7 @@ public partial class SimulationPreview : VBoxContainer
 			{
 				worldChanged = true;
 				status.Text = item.Kind == SimulationEventKind.ItemFailed ? $"Item: {(ItemFailure)item.Value}" :
-					item.Kind == SimulationEventKind.ItemConsumed ? $"Used {ItemCatalog.Get(simulation.GetItem(item.Item).Definition).Name}: restored {item.Value}." : item.Kind == SimulationEventKind.ItemDropped ? "Loot dropped. Approach it and press F." : $"Item #{item.Item.Value}: {(CommandKind)item.Value}";
+					item.Kind == SimulationEventKind.ItemConsumed ? $"Used {ItemCatalog.Get(simulation.GetItem(item.Item).Definition).Name}: restored {item.Value}." : item.Kind == SimulationEventKind.ItemDropped ? "Loot dropped. Click its name, or approach and press F." : $"Item #{item.Item.Value}: {(CommandKind)item.Value}";
 			}
 			else if (item.Kind == SimulationEventKind.RegionChanged) status.Text = $"Entered {simulation.World!.GetRegion(current.Region).Name}. Region progress is retained.";
 			else if (item.Kind == SimulationEventKind.InteractionFailed) status.Text = $"Interaction: {(InteractionFailure)item.Value}. Approach the marker; release Space before using E.";
@@ -486,6 +489,8 @@ public partial class SimulationCanvas : Control
 	public override void _GuiInput(InputEvent input)
 	{
 		if (input is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } mouse) { GrabFocus(); ClickWorld(mouse.Position); AcceptEvent(); }
+		if (input is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Right }) { GrabFocus(); CancelRequested?.Invoke(); AcceptEvent(); }
+		if (input is InputEventKey { Pressed: true, Echo: false, Keycode: Key.L }) { ToggleLootRequested?.Invoke(); AcceptEvent(); }
 		if (input is InputEventKey { Keycode: Key.Up or Key.Down or Key.Left or Key.Right or Key.Space or Key.Q or Key.E or Key.F or Key.Key1 or Key.Key2 or Key.Key3 or Key.Key4 }) AcceptEvent();
 	}
 	public override void _Draw()
@@ -543,13 +548,7 @@ public partial class SimulationCanvas : Control
 		}
 		if (pendingNpc is { } lastNpc) DrawGuide(lastNpc);
 		DrawForeground(int.MaxValue, roofs: true);
-		foreach (var item in simulation.Items)
-		{
-			if (item.Location != ItemLocation.Ground || item.Region != simulation.ActiveRegion) continue;
-			var point = Project(item.Position);
-			DrawRect(new Rect2(point - new Vector2(4, 4), new Vector2(8, 8)), Colors.Cyan);
-			DrawString(GetThemeDefaultFont(), point + new Vector2(12, 19), ItemCatalog.Get(item.Definition).Name, fontSize: 14, modulate: Colors.Cyan);
-		}
+		DrawGroundLabels();
 
 		if (HasFocus()) DrawArc(center, 14, 0, Mathf.Tau, 32, Colors.White, 1, true);
 	}
