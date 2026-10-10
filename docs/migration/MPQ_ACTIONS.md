@@ -65,3 +65,11 @@ python eng/qa/run_mpq_action.py --mode terrain --work /tmp/opend2-demo-input --o
   실제 검사 결과는 `Fetch pinned public demo and validate actual MPQs` 단계와 보고서로 구분한다.
 
 이전 DEMO_MPQ_RESULTS.md는 수정 전 실행 기록이다. 원본 게임 데이터는 Git/아티팩트에 추가하지 않는다.
+
+## 음악 재생 경로 검사
+
+full-audit 성공 후 같은 실제 MPQ로 `--check-demo-music`를 실행한다. 42MB 음악 전체의
+PCM cursor 출력/반복 경계를 검증하며 실패/오류 출력은 작업 실패다.
+`music.json`, `music.stderr.txt`를 추가 보존한다. GUI/스피커 청취는 NOT_RUN이다.
+합성 WAV의 Godot generator 제어는 Migration validation에서 별도로 검사한다.
+[MPQ_MUSIC](MPQ_MUSIC.md)에 메모리 예산과 한계를 기록한다.

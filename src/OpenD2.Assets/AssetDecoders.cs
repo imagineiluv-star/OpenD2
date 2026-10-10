@@ -44,14 +44,15 @@ public static class AssetDecoders
 			default: throw new ArgumentException("Unsupported decoder.", nameof(kind));
 		}
 	}
-	public static byte[] ReadFromInstall(string directory, string logicalPath)
+	public static byte[] ReadFromInstall(string directory, string logicalPath, int maxBytes = MaxInputBytes)
 	{
+		if (maxBytes < 0 || maxBytes > PcmWave.MaxAuditInputBytes) throw new ArgumentOutOfRangeException(nameof(maxBytes));
 		logicalPath = MpqArchive.NormalizePath(logicalPath);
 		foreach (string archivePath in GameInstall.Probe(directory).Archives)
 		{
 			// Failure to open a higher-priority archive is not silently bypassed.
 			using var archive = new MpqArchive(archivePath);
-			try { return archive.Read(logicalPath, MaxInputBytes); }
+			try { return archive.Read(logicalPath, maxBytes); }
 			catch (MpqException error) when (error.Code == 2) { }
 		}
 		throw new FileNotFoundException("Resource not found in installation MPQs.", logicalPath);

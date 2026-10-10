@@ -71,7 +71,7 @@ def verify_package(package, metadata):
     return value
 
 
-def prepare(data, package, metadata, output):
+def prepare(data, package, metadata, output, include_music=False):
     data, output = data.resolve(), output.resolve()
     if output == data or output.is_relative_to(data):
         raise ValueError("Output must be outside the MPQ directory")
@@ -80,27 +80,34 @@ def prepare(data, package, metadata, output):
     source_hashes = verify_data(data)
     provenance = verify_package(package, metadata)
     scene_path = HERE / "demo-town-scene.json"
-    scene_hash = digest(scene_path)
+    scene_bytes = scene_path.read_bytes()
+    cases = dict(CASES)
+    if include_music:
+        scene = json.loads(scene_bytes)
+        scene['Audio'] = {'Effects': [], 'Music': [{'Region': 1, 'Path': 'data/global/music/act1/town1.wav'}]}
+        scene_bytes = (json.dumps(scene, ensure_ascii=False, indent=2) + "\n").encode('utf-8')
+        cases['MPQ-06'] = 'Listen to town music, pause/resume, mute/volume, stop/reload; retain audio evidence'
+    scene_hash = hashlib.sha256(scene_bytes).hexdigest()
     report = {
-        "schema_version": 1, "scope": "public_demo_terrain_preview", "status": "NOT_RUN",
+        "schema_version": 1, "scope": "public_demo_terrain_music_preview" if include_music else "public_demo_terrain_preview", "status": "NOT_RUN",
         "package": provenance, "dataset_identity": "public-demo-1.04-declared",
         "mpq_integrity": "PASS", "mpq_hashes": source_hashes,
         "scene_json_sha256": scene_hash, "expected_content_id": CONTENT_ID,
         "observed_content_id": "", "gui_qa": "NOT_RUN", "full_lod_compatibility": "NOT_VERIFIED",
-        "original_rules_validated": False, "actor_artwork": "BLOCKED", "audio_qa": "BLOCKED",
+        "original_rules_validated": False, "actor_artwork": "BLOCKED", "audio_qa": "NOT_RUN" if include_music else "BLOCKED",
         "full_asset_audit": "NOT_RUN", "environment": {"os": "", "cpu": "", "gpu": "", "display": ""},
         "started_utc": "", "finished_utc": "", "action_log": "action-log.txt",
         "cases": [{"id": key, "expected": title, "status": "NOT_RUN", "actual": "", "evidence": []}
-                  for key, title in CASES.items()],
+                  for key, title in cases.items()],
         "limitations": ["Identity check is not MPQ decoding or GUI acceptance",
                         "Historical Linux audit exit 3: missing LoD archives and three WAV rejections",
                         "Scene uses current lod-1.10f decoder contract, not certified demo compatibility",
-                        "Actors/NPC/HUD/items are placeholders; original artwork/audio not configured",
+                        "Actors/NPC/HUD/items are placeholders; only optional town music is configured",
                         "No portal in this single-region preview; synthetic rules, not original campaign"],
     }
     output.mkdir(parents=True, exist_ok=False)
     try:
-        shutil.copyfile(scene_path, output / "scene.json")
+        (output / "scene.json").write_bytes(scene_bytes)
         shutil.copyfile(HERE / "MPQ_GROK_TASK.md", output / "MPQ_GROK_TASK.md")
         (output / "mpq-qa-result.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         (output / "action-log.txt").write_text("", encoding="utf-8")
@@ -118,9 +125,10 @@ def main():
     parser.add_argument("--package", type=Path, required=True)
     parser.add_argument("--package-metadata", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--music", action="store_true", help="Include demo town music and separate listening case")
     args = parser.parse_args()
     try:
-        report = prepare(args.data, args.package, args.package_metadata, args.output)
+        report = prepare(args.data, args.package, args.package_metadata, args.output, args.music)
         print(json.dumps({"mpq_integrity": report["mpq_integrity"], "gui_qa": report["gui_qa"],
                           "scope": report["scope"], "scene_json_sha256": report["scene_json_sha256"]}))
         return 0
