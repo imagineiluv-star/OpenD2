@@ -127,6 +127,7 @@ public partial class Main : Node3D
 		{ previews.CurrentTab = 0; simulation.RequestSceneLoad(file); },
 		file => { previews.CurrentTab = 4; artwork.RequestOpen(file); }) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
 		previews.AddChild(artScroll); artScroll.AddChild(artwork);
+		previews.AddChild(new OnlinePanel { Name = "Online" });
 		previews.CurrentTab = 0;
 		var quit = new Button { Text = "Quit" }; panel.AddChild(quit); quit.Pressed += () => GetTree().Quit();
 	}

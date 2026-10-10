@@ -4,7 +4,7 @@ import subprocess
 import xml.etree.ElementTree as ET
 
 root = Path(__file__).resolve().parents[1]
-for name in ("Core", "Assets", "Npc"):
+for name in ("Core", "Assets", "Npc", "Online"):
     folder = root / "src" / ("OpenD2." + name)
     project = ET.parse(folder / ("OpenD2." + name + ".csproj")).getroot()
     assert project.attrib["Sdk"] == "Microsoft.NET.Sdk"

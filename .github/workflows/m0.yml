@@ -26,6 +26,8 @@ jobs:
             preset: macOS
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    env:
+      DOTNET_PROCESSOR_COUNT: "2"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -52,6 +54,25 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag || 'ci' }}
           SOURCE_SHA: ${{ github.sha }}
         run: python eng/release.py pack --preset ${{ matrix.preset }} --smoke
+      - name: Online ownership and persistence contracts
+        run: dotnet run --project tests/OpenD2.OnlineTests -c Release
+      - name: Publish server and test two extracted online clients
+        run: python eng/pack-online-server.py
+      - name: Preserve online validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenD2-online-${{ matrix.preset }}
+          path: artifacts/online/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload validated online server
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenD2-server-${{ matrix.preset }}
+          path: artifacts/server-packages/
+          if-no-files-found: error
+          retention-days: 14
       - name: Preserve Godot validation logs
         if: always()
         uses: actions/upload-artifact@v4

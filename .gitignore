@@ -69,3 +69,6 @@ artifacts/
 /user-data/
 /asset-cache/
 **/__pycache__/
+
+# Private online server accounts and checkpoints
+**/realm-data/
