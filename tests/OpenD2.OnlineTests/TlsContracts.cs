@@ -39,14 +39,15 @@ internal static class TlsContracts
         var checks = new List<string>();
         void Pass(string name) { checks.Add(name); Console.WriteLine("TLS PASS " + name); }
         string ca = Path.Combine(fixtures, "ca.pem");
-        foreach (string name in new[] { "valid", "wrong-host", "expired" })
+        foreach (string name in new[] { "valid", "open", "wrong-host", "expired" })
         {
             using var reservation = new TcpListener(IPAddress.Loopback, 0);
             reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
             string url = "https://127.0.0.1:" + port;
             var start = new ProcessStartInfo(server) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
             foreach (string arg in new[] { "--urls", url, "--data", Path.Combine(fixtures, "data-" + name) }) start.ArgumentList.Add(arg);
-            start.Environment["Kestrel__Certificates__Default__Path"] = Path.Combine(fixtures, name + ".pfx");
+            start.ArgumentList.Add("--mode"); start.ArgumentList.Add(name == "open" ? "open" : "realm");
+            start.Environment["Kestrel__Certificates__Default__Path"] = Path.Combine(fixtures, (name == "open" ? "valid" : name) + ".pfx");
             start.Environment["Kestrel__Certificates__Default__Password"] = password;
             // Validate the self-contained executable without any SDK/runtime search paths.
             foreach (string key in start.Environment.Keys.Where(k => k.StartsWith("DOTNET_ROOT", StringComparison.OrdinalIgnoreCase) || k.Equals("DOTNET_HOST_PATH", StringComparison.OrdinalIgnoreCase)).ToArray()) start.Environment.Remove(key);
@@ -66,6 +67,11 @@ internal static class TlsContracts
                 {
                     using var client = new OnlineClient(url, ca);
                     await client.CheckServer();
+                    using (var wrongMode = new OnlineClient(url, ca, "open"))
+                    {
+                        try { await wrongMode.CheckServer(); throw new Exception("Open client accepted Realm server."); }
+                        catch (InvalidDataException) { }
+                    }
                     if (client.TrustedRootSha256 != root.GetCertHashString(HashAlgorithmName.SHA256)) throw new Exception("CA fingerprint mismatch.");
                     await client.Login(new("tls-player", Convert.ToHexString(RandomNumberGenerator.GetBytes(16))), true);
                     var character = await client.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest("TLSHero"));
@@ -83,6 +89,11 @@ internal static class TlsContracts
                     try { using var bad = new OnlineClient("http://127.0.0.1", ca); throw new Exception("CA with plaintext accepted."); }
                     catch (ArgumentException) { Pass("private CA cannot enable plaintext"); }
                     await StreamContracts.Run(url, ca, Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "stream-contracts.json"));
+                }
+                else if (name == "open")
+                {
+                    await ModeContracts.VerifyOpenServer(url, ca);
+                    Pass("Open server mode, pre-login mismatch rejection and WSS identity");
                 }
                 else { await RejectTls(url, ca); Pass(name + " certificate rejected"); }
             }

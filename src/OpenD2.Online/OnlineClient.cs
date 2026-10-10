@@ -16,10 +16,13 @@ public sealed class OnlineClient : IDisposable
     private int disposed;
     private readonly X509Certificate2? trustedRoot;
     private string? token;
+    public string Mode { get; }
     public string? TrustedRootSha256 { get; }
     public string RoomTransport => http.BaseAddress!.Scheme == "https" ? "WSS" : "WS (loopback)";
-    public OnlineClient(string address, string? caFile = null)
+    public OnlineClient(string address, string? caFile = null, string mode = "realm")
     {
+        if (mode is not ("realm" or "open")) throw new ArgumentException("Unknown online mode.", nameof(mode));
+        Mode = mode;
         var uri = new Uri(address, UriKind.Absolute);
         if (uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 || uri.AbsolutePath != "/" ||
             (uri.Scheme != "https" && !(uri.Scheme == "http" && uri.IsLoopback))) throw new ArgumentException("Use HTTPS, or HTTP on loopback only.");
@@ -75,6 +78,7 @@ public sealed class OnlineClient : IDisposable
         var health = await Send<ServerInfo>(HttpMethod.Get, "health", cancellation: cancellation);
         if (health.Protocol != 1 || health.Rules != OpenD2.Core.GameSimulation.RulesVersion || health.RoomStream != 1)
             throw new InvalidDataException("Server protocol or game rules do not match this client.");
+        if (health.Mode != Mode) throw new InvalidDataException("Server mode does not match the selected character mode.");
     }
     public async IAsyncEnumerable<RoomView> WatchRoom(Guid room, [EnumeratorCancellation] CancellationToken cancellation = default)
     {

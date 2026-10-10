@@ -25,8 +25,11 @@ public sealed class Realm : IDisposable
     private readonly Dictionary<Guid, Room> rooms;
     private readonly Dictionary<string, (Guid Account, DateTimeOffset Until)> sessions = new();
     private bool failed;
-    public Realm(string directory, TimeProvider? time = null)
+    public string Mode { get; }
+    public Realm(string directory, TimeProvider? time = null, string mode = "realm")
     {
+        if (mode is not ("realm" or "open")) throw new ArgumentException("Unknown online mode.", nameof(mode));
+        Mode = mode;
         clock = time ?? TimeProvider.System;
         Directory.CreateDirectory(directory);
         file = Path.Combine(directory, "realm.json");
@@ -34,8 +37,10 @@ public sealed class Realm : IDisposable
         try
         {
             if (File.Exists(file) && new FileInfo(file).Length > 16 * 1024 * 1024) throw new InvalidDataException("Realm exceeds storage budget.");
-            var db = File.Exists(file) ? JsonSerializer.Deserialize<Database>(File.ReadAllBytes(file)) ?? throw new InvalidDataException("Empty realm.") : new(1, GameSimulation.RulesVersion, [], [], []);
-            if (db.Version != 1 || db.RulesVersion != GameSimulation.RulesVersion || db.Accounts.Length > 256 || db.Characters.Length > 1024 || db.Rooms.Length > 32) throw new InvalidDataException("Unsupported realm version/budget.");
+            var db = File.Exists(file) ? JsonSerializer.Deserialize<Database>(File.ReadAllBytes(file)) ?? throw new InvalidDataException("Empty realm.") : new(2, GameSimulation.RulesVersion, [], [], [], Mode);
+            if (db.Version is not (1 or 2) || db.RulesVersion != GameSimulation.RulesVersion || db.Accounts.Length > 256 || db.Characters.Length > 1024 || db.Rooms.Length > 32) throw new InvalidDataException("Unsupported realm version/budget.");
+            string? storedMode = db.Version == 1 && db.Mode is null ? "realm" : db.Mode;
+            if (storedMode != Mode || (db.Version == 1 && Mode != "realm")) throw new InvalidDataException("Database mode does not match this server. Use separate data directories.");
             accounts = db.Accounts.ToList(); characters = db.Characters.ToList(); rooms = db.Rooms.ToDictionary(r => r.Id, r => new Room(r));
             if (accounts.Select(a => a.Id).Distinct().Count() != accounts.Count || accounts.Select(a => a.Name).Distinct().Count() != accounts.Count ||
                 characters.Select(c => c.Id).Distinct().Count() != characters.Count || characters.Any(c => !accounts.Any(a => a.Id == c.Account)) ||
@@ -232,7 +237,7 @@ public sealed class Realm : IDisposable
         Need(!failed, 503, "Storage unavailable."); string temporary = file + ".tmp";
         try
         {
-            var db = new Database(1, GameSimulation.RulesVersion, accounts.ToArray(), characters.ToArray(), rooms.Values.Select(r => r.Saved with { Game = r.Game is null ? null : SavedGame.Capture(r.Game) }).ToArray());
+            var db = new Database(2, GameSimulation.RulesVersion, accounts.ToArray(), characters.ToArray(), rooms.Values.Select(r => r.Saved with { Game = r.Game is null ? null : SavedGame.Capture(r.Game) }).ToArray(), Mode);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(db);
             if (bytes.Length > 16 * 1024 * 1024) throw new IOException("Realm exceeds storage budget.");
             var options = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write, Share = FileShare.None };

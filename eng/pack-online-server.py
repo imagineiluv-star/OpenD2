@@ -25,6 +25,7 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
                     '--self-contained', 'true', '-o', str(stage), '-m:1'], cwd=ROOT, check=True)
     shutil.copyfile(ROOT/'docs/migration/ONLINE_PLAY.md', stage/'ONLINE_PLAY.md')
     shutil.copyfile(ROOT/'docs/migration/ONLINE_NETWORK.md', stage/'ONLINE_NETWORK.md')
+    shutil.copyfile(ROOT/'docs/migration/ONLINE_MODES.md', stage/'ONLINE_MODES.md')
     package = output/f'OpenD2-server-{rid}.zip'
     with zipfile.ZipFile(package, 'w', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(stage.rglob('*')):

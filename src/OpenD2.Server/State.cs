@@ -21,5 +21,5 @@ public sealed record SavedGame(string StateHash, long Tick, uint Random, EntityS
     }
 }
 public sealed record SavedRoom(Guid Id, string Name, Guid Host, string Salt, string PasswordHash, Member[] Members, SavedGame? Game);
-public sealed record Database(int Version, int RulesVersion, Account[] Accounts, Character[] Characters, SavedRoom[] Rooms);
+public sealed record Database(int Version, int RulesVersion, Account[] Accounts, Character[] Characters, SavedRoom[] Rooms, string? Mode = null);
 public sealed class Rejected(int status, string message) : Exception(message) { public int Status => status; }
