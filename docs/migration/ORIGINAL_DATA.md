@@ -29,6 +29,29 @@ Git checkout 안의 출력, 경로가 겹치는 입력/출력, 심볼릭 링크,
 등록 성공이어도 `compatibility_status`와 `gui_status`는 `NOT_RUN`이다.
 CI는 가짜 바이트로 등록/손상/경로 경계만 시험하고 실제 원본 데이터를 포함하지 않는다.
 
+## 다른 PC로 이관
+
+등록 데이터 세트를 ZIP64로 묶어 개인 보관 매체로 옮긴 뒤 새 보관함에 가져온다.
+MPQ 자체가 압축되어 있으므로 전송 ZIP은 추가 압축하지 않는다.
+
+```sh
+python eng/original_data_transfer.py pack "/path/to/private-vault/<dataset ID>" --output "/path/to/private-transfer/dataset.zip"
+python eng/original_data_transfer.py unpack "/path/to/private-transfer/dataset.zip" --vault "/path/to/new-private-vault"
+python eng/original_data.py verify "/path/to/new-private-vault/<dataset ID>"
+```
+
+데이터 ID·버전/언어 신고값·MPQ 바이트를 보존한다. 가져오기는 파일 수·크기·경로·해시를
+검사한 임시 디렉터리만 게시한다. 경로 이탈, 중복, 링크, 혼합 데이터 ID, 누락·변조는 실패한다.
+같은 데이터가 이미 있으면 검증 후 재사용하고, 손상된 기존 데이터는 덮어쓰지 않는다.
+내보내기는 기존 ZIP을 덮어쓰지 않으며 읽는 도중 변경된 MPQ도 거부한다.
+완성 ZIP 게시에는 같은 파일시스템의 하드 링크가 필요하다. 미지원 매체라면 로컬 NTFS/APFS/ext4
+등에서 먼저 생성한 다음 복사한다. 여유 공간을 확보하고 동일 경로의 동시 쓰기를 피한다.
+
+ZIP은 암호화되지 않는다. 도구는 업로드·공유·권한 설정을 수행하지 않는다.
+Git 체크아웃 내부 출력을 거부하며 공개 릴리스/Actions 아티팩트에 원본 ZIP을 넣지 않는다.
+전송 검증은 원본 게임 호환성 또는 GUI 검증이 아니다. 두 상태는 계속 `NOT_RUN`으로 유지된다.
+CI는 합성 바이트로 왕복 이관과 실패 경계를 검사한다. 실제 MPQ 이관·디코딩·GUI는 미실행이다.
+
 ## 다음 이관 순서
 
 1. 실제 MPQ 수신과 등록 → 원본 버전/언어/패치 우선순위 확인.
