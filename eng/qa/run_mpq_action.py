@@ -117,7 +117,7 @@ def run(args):
         if args.mode == "terrain":
             command += ["--check-scene", str(data), str(ROOT / "eng/qa/demo-town-scene.json")]
         else:
-            command += ["--decode", str(data)]
+            command += ["--decode-demo", str(data)]
         result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", timeout=600)
         # Preserve all diagnostics; redact only the private input root from reports.
         stdout, stderr = result.stdout, result.stderr
@@ -139,10 +139,17 @@ def run(args):
             summary["limitations"] = ["Known LoD archives absent; raw scene check remains exit 3",
                                       "Actor art absent; terrain-only acceptance is not full QA-09 or GUI PASS"]
         else:
-            summary["scope"] = "strict_full_decode"
+            summary["scope"] = "strict_demo_inventory_audit"
             failed = (result.returncode != 0 or bool(stderr.strip()) or bool(report["Installation"]["MissingArchives"])
+                      or report["Installation"].get("Profile") != "demo-1.04"
+                      or bool(report["Installation"].get("UnclassifiedArchives"))
                       or any(a["ErrorCode"] for a in report["Archives"]) or any(e["ErrorCode"] for e in report["Entries"]))
             summary["full_audit"] = summary["status"] = "FAIL" if failed else "PASS"
+            summary["opaque_records"] = [{k: e[k] for k in ("SourceArchive", "LogicalPath", "ContentHash", "DecodeStatus")}
+                                         for e in report["Entries"] if e.get("Format") == "demo_opaque_record"]
+            summary["limitations"] = ["Demo archive profile only; not retail/LoD compatibility",
+                                      "Opaque records receive exact integrity validation, not audio decoding",
+                                      "Coverage limited to enumerated paths and implemented formats; GUI and runtime audio NOT_RUN"]
             summary["decoder_failures"] = [{k: e[k] for k in ("SourceArchive", "LogicalPath", "ErrorCode", "Size")}
                                            for e in report["Entries"] if e["ErrorCode"]]
         return 0 if summary["status"] == "PASS" else 3

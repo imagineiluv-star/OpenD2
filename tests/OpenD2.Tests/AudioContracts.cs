@@ -45,6 +45,34 @@ internal static class AudioContracts
 			BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4), (uint)bytes.Length - 8); Check(PcmWave.Parse(bytes).Frames == 1);
 			Bad(() => PcmWave.Parse(Wave(new byte[PcmWave.MaxDecodedBytes / 2 + 1], 8)));
 		});
+		test("WAV audit accepts large PCM without allocating decoded samples; runtime stays bounded", () =>
+		{
+			var wave = Wave(new byte[40 * 1024 * 1024]);
+			PcmWave.Validate(wave); // warm up before measuring this thread
+			long before = GC.GetAllocatedBytesForCurrentThread();
+			PcmWave.Validate(wave);
+			Check(GC.GetAllocatedBytesForCurrentThread() - before < 4096);
+			Bad(() => PcmWave.Parse(wave));
+			wave[40] ^= 1; Bad(() => PcmWave.Validate(wave));
+			Bad(() => PcmWave.Validate(new byte[PcmWave.MaxAuditInputBytes + 1]));
+		});
+		test("WAV audit preserves malformed header, codec and chunk rejection", () =>
+		{
+			foreach (int offset in new[] { 0, 4, 8, 20, 22, 24, 28, 32, 34, 40 })
+			{ var wave = Wave([0, 0]); wave[offset] ^= 0x7f; Bad(() => PcmWave.Validate(wave)); }
+			Bad(() => PcmWave.Validate(Wave([128], 8)[..^1]));
+		});
+		test("demo opaque records require exact path, archive, length and hash", () =>
+		{
+			const string path = @"data\global\sfx\cursor\curindx.wav";
+			Check(DemoOpaqueRecords.IsRecord("d2sfx.mpq", path));
+			Check(!DemoOpaqueRecords.IsRecord("patch_d2.mpq", path));
+			Check(!DemoOpaqueRecords.IsRecord("d2sfx.mpq", "other.wav"));
+			Bad(() => DemoOpaqueRecords.Validate(path, new byte[72]));
+			Bad(() => DemoOpaqueRecords.Validate(path, new byte[71]));
+			Bad(() => DemoOpaqueRecords.Validate("other.wav", new byte[72]));
+			Check(AssetDecoders.Kind(path) == "wav_pcm"); // no global extension/path bypass
+		});
 		test("audio bank normalizes and shares MPQ reads across cues and regions", () =>
 		{
 			int reads = 0; var request = new LegacyAudioRequest([new("Hit", "DATA/SFX/A.WAV"), new("Death", "data/sfx/a.wav")], [new(1, "data/sfx/a.wav"), new(2, "data/sfx/a.wav")]);

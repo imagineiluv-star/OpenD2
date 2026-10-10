@@ -66,8 +66,9 @@ class MpqActionTests(unittest.TestCase):
         self.assertIn('ERROR:', (output/'audit.stderr.txt').read_text())
 
     def test_full_audit_does_not_waive_missing_archives_or_decode_errors(self):
-        clean = {'Installation': {'MissingArchives': []}, 'Archives': [], 'Entries': []}
-        for raw_code, report in [(3, clean), (0, {**clean, 'Installation': {'MissingArchives': ['d2exp.mpq']}}),
+        clean = {'Installation': {'MissingArchives': [], 'Profile': 'demo-1.04'}, 'Archives': [], 'Entries': []}
+        for raw_code, report in [(3, clean), (0, {**clean, 'Installation': {'MissingArchives': [], 'Profile': 'lod-1.10f'}}),
+                                 (0, {**clean, 'Installation': {'MissingArchives': [], 'Profile': 'demo-1.04', 'UnclassifiedArchives': ['extra.mpq']}}), (0, {**clean, 'Installation': {'MissingArchives': ['d2exp.mpq']}}),
                                  (0, {**clean, 'Archives': [{'ErrorCode': 'read_error'}]}),
                                  (0, {**clean, 'Entries': [{'SourceArchive': 'd2sfx.mpq', 'LogicalPath': 'test.wav', 'Size': 72, 'ErrorCode': 'decode_error'}]})]:
             with self.subTest(code=raw_code, report=report):
