@@ -41,6 +41,8 @@ public partial class OnlinePanel
             {
                 await Poll();
                 if (done()) return;
+                File.AppendAllText(System.IO.Path.Combine(evidence, role + "-actions.jsonl"),
+                    JsonSerializer.Serialize(new { step = failure, state!.Tick, state.Actor, state.Entities, state.Items }) + "\n");
                 if (!Entity(state!.Actor).IsAlive) throw new InvalidDataException("Player died: " + failure);
                 if (action is not null) await action();
                 await Task.Delay(100, lifetime.Token);
@@ -55,6 +57,19 @@ public partial class OnlinePanel
                 await InputCommand(CommandKind.SetMove, Math.Sign(target.X - me.X), Math.Sign(target.Y - me.Y));
             });
             await InputCommand(CommandKind.SetMove);
+        }
+        async Task Strike(CommandKind kind)
+        {
+            // The monster can change target after either player's approach. Follow the
+            // current authoritative position instead of assuming it remains in range.
+            var me = Entity(state!.Actor).Position; var target = Entity(100).Position;
+            if (Distance(me, target) > 300)
+                await InputCommand(CommandKind.SetMove, Math.Sign(target.X - me.X), Math.Sign(target.Y - me.Y));
+            else
+            {
+                await InputCommand(CommandKind.SetMove);
+                await InputCommand(kind, target: 100);
+            }
         }
         async Task Capture(string stage)
         {
@@ -74,17 +89,17 @@ public partial class OnlinePanel
         await Approach(() => Entity(100).Position);
         await Barrier("in-range");
         if (role == "host")
-            await Until(() => Entity(100).Health < 60, "Host attack caused no damage", () => InputCommand(CommandKind.Attack, target: 100));
+            await Until(() => Entity(100).Health < 60, "Host attack caused no damage", () => Strike(CommandKind.Attack));
         await Barrier("host-hit"); await Poll();
         Check(Entity(100).Health is > 0 and < 60, "Host damage visible in both clients");
         await Barrier("host-observed");
         if (role == "guest")
-            await Until(() => Entity(state!.Actor).Mana < Entity(state.Actor).MaxMana, "Guest skill did not consume mana", () => InputCommand(CommandKind.CastSkill, target: 100));
+            await Until(() => Entity(state!.Actor).Mana < Entity(state.Actor).MaxMana, "Guest skill did not consume mana", () => Strike(CommandKind.CastSkill));
         await Barrier("guest-skill"); await Poll();
         Check(Entity(2).Mana < Entity(2).MaxMana && Entity(100).Health < 46, "Guest skill and mana visible in both clients");
         await Barrier("skill-observed");
         if (role == "host")
-            await Until(() => !Entity(100).IsAlive, "Monster did not die", () => InputCommand(CommandKind.Attack, target: 100));
+            await Until(() => !Entity(100).IsAlive, "Monster did not die", () => Strike(CommandKind.Attack));
         await Barrier("kill"); await Poll();
         Check(!Entity(100).IsAlive && state!.Items.Any(i => i.Location == ItemLocation.Ground), "Monster death and loot replicated");
         var loot = state!.Items.First(i => i.Location == ItemLocation.Ground);
