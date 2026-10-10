@@ -214,10 +214,13 @@ WSS 자체 성능을 확정하는 자료는 아니다. 경직 규칙을 제거�
 
 원작 Diablo II Realm은 Blizzard가 운영하는 서버 집합이며 캐릭터도 서버에 보관한다.
 Open Battle.net/TCP-IP 모드는 플레이어의 PC가 서버가 되는 별도 방식이다.
-OpenD2의 방향은 운영자 전용 서버이며, 일반 플레이어에게 VPN이나 포트포워딩을 요구하지 않는다.
+OpenD2는 운영자 전용 서버와 개인 호스트 모드를 모두 필수 지원한다. 현재 구현은 전용 서버 기반이다.
+전용 서버에 참가하는 일반 플레이어에게 VPN이나 포트포워딩을 요구하지 않는다.
 공개 서버 운영자는 공개 주소·TLS 인증서·방화벽을 준비해야 한다. 가정 NAT 뒤에서 호스팅하면
 포트 매핑이나 중계 등 별도 접근 경로가 필요할 수 있다. 현재는 수동 서버 주소 지정이며
 로그인/캐릭터/방 기능이 한 서버 프로세스에 있다. 지역별 자동 서버 배정과 공개 배포는 미구현이다.
 
 참고: https://classic.battle.net/diablo2exp/faq/realms.shtml
 및 https://classic.battle.net/diablo2exp/faq/multiplayer.shtml .
+
+두 운영 모드의 필수 범위와 인수 기준: [ONLINE_MODES.md](ONLINE_MODES.md).
