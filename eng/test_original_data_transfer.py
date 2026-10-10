@@ -60,7 +60,7 @@ class TransferTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             transfer.unpack(self.archive, self.destination)
         self.assertEqual(damaged.read_bytes(), b"damaged")
-        self.assertEqual(list(self.destination.iterdir()), [restored])
+        self.assertEqual([p.resolve() for p in self.destination.iterdir()], [restored.resolve()])
 
     def test_changed_payload_with_valid_zip_crc_fails_dataset_hash(self):
         self.rewrite(lambda entries: [(e, b"changed" if e.filename.endswith("d2data.mpq") else b) for e, b in entries])
