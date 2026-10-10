@@ -20,7 +20,7 @@ The [PLAY integration work](docs/migration/PLAY_INTEGRATION.md) connects explici
 
 [PLAY-15](docs/migration/PLAY_15_RESULTS.md) adds tick-based mana recovery, a selectable melee Power strike, Q/button casting, resource/cooldown feedback and optional DC6 Mana clipping. Save schema 3 / rules 6 verifies old v1/v2 files before in-memory conversion and preserves existing scene save paths. This is a preview skill, not the original skill tree, projectiles or D2R effects.
 
-[PLAY-16](docs/migration/PLAY_16_RESULTS.md) adds health/mana potions, four belt slots, bag/belt swaps, 1–4 hotkeys and bounded consumption records. New monster kills retain their gear drop and add a potion. Full resources and rejected uses preserve the item. Save schema 4 / rules 7 verifies v1–v3 saves before upgrading, without moving existing v2/v3 items or resetting v3 mana. Recovery amounts and belt behavior remain preview rules.
+[PLAY-16](docs/migration/PLAY_16_RESULTS.md) adds health/mana potions, four belt slots, bag/belt swaps, 1–4 hotkeys and bounded consumption records. New monster kills retain their gear drop and add a potion. Full resources and rejected uses preserve the item. Save schema 5 / rules 8 verifies v1–v4 saves before upgrading, without moving existing v2/v3 items or resetting v3 mana. Recovery amounts and belt behavior remain preview rules.
 
 See [release testing](docs/migration/RELEASE_QA.md) for packaged builds and the separate synthetic, legacy-scene and two-hour GUI acceptance cases. `v0.2.0-rc.3` includes the basic HUD, audio, inventory and startup menu. PLAY-08 through PLAY-16 require newer CI packages or a future release.
 
@@ -120,3 +120,5 @@ The [NPC-01 Camp Guide preview](docs/migration/NPC_01_RESULTS.md) adds three scr
 
 
 [NPC-02a](docs/migration/NPC_02_RESULTS.md) adds an optional, source-built llama.cpp CPU runtime, verified/resumable Qwen model downloads, and Korean intent evaluation. Basic play stays model-free. This experimental adapter classifies intent; host-authored dialogue and explicit quest confirmation remain in control. Target-PC/GPU acceptance, freeform speech and persistent NPC memory remain open. See [BUILDING](BUILDING.md) for install/run/remove controls.
+
+Online Realm and Open characters now retain owned bag/equipment/belt items across room closure and new room admission. Ground and consumed items are not carried. Back up existing saves/server data before the rules-8 upgrade. Open profile files still transfer only name and victories. See [online modes](docs/migration/ONLINE_MODES.md).

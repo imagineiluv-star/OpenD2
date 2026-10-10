@@ -126,8 +126,8 @@ internal static class CombatContracts
 			Check(game.GetEntity(Monster.Id).Health == 0 && game.GetEntity(Monster.Id).Mode == MonsterMode.Dead && game.GetEntity(Monster.Id).MoveX == 0);
 			Check(game.GetEntity(Player.Id).Health == 100 && game.RandomState == 270369);
 			// Independent Python struct.pack little-endian encoding of this v4 state.
-			const string golden = "8cf5a94fb90b50dd6361a97b002e5229ebb7d184fc97b1737a3393b22e67f986";
-			Check(game.ComputeStateHash() == golden); Console.WriteLine("COMBAT_V5_GOLDEN " + golden);
+			const string golden = "4a15cca9bb1185af26436c78f601c2bb156c1d251842ee0f30f1e88f9ba43f4b";
+			Check(game.ComputeStateHash() == golden); Console.WriteLine("COMBAT_V8_GOLDEN " + golden);
 			var events = game.Events.ToArray(); Check(events.Count(e => e.Kind == SimulationEventKind.AttackStarted) == 1 && events.Count(e => e.Kind == SimulationEventKind.Died) == 1);
 			Check(events.Single(e => e.Kind == SimulationEventKind.Hit).Value == 1 && events.Single(e => e.Kind == SimulationEventKind.Died).Target == Player.Id);
 			game.Step(); Check(!game.Events.ToArray().Any(e => e.Kind == SimulationEventKind.Died));

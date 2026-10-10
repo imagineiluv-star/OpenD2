@@ -112,8 +112,8 @@ internal static class WorldContracts
 			Check(game.GetEntity(Player.Id).Health == 100 && !game.GetEntity(Monster.Id).IsAlive && game.RandomState == 270369);
 			// Independent Python struct.pack encoding of the definitions and completed v4 state.
 			Check(game.World!.ContentHash == "85e4863a4455df1930320c2618a7fba6b2271f61dbcd1b8a81d640086a4e0f3b");
-			const string golden = "19ea11309b93439f88a9f369b9145c3367a113296ed7f628c160bad57ca15e0f";
-			Check(game.ComputeStateHash() == golden); Console.WriteLine("WORLD_V5_GOLDEN " + golden);
+			const string golden = "b3a30c201786ebb6535931b7fe2215db782cb2da1edb57c55b86047fa063f2f4";
+			Check(game.ComputeStateHash() == golden); Console.WriteLine("WORLD_V8_GOLDEN " + golden);
 			Act(game, CommandKind.Interact, Npc.Id);
 			Check(game.Events.Length == 1 && game.Events[0].Kind == SimulationEventKind.NpcTalked && game.QuestState == QuestStage.Completed);
 		});

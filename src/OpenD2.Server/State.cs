@@ -3,7 +3,7 @@ using OpenD2.Core;
 namespace OpenD2.Server;
 
 public sealed record Account(Guid Id, string Name, string Salt, string Hash);
-public sealed record Character(Guid Id, Guid Account, string Name, int Victories = 0);
+public sealed record Character(Guid Id, Guid Account, string Name, int Victories = 0, CarriedItem[]? Inventory = null);
 public sealed record Member(Guid Character, uint Actor, long ClientSequence = 0);
 public sealed record SavedGame(string StateHash, long Tick, uint Random, EntityState[] Entities, CommandCursor[] Inputs, GameCommand[] Pending, ItemState[] Items)
 {
@@ -12,11 +12,10 @@ public sealed record SavedGame(string StateHash, long Tick, uint Random, EntityS
         var s = game.CaptureSnapshot();
         return new(game.ComputeStateHash(), s.Tick, s.RandomState, s.Entities.ToArray(), s.Inputs.ToArray(), s.PendingCommands.ToArray(), s.Items.ToArray());
     }
-    public GameSimulation Restore()
+    public GameSimulation Restore(int rules = GameSimulation.RulesVersion)
     {
-        var game = GameSimulation.Restore(new(GameSimulation.RulesVersion, Tick, Random, Entities, Inputs, Pending,
-            Online.Arena.Grid(), null, default, QuestStage.Available, Items, InventoryLayout.Default));
-        if (game.ComputeStateHash() != StateHash) throw new InvalidDataException("Room checksum mismatch.");
+        var game = GameSimulation.RestoreCompatible(new(rules, Tick, Random, Entities, Inputs, Pending,
+            Online.Arena.Grid(), null, default, QuestStage.Available, Items, InventoryLayout.Default), StateHash);
         return game;
     }
 }

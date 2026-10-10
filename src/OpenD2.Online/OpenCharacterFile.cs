@@ -19,7 +19,7 @@ public static class OpenCharacterFile
     };
     public static void Validate(OpenCharacter? value)
     {
-        if (value is null || value.Version != 1 || value.Rules != GameSimulation.RulesVersion || value.Mode != "open" ||
+        if (value is null || value.Version != 1 || value.Rules is not (7 or GameSimulation.RulesVersion) || value.Mode != "open" ||
             value.Name is null || !Regex.IsMatch(value.Name, "\\A[a-zA-Z0-9_-]{3,24}\\z") || value.Victories is < 0 or > 1_000_000)
             throw new InvalidDataException("Invalid Open character profile, version or game rules.");
     }
@@ -33,13 +33,14 @@ public static class OpenCharacterFile
         try
         {
             var value = JsonSerializer.Deserialize<OpenCharacter>(bytes.AsSpan(0, length), Json);
-            Validate(value); return value!;
+            Validate(value); return value! with { Rules = GameSimulation.RulesVersion };
         }
         catch (JsonException error) { throw new InvalidDataException("Invalid Open character JSON.", error); }
     }
     public static void Save(string path, OpenCharacter value)
     {
         Validate(value);
+        value = value with { Rules = GameSimulation.RulesVersion };
         string destination = Path.GetFullPath(path), temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try
         {

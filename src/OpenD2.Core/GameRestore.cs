@@ -14,9 +14,9 @@ public sealed partial class GameSimulation
 	}
 	private static GameSimulation RestoreChecked(SimulationSnapshot state, bool legacy = false)
 	{
-		if ((legacy ? state.RulesVersion is not (4 or 5 or 6) : state.RulesVersion != RulesVersion) || (state.RulesVersion >= 5 && state.Inventory is null) || state.Tick < 0 || state.Tick > long.MaxValue - CommandHorizon || state.RandomState == 0 ||
+		if ((legacy ? state.RulesVersion is not (4 or 5 or 6 or 7) : state.RulesVersion != RulesVersion) || (state.RulesVersion >= 5 && state.Inventory is null) || state.Tick < 0 || state.Tick > long.MaxValue - CommandHorizon || state.RandomState == 0 ||
 			state.Entities is null || state.Entities.Count is < 1 or > MaxEntities || state.Inputs is null || state.Inputs.Count != state.Entities.Count ||
-			state.PendingCommands is null || state.PendingCommands.Count > MaxPendingCommands || state.Items is null || state.Items.Count > (legacy ? 1 : 2) * state.Entities.Count || !Enum.IsDefined(state.QuestState))
+			state.PendingCommands is null || state.PendingCommands.Count > MaxPendingCommands || state.Items is null || state.Items.Count > (state.RulesVersion < 7 ? 1 : 2) * state.Entities.Count + (state.RulesVersion >= 8 ? MaxCarriedItems : 0) || !Enum.IsDefined(state.QuestState))
 			throw new InvalidDataException("Invalid checkpoint header or budgets.");
 		var original = state.Entities.ToArray();
 		var initial = original.Select(e => e with { Mode = MonsterMode.Idle, Target = default }).ToArray();
@@ -40,13 +40,20 @@ public sealed partial class GameSimulation
 		game.Tick = state.Tick; game.QuestState = state.QuestState;
 		if (game.World is not null && ((game.QuestState is QuestStage.ReadyToTurnIn or QuestStage.Completed) != (game.Quest.Defeated == game.Quest.Required) && game.QuestState != QuestStage.Available))
 			throw new InvalidDataException("Quest stage disagrees with defeated targets.");
+		int carried = 0;
 		var ids = new HashSet<ItemId>(); var slots = new HashSet<(EntityId, ItemLocation, int)>();
 		foreach (var item in state.Items)
 		{
-			if (!ids.Add(item.Id) || !Enum.IsDefined(item.Definition) || !Enum.IsDefined(item.Location) ||
-				!ValidItemIdentity(item, legacy) || !game.indices.TryGetValue(new((uint)item.Id.Value), out int source) || game.entities[source].Kind != EntityKind.Monster || game.entities[source].IsAlive ||
-				item.Definition != (item.Id.Value > uint.MaxValue ? PotionDefinition(new((uint)item.Id.Value)) : (item.Id.Value & 1) == 0 ? ItemDefinition.TrainingSword : ItemDefinition.TrainingVest))
+			if (!ids.Add(item.Id) || !Enum.IsDefined(item.Definition) || !Enum.IsDefined(item.Location))
 				throw new InvalidDataException("Invalid or duplicate item identity.");
+			if (item.Id.Value >> 32 == 2)
+			{
+				if (state.RulesVersion < 8 || (uint)item.Id.Value is 0 or > MaxCarriedItems || ++carried > MaxCarriedItems)
+					throw new InvalidDataException("Invalid carried item identity/budget.");
+			}
+			else if (!ValidItemIdentity(item, state.RulesVersion < 7) || !game.indices.TryGetValue(new((uint)item.Id.Value), out int source) || game.entities[source].Kind != EntityKind.Monster || game.entities[source].IsAlive ||
+				item.Definition != (item.Id.Value > uint.MaxValue ? PotionDefinition(new((uint)item.Id.Value)) : (item.Id.Value & 1) == 0 ? ItemDefinition.TrainingSword : ItemDefinition.TrainingVest))
+				throw new InvalidDataException("Invalid drop identity or source.");
 			if (item.Location == ItemLocation.Consumed)
 			{
 				if (!ItemCatalog.IsConsumable(item.Definition) || item.Owner != default || item.Slot != -1 || item.Region != default || item.Position != default) throw new InvalidDataException("Invalid consumed item.");
@@ -70,7 +77,7 @@ public sealed partial class GameSimulation
 		// original payload/scheduling with a temporary live flag, then preserve the dead state.
 		foreach (var command in state.PendingCommands.OrderBy(c => c.Tick).ThenBy(c => c.Actor.Value).ThenBy(c => c.Sequence))
 		{
-			if ((state.RulesVersion == 4 && command.Kind == CommandKind.MoveItem) || (state.RulesVersion < 6 && command.Kind is CommandKind.SelectSkill or CommandKind.CastSkill) || (legacy && command.Kind is CommandKind.BeltItem or CommandKind.UseItem or CommandKind.UseBelt) || !game.indices.TryGetValue(command.Actor, out int actor)) throw new InvalidDataException("Unknown queued actor.");
+			if ((state.RulesVersion == 4 && command.Kind == CommandKind.MoveItem) || (state.RulesVersion < 6 && command.Kind is CommandKind.SelectSkill or CommandKind.CastSkill) || (state.RulesVersion < 7 && command.Kind is CommandKind.BeltItem or CommandKind.UseItem or CommandKind.UseBelt) || !game.indices.TryGetValue(command.Actor, out int actor)) throw new InvalidDataException("Unknown queued actor.");
 			var entity = game.entities[actor]; var cursor = state.Inputs[actor];
 			if (command.Sequence > cursor.Sequence || command.Tick > cursor.Tick) throw new InvalidDataException("Queued command exceeds its cursor.");
 			game.entities[actor] = entity with { Health = Math.Max(1, entity.Health) };

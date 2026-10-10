@@ -202,7 +202,7 @@ def main():
                     if args.mode == 'open':
                         assert 'OPEND2_OPEN_PROFILE_UI_PASS DIALOG_GESTURES_NOT_RUN' in text, role
                     result = json.loads((evidence / (role + '-result.json')).read_text())
-                    assert result['result'] == 'PASS' and len(result['checks']) >= 9, role
+                    assert result['result'] == 'PASS' and len(result['checks']) >= 11, role
                     assert result['observations'] == 'room-websocket-stream' and result['http_state_polling'] is False, role
                     if args.windowed:
                         assert result['rendering'] == 'PASS' and len(list(evidence.glob(role + '-*.png'))) == 5, role

@@ -17,13 +17,13 @@ internal static class SkillContracts
 	{ var json = JsonNode.Parse(File.ReadAllText(file))!; change(json); File.WriteAllText(file, json.ToJsonString()); }
 	public static void Run(string root, Action<string, Action> test)
 	{
-		test("power strike shares damage/loot gates and pins independent v7 state", () =>
+		test("power strike shares damage/loot gates and pins independent v8 state", () =>
 		{
 			var game = Game(monster: Monster with { Health = 1, AttackCooldown = 0 }); Accept(game, Cast(game)); game.Step();
 			var player = game.GetEntity(Player.Id);
 			Check(player.Mana == 48 && player.SkillCooldown == 25 && player.AttackCooldown == 12 && game.Items.Length == 2);
 			Check(game.Events.ToArray().Count(e => e.Kind == SimulationEventKind.SkillCast) == 1 && game.Events.ToArray().Any(e => e.Kind == SimulationEventKind.Died));
-			Check(game.ComputeStateHash() == "d88d2b8f709d33b869ded3a8d6de78e701ec16110e7eb8ccc8947f545990d760");
+			Check(game.ComputeStateHash() == "52839d519e9ba561f2c7fe668b1c7817cdf90f407b3af89e9df87cbdf9eccf7b");
 		});
 		test("power strike adds exactly twelve physical damage using the same RNG sample", () =>
 		{

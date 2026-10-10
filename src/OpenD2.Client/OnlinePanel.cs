@@ -67,7 +67,7 @@ public partial class OnlinePanel : VBoxContainer
         Button(actions, "Start (host)", async () => Apply(await Room<RoomView>("start")));
         Button(actions, "Save server progress", async () => { await Room<object>("save"); status.Text = "Server checkpoint saved."; });
         Button(actions, "Leave lobby", async () => { await Room<object>("leave"); ClearRoom(); await Refresh(); });
-        Confirm(actions, "Close room (host)", "Close this room for everyone? Arena items are room-local; only victories carry to new rooms.", async () => { await Room<object>("close"); ClearRoom(); await Refresh(); });
+        Confirm(actions, "Close room (host)", "Close this room for everyone? Owned bag, equipment and belt items carry to new rooms; ground items are left behind.", async () => { await Room<object>("close"); ClearRoom(); await Refresh(); });
         AddChild(status); AddChild(details); AddChild(arena);
         AddChild(new Label { Text = "Click arena to focus. WASD/arrows: move; Space: attack; Q: skill; F: pick up. Server judges all actions.\nFour-player preview arena. Original campaign/art is not connected to online play yet.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
         if (OS.GetCmdlineUserArgs().Contains("--smoke-test")) GD.Print("OPEND2_ONLINE_UI_READY");

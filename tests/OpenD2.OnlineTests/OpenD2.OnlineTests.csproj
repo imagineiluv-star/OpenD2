@@ -1,1 +1,1 @@
-<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup><ItemGroup><ProjectReference Include="../../src/OpenD2.Server/OpenD2.Server.csproj" /></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType></PropertyGroup><ItemGroup><ProjectReference Include="../../src/OpenD2.Server/OpenD2.Server.csproj" /></ItemGroup><ItemGroup><None Update="Fixtures/**" CopyToOutputDirectory="PreserveNewest" /></ItemGroup></Project>

@@ -186,7 +186,7 @@ belt (PLAY-16), separated ground names and selected-item approach/pickup (PLAY-1
 Click a loot name to approach that item; L toggles names and right-click cancels movement.
 F picks up the nearest item in range. Q uses the selected skill; 1–4 use belt potions once per press.
 Godot 4.7.2 includes the desktop Android-polling lifecycle fix; strict ERROR checks remain enabled.
-Save schema 4 / rules 7 reads validated older preview saves; back up your profile before testing.
+Save schema 5 / rules 8 reads validated older preview saves; back up your profile before testing.
 Original Diablo II save-body import and original game rule parity are not implemented.
 See FEATURE_QA.md for the new mandatory GUI cases QA-11–14 and the candidate scope.
 FPS/fullscreen/diagnostics preferences apply immediately; choose Save settings to keep them.
