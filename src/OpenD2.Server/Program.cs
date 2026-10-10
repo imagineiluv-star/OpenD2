@@ -12,7 +12,10 @@ builder.Services.ConfigureHttpJsonOptions(o => { o.SerializerOptions.UnmappedMem
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = 429;
-    o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(_ => RateLimitPartition.GetConcurrencyLimiter("realm", _ => new() { PermitLimit = 8, QueueLimit = 0 }));
+    o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        context.GetEndpoint()?.Metadata.GetMetadata<Microsoft.AspNetCore.Routing.IEndpointNameMetadata>()?.EndpointName == "room-stream"
+            ? RateLimitPartition.GetConcurrencyLimiter("room-stream", _ => new() { PermitLimit = 32, QueueLimit = 0 })
+            : RateLimitPartition.GetConcurrencyLimiter("realm", _ => new() { PermitLimit = 8, QueueLimit = 0 }));
     o.AddFixedWindowLimiter("password", x => { x.PermitLimit = 60; x.Window = TimeSpan.FromMinutes(1); x.QueueLimit = 0; });
     o.AddFixedWindowLimiter("game", x => { x.PermitLimit = 1000; x.Window = TimeSpan.FromSeconds(1); x.QueueLimit = 0; });
 });
@@ -29,12 +32,13 @@ app.Use(async (context, next) =>
     catch (Exception error) when (error is IOException or UnauthorizedAccessException) { app.Logger.LogError(error, "Realm storage unavailable"); context.Response.StatusCode = 503; await context.Response.WriteAsJsonAsync(new ApiError("Storage unavailable.")); }
 });
 app.UseRateLimiter();
+app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(5), KeepAliveTimeout = TimeSpan.FromSeconds(5) });
 string Token(HttpContext c)
 {
     string header = c.Request.Headers.Authorization.ToString();
     return header.StartsWith("Bearer ", StringComparison.Ordinal) && header.Length == 71 ? header[7..] : "";
 }
-app.MapGet("/health", () => new { protocol = 1, rules = OpenD2.Core.GameSimulation.RulesVersion });
+app.MapGet("/health", () => new { protocol = 1, rules = OpenD2.Core.GameSimulation.RulesVersion, roomStream = 1 });
 app.MapPost("/v1/register", (Credentials input, Realm realm) => realm.Login(input, true)).RequireRateLimiting("password");
 app.MapPost("/v1/login", (Credentials input, Realm realm) => realm.Login(input, false)).RequireRateLimiting("password");
 var api = app.MapGroup("/v1").RequireRateLimiting("game");
@@ -46,6 +50,7 @@ api.MapGet("/rooms", (HttpContext c, Realm r) => r.Rooms(Token(c)));
 api.MapPost("/rooms", (HttpContext c, Realm r, RoomRequest input) => r.CreateRoom(Token(c), input)).RequireRateLimiting("password");
 api.MapPost("/rooms/{id:guid}/join", (HttpContext c, Realm r, Guid id, JoinRequest input) => r.Join(Token(c), id, input)).RequireRateLimiting("password");
 api.MapGet("/rooms/{id:guid}", (HttpContext c, Realm r, Guid id) => r.State(Token(c), id));
+api.MapGet("/rooms/{id:guid}/stream", (HttpContext c, Realm r, Guid id) => RoomStream.Run(c, r, id, Token(c))).WithName("room-stream");
 api.MapPost("/rooms/{id:guid}/start", (HttpContext c, Realm r, Guid id) => r.Start(Token(c), id));
 api.MapPost("/rooms/{id:guid}/input", (HttpContext c, Realm r, Guid id, InputRequest input) => r.Input(Token(c), id, input));
 api.MapPost("/rooms/{id:guid}/save", (HttpContext c, Realm r, Guid id) => r.Checkpoint(Token(c), id));

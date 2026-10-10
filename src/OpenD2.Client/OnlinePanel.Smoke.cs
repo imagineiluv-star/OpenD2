@@ -38,9 +38,9 @@ public partial class OnlinePanel
             bool started = false;
             for (int attempt = 0; attempt < 100; attempt++)
             {
-                Apply(await client.Send<RoomView>(HttpMethod.Get, $"v1/rooms/{state!.Id}", cancellation: lifetime.Token));
-                if (role == "host" && state.Members.Length == 2 && !state.Started) Apply(await Room<RoomView>("start"));
-                if (state.Started) { started = true; break; }
+                await WaitForRoomUpdate();
+                if (role == "host" && state!.Members.Length == 2 && !state.Started) Apply(await Room<RoomView>("start"));
+                if (state!.Started) { started = true; break; }
                 await Task.Delay(100, lifetime.Token);
             }
             if (!started || state!.Members.Length != 2 || state.Entities.Length != 4 || details.Text.Length == 0 || arena.State != state) throw new InvalidDataException("Online view/room start failed.");
@@ -57,11 +57,12 @@ public partial class OnlinePanel
             bool observed = false;
             for (int attempt = 0; attempt < 100; attempt++)
             {
-                Apply(await client.Send<RoomView>(HttpMethod.Get, $"v1/rooms/{state.Id}", cancellation: lifetime.Token));
+                await WaitForRoomUpdate();
                 if (state.Entities.Single(e => e.Id.Value == 1).Position.X < 768) { observed = true; break; }
                 await Task.Delay(100, lifetime.Token);
             }
             if (!observed) throw new InvalidDataException("Peer movement was not replicated.");
+            GD.Print("OPEND2_ONLINE_STREAM_PASS " + role);
             bool handled = false;
             UserAction(() => { handled = true; return Task.CompletedTask; });
             if (handled || requests.Count != 1) throw new InvalidDataException("Busy user action was not queued.");

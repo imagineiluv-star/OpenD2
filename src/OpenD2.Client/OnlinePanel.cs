@@ -23,6 +23,9 @@ public partial class OnlinePanel : VBoxContainer
     private CharacterInfo[] characterList = [];
     private RoomInfo[] roomList = [];
     private RoomView? state;
+    private CancellationTokenSource? roomStream;
+    private Exception? streamError;
+    private long streamFrames;
     private readonly Queue<Func<Task>> requests = new();
     private bool busy, signedIn;
     private double poll;
@@ -114,7 +117,7 @@ public partial class OnlinePanel : VBoxContainer
         var next = new OnlineClient(address.Text, caFile); var credentials = new Credentials(username.Text, password.Text); password.Text = "";
         try { await next.Login(credentials, register, lifetime.Token); }
         catch { next.Dispose(); throw; }
-        requests.Clear(); client?.Dispose(); client = next; signedIn = true; ClearRoom(); status.Text = "Logged in. Select a character and room."; await Refresh();
+        requests.Clear(); StopRoomStream(); client?.Dispose(); client = next; signedIn = true; ClearRoom(); status.Text = "Logged in. Select a character and room."; await Refresh();
     }
     private async Task Refresh()
     {
@@ -132,15 +135,71 @@ public partial class OnlinePanel : VBoxContainer
     }
     private void Apply(RoomView next)
     {
+        bool changedRoom = state?.Id != next.Id;
+        // HTTP command replies and pushed states use independent connections.
+        // Never roll an input cursor or a running simulation back to an older view.
+        if (!changedRoom && state is { } previous && (next.Tick < previous.Tick || next.NextSequence < previous.NextSequence || (previous.Started && !next.Started))) return;
         state = next; arena.State = next; arena.QueueRedraw();
-        details.Text = $"{next.Name} | {(next.Started ? "Playing" : "Lobby")} | tick {next.Tick} | actor {next.Actor}\n" + string.Join(" / ", next.Members.Select(m => m.Name));
+        details.Text = $"{next.Name} | {(next.Started ? "Playing" : "Lobby")} | tick {next.Tick} | actor {next.Actor} | {client?.RoomTransport}\n" + string.Join(" / ", next.Members.Select(m => m.Name));
         if (next.Started) { var me = next.Entities.First(e => e.Id.Value == next.Actor); details.Text += $" | HP {me.Health}/{me.MaxHealth} | Mana {me.Mana}/{me.MaxMana}"; }
+        if (changedRoom) StartRoomStream(next.Id);
     }
-    private void ClearRoom() { state = null; arena.State = null; arena.QueueRedraw(); details.Text = ""; moveX = moveY = 0; }
+    private void StartRoomStream(Guid id)
+    {
+        StopRoomStream();
+        var source = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        roomStream = source;
+        _ = ReadRoomStream(client!, id, source);
+    }
+    private async Task ReadRoomStream(OnlineClient owner, Guid id, CancellationTokenSource source)
+    {
+        try
+        {
+            await foreach (var update in owner.WatchRoom(id, source.Token))
+            {
+                if (source.IsCancellationRequested || roomStream != source || client != owner || state?.Id != id) return;
+                Apply(update); streamFrames++;
+            }
+        }
+        catch (OperationCanceledException) when (source.IsCancellationRequested) { }
+        catch (Exception error)
+        {
+            if (!source.IsCancellationRequested && roomStream == source && client == owner) streamError = error;
+        }
+        finally { source.Dispose(); }
+    }
+    private void StopRoomStream()
+    {
+        var previous = roomStream; roomStream = null;
+        if (previous is not null)
+        {
+            try { previous.Cancel(); } catch (ObjectDisposedException) { }
+        }
+        streamError = null; streamFrames = 0;
+    }
+    private async Task WaitForRoomUpdate()
+    {
+        long before = streamFrames;
+        for (int i = 0; i < 500; i++)
+        {
+            if (streamError is { } error) throw error;
+            if (streamFrames > before) return;
+            await Task.Delay(20, lifetime.Token);
+        }
+        throw new TimeoutException("Room stream did not deliver a fresh state.");
+    }
+    private void ClearRoom() { StopRoomStream(); state = null; arena.State = null; arena.QueueRedraw(); details.Text = ""; moveX = moveY = 0; }
     private void Reset() { requests.Clear(); signedIn = false; client?.Dispose(); client = null; ClearRoom(); characters.Clear(); rooms.Clear(); }
     public override void _Process(double delta)
     {
         if (state is null || client is null || busy) return;
+        if (streamError is { } error)
+        {
+            ClearRoom();
+            if (error is HttpRequestException { StatusCode: System.Net.HttpStatusCode.Unauthorized }) Reset();
+            status.Text = "Room stream ended: " + error.Message + " Join/reconnect, or log in again after a server restart.";
+            return;
+        }
         poll += delta; if (poll < 0.1) return; poll = 0;
         bool focus = IsVisibleInTree() && arena.HasFocus() && GetWindow().HasFocus();
         int x = focus ? (Input.IsPhysicalKeyPressed(Key.D) || Input.IsPhysicalKeyPressed(Key.Right) ? 1 : 0) - (Input.IsPhysicalKeyPressed(Key.A) || Input.IsPhysicalKeyPressed(Key.Left) ? 1 : 0) : 0;
@@ -149,7 +208,6 @@ public partial class OnlinePanel : VBoxContainer
         {
             if (state!.Started && state.Entities.First(e => e.Id.Value == state.Actor).IsAlive && (x != 0 || y != 0 || x != moveX || y != moveY))
             { await InputCommand(CommandKind.SetMove, x, y); moveX = x; moveY = y; }
-            else Apply(await client.Send<RoomView>(HttpMethod.Get, $"v1/rooms/{state.Id}", cancellation: lifetime.Token));
         });
     }
     private async Task InputCommand(CommandKind kind, int x = 0, int y = 0, uint target = 0, ulong item = 0)
@@ -175,7 +233,7 @@ public partial class OnlinePanel : VBoxContainer
         else return;
         GetViewport().SetInputAsHandled();
     }
-    public override void _ExitTree() { lifetime.Cancel(); client?.Dispose(); lifetime.Dispose(); }
+    public override void _ExitTree() { StopRoomStream(); lifetime.Cancel(); client?.Dispose(); lifetime.Dispose(); }
 }
 
 public partial class OnlineArena : Control

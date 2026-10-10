@@ -195,15 +195,18 @@ def main():
                     text = (evidence/f'godot-{role}.log').read_text(encoding='utf-8')
                     assert 'ERROR:' not in text and 'SCRIPT ERROR:' not in text, role
                     assert 'OPEND2_ONLINE_TRANSPORT_PASS '+role in text, role
+                    assert 'OPEND2_ONLINE_STREAM_PASS '+role in text, role
                     assert 'OPEND2_ONLINE_GAMEPLAY_PASS '+role in text, role
                     result = json.loads((evidence / (role + '-result.json')).read_text())
                     assert result['result'] == 'PASS' and len(result['checks']) >= 9, role
+                    assert result['observations'] == 'room-websocket-stream' and result['http_state_polling'] is False, role
                     if args.windowed:
                         assert result['rendering'] == 'PASS' and len(list(evidence.glob(role + '-*.png'))) == 5, role
                 if platform.system() == 'Linux':
                     profiles = [json.loads((evidence / (role + '-result.json')).read_text())['user_data'] for role in ('host', 'guest')]
                     assert profiles[0] != profiles[1], 'Godot clients must have independent user data directories'
                 report['godot_transport'] = 'PASS'
+                report['room_stream'] = 'WSS' if args.tls_fixtures else 'WS_LOOPBACK'
                 report['godot_gameplay'] = 'PASS'
                 report['rendered'] = 'PASS' if args.windowed else 'NOT_RUN'
             print('ONLINE HTTP / RESTART / GODOT:', json.dumps(report))

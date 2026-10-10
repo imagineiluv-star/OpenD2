@@ -3,6 +3,8 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Net.WebSockets;
+using System.Runtime.CompilerServices;
 
 namespace OpenD2.Online;
 
@@ -10,8 +12,12 @@ namespace OpenD2.Online;
 public sealed class OnlineClient : IDisposable
 {
     private readonly HttpClient http;
+    private readonly CancellationTokenSource lifetime = new();
+    private int disposed;
     private readonly X509Certificate2? trustedRoot;
+    private string? token;
     public string? TrustedRootSha256 { get; }
+    public string RoomTransport => http.BaseAddress!.Scheme == "https" ? "WSS" : "WS (loopback)";
     public OnlineClient(string address, string? caFile = null)
     {
         var uri = new Uri(address, UriKind.Absolute);
@@ -42,7 +48,7 @@ public sealed class OnlineClient : IDisposable
             }
             http = new(handler) { BaseAddress = uri, Timeout = TimeSpan.FromSeconds(10), MaxResponseContentBufferSize = 1024 * 1024 };
         }
-        catch { handler.Dispose(); trustedRoot?.Dispose(); throw; }
+        catch { handler.Dispose(); trustedRoot?.Dispose(); lifetime.Dispose(); throw; }
     }
     public async Task<T> Send<T>(HttpMethod method, string path, object? body = null, CancellationToken cancellation = default)
     {
@@ -62,12 +68,59 @@ public sealed class OnlineClient : IDisposable
         await CheckServer(cancellation);
         var login = await Send<LoginResult>(HttpMethod.Post, register ? "v1/register" : "v1/login", credentials, cancellation);
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", login.Token);
+        token = login.Token;
     }
     public async Task CheckServer(CancellationToken cancellation = default)
     {
         var health = await Send<ServerInfo>(HttpMethod.Get, "health", cancellation: cancellation);
-        if (health.Protocol != 1 || health.Rules != OpenD2.Core.GameSimulation.RulesVersion)
+        if (health.Protocol != 1 || health.Rules != OpenD2.Core.GameSimulation.RulesVersion || health.RoomStream != 1)
             throw new InvalidDataException("Server protocol or game rules do not match this client.");
     }
-    public void Dispose() { http.Dispose(); trustedRoot?.Dispose(); }
+    public async IAsyncEnumerable<RoomView> WatchRoom(Guid room, [EnumeratorCancellation] CancellationToken cancellation = default)
+    {
+        using var session = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
+        cancellation = session.Token;
+        if (token is null) throw new InvalidOperationException("Login first.");
+        using var socket = new ClientWebSocket();
+        socket.Options.AddSubProtocol("opend2.room.v1");
+        socket.Options.CollectHttpResponseDetails = true;
+        socket.Options.SetRequestHeader("Authorization", "Bearer " + token);
+        socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(5);
+        socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(5);
+        var uri = new UriBuilder(new Uri(http.BaseAddress!, $"v1/rooms/{room}/stream"))
+            { Scheme = http.BaseAddress!.Scheme == "https" ? "wss" : "ws" };
+        using (var connect = CancellationTokenSource.CreateLinkedTokenSource(cancellation))
+        {
+            connect.CancelAfter(TimeSpan.FromSeconds(10));
+            // Reuse the HTTPS handler, including its per-connection CA/hostname policy.
+            try { await socket.ConnectAsync(uri.Uri, http, connect.Token); }
+            catch (WebSocketException error) when ((int)socket.HttpStatusCode >= 400)
+            { throw new HttpRequestException("Room stream handshake rejected.", error, socket.HttpStatusCode); }
+        }
+        var buffer = new byte[1024 * 1024];
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web) { MaxDepth = 16 };
+        while (true)
+        {
+            int length = 0;
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            deadline.CancelAfter(TimeSpan.FromSeconds(10));
+            while (true)
+            {
+                var part = await socket.ReceiveAsync(buffer.AsMemory(length), deadline.Token);
+                if (part.MessageType != WebSocketMessageType.Text) throw new IOException("Room stream closed or sent a non-text message. Reconnect to the room.");
+                length += part.Count;
+                if (part.EndOfMessage) break;
+                if (length == buffer.Length) throw new InvalidDataException("Room update exceeds 1 MiB.");
+            }
+            var update = JsonSerializer.Deserialize<RoomUpdate>(buffer.AsSpan(0, length), json) ?? throw new InvalidDataException("Empty room update.");
+            if (update.Status != 200) throw new HttpRequestException(update.Error ?? "Room access ended.", null, (System.Net.HttpStatusCode)update.Status);
+            if (update.State is not { } state || state.Id != room) throw new InvalidDataException("Wrong room update.");
+            yield return state;
+        }
+    }
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+        lifetime.Cancel(); http.Dispose(); trustedRoot?.Dispose(); lifetime.Dispose();
+    }
 }
