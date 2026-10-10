@@ -96,6 +96,16 @@ class MpqHandoffTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.prepare()
 
+    def test_demo_scene_starts_outside_monster_aggro_range(self):
+        scene = qa.read_json(self.kit / "demo-town-scene.json")
+        player = next(a for a in scene["Actors"] if a["Player"])
+        for actor in scene["Actors"]:
+            if actor["Player"]:
+                continue
+            # GameSimulation.AggroRange; a safety margin leaves time for GUI inspection.
+            distance = (actor["X"] - player["X"]) ** 2 + (actor["Y"] - player["Y"]) ** 2
+            self.assertGreaterEqual(distance, (2 * 1536) ** 2)
+
     def test_kit_is_reproducible_allowlisted_and_binds_build(self):
         first = release.mpq_kit(self.root, "ci", "a" * 40).read_bytes()
         second = release.mpq_kit(self.root, "ci", "a" * 40).read_bytes()

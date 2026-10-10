@@ -35,7 +35,7 @@ Windows는 `py -3` 또는 `python`, macOS는 `python3`로 실행하고 실제 ZI
 4. Continue → 지형/천막/울타리/수레/팔레트 확인, 지면·벽 클릭, 8방향 이동, 가림/충돌을 확인한다.
    플레이어·몬스터·가이드는 임시 표시다. 원작 캐릭터 애니메이션 PASS로 기록하지 않는다.
 5. 가이드 근처 E로 상호작용하고 preview 퀘스트를 수락한다. 몬스터와 전투 후 가이드 복귀/완료를 확인한다.
-   이 장면에는 포털이 없다. 포털을 찾거나 JSON을 고쳐 시험하지 않는다.
+   몬스터는 초기 위치에서 12 navigation cells 떨어져 있어 접근 전에는 감지 범위 밖이다. 이 장면에는 포털이 없다. 포털을 찾거나 JSON을 고쳐 시험하지 않는다.
 6. Pause → 저장 → 종료 → 같은 프로필·장면 로드 → 체크포인트 복원. 화면의 Content 앞 16자리와 상태를 기록한다. 전체 ContentId는 logs의 legacy_scene_loaded 이벤트에서 확인한다.
    예상 ContentId는 `mpq-qa-result.json`에 있다. 일치하지 않으면 FAIL이다.
 7. 창 크기·전체화면(F11)·메뉴/Pause/Continue를 확인한다. 로그의 ERROR/SCRIPT ERROR는 실패로 보존한다.

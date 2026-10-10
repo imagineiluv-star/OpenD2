@@ -8,7 +8,7 @@ import shutil
 import sys
 
 HERE = Path(__file__).resolve().parent
-CONTENT_ID = "dd0e5d1e3a8fd5509a8c683abda366e1ade3f03f444b38e012521a1b08301d57"
+CONTENT_ID = "ce384cadb59d616824b0fc2c8c92199a785f666a3d65bb7b567ed309b16636de"
 CASES = {
     "MPQ-01": "Load supplied scene in the visible packaged app; terrain/palette and paused menu",
     "MPQ-02": "Continue, click ground/wall, move in eight directions and inspect occlusion",
