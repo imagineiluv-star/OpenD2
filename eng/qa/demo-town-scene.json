@@ -1,0 +1,64 @@
+{
+  "SchemaVersion": 1,
+  "Title": "Public demo terrain integration",
+  "Regions": [
+    {
+      "Id": 1,
+      "Name": "Public demo terrain integration",
+      "Terrain": {
+        "SchemaVersion": 1,
+        "Profile": "lod-1.10f",
+        "MapPath": "data/global/tiles/act1/town/townn1.ds1",
+        "PalettePath": "data/global/palette/act1/pal.dat",
+        "Tilesets": [
+          "data/global/tiles/Act1/Town/Floor.dt1",
+          "data/global/tiles/Act1/Town/Objects.dt1",
+          "data/global/tiles/Act1/Town/Fence.dt1",
+          "data/global/tiles/Act1/Outdoors/River.dt1",
+          "data/global/tiles/Act1/Outdoors/stonewall.dt1",
+          "data/global/tiles/Act1/Town/trees.dt1",
+          "data/global/tiles/Act1/Outdoors/Objects.dt1",
+          "data/global/tiles/Act1/Outdoors/TreeGroups.dt1",
+          "data/global/tiles/Act1/Outdoors/Bridge.dt1"
+        ]
+      }
+    }
+  ],
+  "Actors": [
+    {
+      "Id": 1,
+      "Region": 1,
+      "X": 19072,
+      "Y": 1152,
+      "Player": true,
+      "Health": 100
+    },
+    {
+      "Id": 2,
+      "Region": 1,
+      "X": 22144,
+      "Y": 1152,
+      "Player": false,
+      "Health": 36
+    }
+  ],
+  "Npc": {
+    "Id": 10,
+    "Region": 1,
+    "X": 19072,
+    "Y": 1664,
+    "Name": "Preview guide"
+  },
+  "Portals": [],
+  "QuestTargets": [
+    2
+  ],
+  "Artwork": null,
+  "NavigateWalls": true,
+  "Audio": null,
+  "NpcArtwork": null,
+  "HudArtwork": null,
+  "ItemArtwork": null,
+  "ItemDefinitions": null,
+  "UseItemDimensions": false
+}

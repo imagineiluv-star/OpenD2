@@ -1,0 +1,32 @@
+[
+  {
+    "name": "d2data.mpq",
+    "bytes": 44301122,
+    "sha256": "82ed65b7f574234a22a36abb4a6d6a1e7f8bebc4746192f39cdb6603ee382d49"
+  },
+  {
+    "name": "d2char.mpq",
+    "bytes": 20786750,
+    "sha256": "d3786b7dd6901197b2a163e263321f169de72fa59dd518e74b4d2466b8874cb7"
+  },
+  {
+    "name": "d2sfx.mpq",
+    "bytes": 10887212,
+    "sha256": "1652c791ca1874be8126f549c478f29810e354ee10720b5afc89a9fbef2934c4"
+  },
+  {
+    "name": "d2speech.mpq",
+    "bytes": 21214310,
+    "sha256": "f777ef69b3438cf991eec35b1ccfa196cfb4da563ae9b6848cc6881d5538cd8f"
+  },
+  {
+    "name": "d2music.mpq",
+    "bytes": 32743265,
+    "sha256": "631172d59cc4a8d9b42faade73b194140b6a327811ea556562df9c89f857a694"
+  },
+  {
+    "name": "patch_d2.mpq",
+    "bytes": 1342817,
+    "sha256": "f3dedcab99cd0fe213500f9bce0d09f675cb392de9e99ebdb7b5d956a17af7e6"
+  }
+]
