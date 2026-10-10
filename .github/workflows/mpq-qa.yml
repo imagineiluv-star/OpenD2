@@ -1,0 +1,70 @@
+name: MPQ data validation
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'full-audit is strict and currently fails on known demo limitations; terrain checks only map/scene connectivity'
+        type: choice
+        required: true
+        default: full-audit
+        options: [full-audit, terrain]
+  pull_request:
+    paths:
+      - '.github/workflows/mpq-qa.yml'
+      - 'eng/qa/run_mpq_action.py'
+      - 'eng/qa/demo-*.json'
+      - 'eng/qa/mpq_handoff.py'
+      - 'eng/test_mpq_action.py'
+permissions:
+  contents: read
+concurrency:
+  group: mpq-qa-${{ github.event.pull_request.number || github.ref }}-${{ inputs.mode || 'terrain' }}
+  cancel-in-progress: true
+jobs:
+  mpq:
+    name: '${{ inputs.mode || ''terrain'' }} (${{ matrix.os }})'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      DOTNET_PROCESSOR_COUNT: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Test MPQ action result boundaries
+        run: python -m unittest discover -s eng -p test_mpq_action.py -v
+      - name: Build pinned read-only MPQ backend
+        run: python eng/build-native.py
+      - name: Build decoder audit tool
+        run: dotnet build tools/OpenD2.AssetAudit -c Release -m:1 -p:BuildInParallel=false
+      - name: Fetch pinned public demo and validate actual MPQs
+        env:
+          MPQ_MODE: ${{ inputs.mode || 'terrain' }}
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          subprocess.run([sys.executable, 'eng/qa/run_mpq_action.py', '--mode', os.environ['MPQ_MODE'],
+                          '--work', str(pathlib.Path(os.environ['RUNNER_TEMP']) / 'opend2-mpq-input'),
+                          '--output', 'artifacts/mpq-qa'], check=True)
+      - name: Preserve reports only (never game data)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MPQ-${{ inputs.mode || 'terrain' }}-${{ matrix.os }}
+          path: artifacts/mpq-qa/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove private demo input
+        if: always()
+        shell: python
+        run: |
+          import os, pathlib, shutil
+          shutil.rmtree(pathlib.Path(os.environ['RUNNER_TEMP']) / 'opend2-mpq-input', ignore_errors=True)
