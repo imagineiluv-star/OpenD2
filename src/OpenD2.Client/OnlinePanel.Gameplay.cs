@@ -49,22 +49,26 @@ public partial class OnlinePanel
             }
             throw new TimeoutException(failure);
         }
-        async Task Approach(Func<GamePosition> position)
+        async Task Approach(Func<GamePosition> position, int range = 250)
         {
-            await Until(() => Distance(Entity(state!.Actor).Position, position()) <= 250, "Approach target", async () =>
+            await Until(() => Distance(Entity(state!.Actor).Position, position()) <= range, "Approach target", async () =>
             {
-                var me = Entity(state!.Actor).Position; var target = position();
-                await InputCommand(CommandKind.SetMove, Math.Sign(target.X - me.X), Math.Sign(target.Y - me.Y));
+                await MoveToward(position());
             });
             await InputCommand(CommandKind.SetMove);
+        }
+        async Task MoveToward(GamePosition target)
+        {
+            var move = GameplayDirection(state!.Entities, state.Actor, target);
+            await InputCommand(CommandKind.SetMove, move.X, move.Y);
         }
         async Task Strike(CommandKind kind)
         {
             // The monster can change target after either player's approach. Follow the
             // current authoritative position instead of assuming it remains in range.
             var me = Entity(state!.Actor).Position; var target = Entity(100).Position;
-            if (Distance(me, target) > 300)
-                await InputCommand(CommandKind.SetMove, Math.Sign(target.X - me.X), Math.Sign(target.Y - me.Y));
+            if (Distance(me, target) > GameSimulation.AttackRange - 32)
+                await MoveToward(target);
             else
             {
                 await InputCommand(CommandKind.SetMove);
@@ -84,9 +88,10 @@ public partial class OnlinePanel
                     throw new InvalidDataException("Rendered screenshot failed.");
             }
         }
+        Check(CheckBodyBlocking(), "Recorded body-blocking regression reaches attack range");
         await Barrier("ready");
         await Capture("room");
-        await Approach(() => Entity(100).Position);
+        await Approach(() => Entity(100).Position, GameSimulation.AttackRange - 32);
         await Barrier("in-range");
         if (role == "host")
             await Until(() => Entity(100).Health < 60, "Host attack caused no damage", () => Strike(CommandKind.Attack));
@@ -159,6 +164,47 @@ public partial class OnlinePanel
             manual_gui = "NOT_RUN", multi_pc = "NOT_RUN"
         }, new JsonSerializerOptions { WriteIndented = true }));
         GD.Print("OPEND2_ONLINE_GAMEPLAY_PASS " + role + " MANUAL_GUI_NOT_RUN");
+    }
+    private static (int X, int Y) GameplayDirection(EntityState[] entities, uint actor, GamePosition target)
+    {
+        var me = entities.Single(e => e.Id.Value == actor);
+        var directions = new (int X, int Y)[] { (1, 0), (0, 1), (-1, 0), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1) };
+        var grid = Arena.Grid();
+        // Three-tick lookahead avoids live bodies using the same collision bounds.
+        var candidates = directions.Select(d => (Direction: d, Position: new GamePosition(me.Position.X + d.X * 96, me.Position.Y + d.Y * 96)))
+            .Where(c => grid.CanOccupy(c.Position) && !entities.Any(e => e.IsAlive && e.Id != me.Id &&
+                Math.Abs(e.Position.X - c.Position.X) < CollisionGrid.BodyRadius * 2 && Math.Abs(e.Position.Y - c.Position.Y) < CollisionGrid.BodyRadius * 2))
+            .OrderBy(c => Distance(c.Position, target)).ToArray();
+        if (candidates.Length == 0) throw new InvalidDataException("Test movement has no collision-free direction.");
+        return candidates[0].Direction;
+    }
+    private static bool CheckBodyBlocking()
+    {
+        // Exact geometry from failed CI 38053719315: guest blocks the host's straight
+        // approach. Exercise real Core movement/collision; no positions are mutated.
+        return Scenario(new(990, 1044), new(1136, 1050)) && Scenario(new(894, 1044), new(1040, 1050));
+        static bool Scenario(GamePosition host, GamePosition guest)
+        {
+        var game = new GameSimulation(42, [new(new(1), new(1), host),
+            new(new(2), new(1), guest),
+            new(new(100), new(1), new(1324, 1044), Kind: EntityKind.Monster, Health: 60, MaxHealth: 60)], Arena.Grid());
+        for (int i = 0; i < 10; i++)
+        {
+            var target = game.GetEntity(new(100)).Position;
+            if (Distance(game.GetEntity(new(1)).Position, target) <= GameSimulation.AttackRange - 32)
+            {
+                game.Submit(new(game.Tick + 1, 100, new(1), new(1), CommandKind.SetMove));
+                game.Submit(new(game.Tick + 1, 101, new(1), new(1), CommandKind.Attack, Target: new(100)));
+                game.Step();
+                return game.GetEntity(new(2)).IsAlive && game.GetEntity(new(100)).Health < 60;
+            }
+            var direction = GameplayDirection(game.CaptureSnapshot().Entities.ToArray(), 1, target);
+            if (game.Submit(new(game.Tick + 1, (uint)(i + 1), new(1), new(1), CommandKind.SetMove, direction.X, direction.Y)) != CommandResult.Accepted)
+                return false;
+            for (int tick = 0; tick < 3; tick++) game.Step();
+        }
+        return false;
+        }
     }
     private static double Distance(GamePosition a, GamePosition b) => Math.Sqrt((long)(a.X - b.X) * (a.X - b.X) + (long)(a.Y - b.Y) * (a.Y - b.Y));
 }
