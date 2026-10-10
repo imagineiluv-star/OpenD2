@@ -38,13 +38,16 @@ public sealed class PcmWave
 		AssetBinary.Require(AssetBinary.U16(format, 12) == alignment && AssetBinary.U32(format, 8) == rate * alignment && samples.Length % alignment == 0, "Inconsistent WAV sample alignment/rate.");
 		return ((int)rate, channels, bits, sampleOffset, samples.Length);
 	}
-	public static PcmWave Parse(ReadOnlySpan<byte> data)
+	public static PcmWave Parse(ReadOnlySpan<byte> data) => Parse(data, AssetDecoders.MaxInputBytes, MaxDecodedBytes);
+	// Music is loaded once, then fed to the engine in bounded chunks (no full engine-side copy).
+	public static PcmWave ParseMusic(ReadOnlySpan<byte> data) => Parse(data, MaxAuditInputBytes, MaxAuditInputBytes);
+	private static PcmWave Parse(ReadOnlySpan<byte> data, int maxInput, int maxDecoded)
 	{
-		var info = Inspect(data, AssetDecoders.MaxInputBytes);
+		var info = Inspect(data, maxInput);
 		var samples = data.Slice(info.Offset, info.Length);
 		int bits = info.Bits;
 		long decoded = (long)samples.Length * (16 / bits);
-		AssetBinary.Require(decoded <= MaxDecodedBytes, "Decoded WAV exceeds 32 MiB.");
+		AssetBinary.Require(decoded <= maxDecoded, "Decoded WAV exceeds configured memory budget.");
 		var pcm = new byte[(int)decoded];
 		if (bits == 16) samples.CopyTo(pcm);
 		else for (int i = 0; i < samples.Length; i++) BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), (short)((samples[i] - 128) << 8));

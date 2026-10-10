@@ -73,6 +73,28 @@ internal static class AudioContracts
 			Bad(() => DemoOpaqueRecords.Validate("other.wav", new byte[72]));
 			Check(AssetDecoders.Kind(path) == "wav_pcm"); // no global extension/path bypass
 		});
+		test("music accepts 40 MiB PCM while effects and cumulative budgets remain bounded", () =>
+		{
+			var bytes = Wave(new byte[40 * 1024 * 1024]);
+			Check(PcmWave.ParseMusic(bytes).Frames == 20 * 1024 * 1024);
+			Bad(() => PcmWave.Parse(bytes));
+			Bad(() => PcmWave.ParseMusic(Wave(new byte[33 * 1024 * 1024], 8)));
+			Bad(() => LegacyAudioBank.Load(new([], [new(1, "a.wav"), new(2, "b.wav")]), [new(1), new(2)], _ => bytes));
+		});
+		test("PCM cursor preserves stereo endpoints, loops exactly and resets without allocation", () =>
+		{
+			var cursor = new PcmLoop(PcmWave.Parse(Wave([0, 128, 255, 127, 0, 0, 0, 64], 16, 2)));
+			var block = new float[6]; cursor.ReadStereo(block);
+			Check(block.SequenceEqual(new float[] { -1, 32767f / 32768, 0, 0.5f, -1, 32767f / 32768 }));
+			Check(cursor.Position == 1 && cursor.FramesRead == 3);
+			cursor.Reset(); Check(cursor.Position == 0 && cursor.FramesRead == 0);
+			long before = GC.GetAllocatedBytesForCurrentThread();
+			for (int i = 0; i < 100; i++) cursor.ReadStereo(block);
+			Check(GC.GetAllocatedBytesForCurrentThread() == before && cursor.FramesRead == 300);
+			Bad(() => cursor.ReadStereo(new float[3])); Bad(() => cursor.ReadStereo(new float[16386]));
+			var mono = new PcmLoop(PcmWave.Parse(Wave([128, 255], 8))); mono.ReadStereo(block);
+			Check(block[0] == 0 && block[1] == 0 && block[2] == 127f / 128 && block[3] == block[2]);
+		});
 		test("audio bank normalizes and shares MPQ reads across cues and regions", () =>
 		{
 			int reads = 0; var request = new LegacyAudioRequest([new("Hit", "DATA/SFX/A.WAV"), new("Death", "data/sfx/a.wav")], [new(1, "data/sfx/a.wav"), new(2, "data/sfx/a.wav")]);

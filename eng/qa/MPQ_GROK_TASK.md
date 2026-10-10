@@ -66,3 +66,18 @@ dotnet tools/OpenD2.AssetAudit/bin/Release/net10.0/OpenD2.AssetAudit.dll --decod
 기존 데모 결과는 두 명령 모두 종료 3이다. 첫 명령은 LoD 필수 자료 누락, 전체 decode에는 WAV 거부 3건도 있다.
 종료 3을 0으로 바꾸지 않는다. 재실행했을 때만 full_asset_audit에 실제 결과와 보고서를 연결한다.
 데모 출처/해시는 저장소 `docs/migration/DEMO_MPQ_RESULTS.md`에 기록되어 있다.
+
+## 선택 음악 검사 (새 QA kit의 `--music` 옵션)
+
+인계 준비 명령에 `--music`을 추가하면 scene.json에 실제 데모의
+`data/global/music/act1/town1.wav`가 연결되고 MPQ-06 청취 사례가 추가된다.
+기본 terrain 인계는 그대로 무음/오디오 BLOCKED다. 같은 빌드의 게임과 키트를 사용한다.
+
+MPQ-06: 실제 창에서 음악 시작, Pause 후 정지, Continue 후 같은 트랙 재개,
+음량 조절/음소거/복구, 다른 장면/메뉴 종료 시 음악 정지, 재실행을 확인한다.
+전체 트랙 반복 경계는 약 4분 이상 재생하며 직접 듣고 기록한다. 디코딩/헤드리스 검사는
+스피커 청취 증거가 아니므로 실제로 듣지 못하면 NOT_RUN/BLOCKED를 유지한다.
+효과음/캐릭터 음성은 이 장면에 연결되지 않았다. GUI와 audio_qa는 각각 기록한다.
+
+대형 42MB 음악의 자동 전수 PCM 버퍼 검사는 Actions full-audit의 music.json에 별도로 남는다.
+이 검사는 가상 파일명과 고정 해시가 일치하는 d2music.mpq 안에서만 수행한다.

@@ -45,7 +45,13 @@ public sealed class LegacyPlayScene
 	private LegacyPlayScene(WorldDefinition world, EntityState[] actors, Dictionary<RegionId, LegacyMapAsset> terrain, Dictionary<EntityId, LegacyActorArt> artwork, LegacyAssetSource[] artworkSources, string id, LegacyAudioBank? audio, LegacyActorArt? npcArtwork, int npcFacing, LegacyAssetSource[] npcSources, LegacyHudArt? hudArtwork, LegacyAssetSource[] hudSources, LegacyItemArt? itemArtwork, LegacyAssetSource[] itemSources, LegacyItemDefinitions? itemDefinitions, InventoryLayout inventory)
 	{ World = world; Actors = Array.AsReadOnly(actors); Terrain = new ReadOnlyDictionary<RegionId, LegacyMapAsset>(terrain); Artwork = new ReadOnlyDictionary<EntityId, LegacyActorArt>(artwork); ArtworkSources = Array.AsReadOnly(artworkSources); ContentId = id; Audio = audio; NpcArtwork = npcArtwork; NpcFacing = npcFacing; NpcArtworkSources = Array.AsReadOnly(npcSources); HudArtwork = hudArtwork; HudArtworkSources = Array.AsReadOnly(hudSources); ItemArtwork = itemArtwork; ItemArtworkSources = Array.AsReadOnly(itemSources); ItemDefinitions = itemDefinitions; Inventory = inventory; }
 	public GameSimulation Create(uint seed) => new(seed, Actors, world: World, inventory: Inventory);
-	public static LegacyPlayScene Load(string directory, LegacySceneRequest request) => Load(request, path => AssetDecoders.ReadFromInstall(directory, path));
+	public static LegacyPlayScene Load(string directory, LegacySceneRequest request)
+	{
+		ArgumentNullException.ThrowIfNull(request);
+		var music = (request.Audio?.Music ?? []).Where(t => t is not null).Select(t => MpqArchive.NormalizePath(t.Path)).ToHashSet(StringComparer.Ordinal);
+		return Load(request, path => AssetDecoders.ReadFromInstall(directory, path,
+			music.Contains(MpqArchive.NormalizePath(path)) ? PcmWave.MaxAuditInputBytes : AssetDecoders.MaxInputBytes));
+	}
 	public static LegacyPlayScene Load(LegacySceneRequest request, Func<string, byte[]> read)
 	{
 		ArgumentNullException.ThrowIfNull(request); ArgumentNullException.ThrowIfNull(read);

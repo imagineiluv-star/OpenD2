@@ -40,13 +40,20 @@ class MpqActionTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertTrue(action.terrain_errors(value, 3))
 
-    def execute(self, mode, report, code=3, stderr=''):
+    def execute(self, mode, report, code=3, stderr='', music_code=0, music_stderr=''):
         temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
         root = Path(temp.name)
         args = argparse.Namespace(mode=mode, work=root/'input', output=root/'reports',
                                   installer=root/'demo.exe', dotnet='dotnet')
+        def result(command, **kwargs):
+            if '--check-demo-music' in command:
+                return subprocess.CompletedProcess(command, music_code, json.dumps({'Status': 'PASS',
+                    'Scope': 'actual_demo_pcm_cursor', 'SourceBytes': 42270644,
+                    'EntireTrackChecked': True, 'LoopChecked': True, 'SceneMusicLoaded': True,
+                    'SceneContentId': action.CONTENT_ID, 'Gui': 'NOT_RUN', 'SpeakerOutput': 'NOT_RUN'}), music_stderr)
+            return subprocess.CompletedProcess(command, code, json.dumps(report), stderr)
         with patch.object(action, 'checked_installer'), patch.object(action, 'extract', return_value=[]), \
-             patch.object(action.subprocess, 'run', return_value=subprocess.CompletedProcess([], code, json.dumps(report), stderr)):
+             patch.object(action.subprocess, 'run', side_effect=result):
             result = action.run(args)
         return result, json.loads((args.output/'summary.json').read_text()), args.output
 
@@ -78,6 +85,16 @@ class MpqActionTests(unittest.TestCase):
         code, summary, _ = self.execute('full-audit', clean, 0)
         self.assertEqual(0, code)
         self.assertEqual('NOT_VERIFIED', summary['full_compatibility'])
+
+    def test_music_probe_failure_is_not_promoted_to_full_qa(self):
+        clean = {'Installation': {'MissingArchives': [], 'Profile': 'demo-1.04'}, 'Archives': [], 'Entries': []}
+        for code, stderr in [(3, ''), (0, 'ERROR: cursor')]:
+            result, summary, output = self.execute('full-audit', clean, 0, music_code=code, music_stderr=stderr)
+            self.assertEqual(3, result)
+            self.assertEqual('FAIL', summary['status'])
+            self.assertEqual('NOT_RUN', summary['gui_qa'])
+            self.assertTrue((output/'music.json').is_file())
+            self.assertEqual(stderr, (output/'music.stderr.txt').read_text())
 
     def test_invalid_installer_is_rejected(self):
         with tempfile.TemporaryDirectory() as root:

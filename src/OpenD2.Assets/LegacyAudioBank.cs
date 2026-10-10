@@ -36,12 +36,12 @@ public sealed class LegacyAudioBank
 			AssetBinary.Require(tracks.TryAdd(new(track!.Region), Path(track.Path)), "Duplicate region music.");
 		}
 		var cache = new Dictionary<string, PcmWave>(StringComparer.Ordinal); long input = 0, decoded = 0;
-		PcmWave Load(string path)
+		PcmWave Load(string path, bool music = false)
 		{
 			if (cache.TryGetValue(path, out var found)) return found;
 			var bytes = read(path); input += bytes.LongLength;
 			AssetBinary.Require(input <= 64L * 1024 * 1024, "Audio input exceeds 64 MiB.");
-			var wave = PcmWave.Parse(bytes); decoded += wave.Samples.Length;
+			var wave = (music ? PcmWave.ParseMusic(bytes) : PcmWave.Parse(bytes)); decoded += wave.Samples.Length;
 			AssetBinary.Require(decoded <= 64L * 1024 * 1024, "Decoded audio exceeds 64 MiB."); cache.Add(path, wave); return wave;
 		}
 		var effects = new Dictionary<AudioCue, PcmWave>();
@@ -49,7 +49,7 @@ public sealed class LegacyAudioBank
 		{
 			var wave = Load(path); AssetBinary.Require(wave.Frames <= wave.SampleRate * 10, "Effects must not exceed 10 seconds."); effects.Add(cue, wave);
 		}
-		return new(effects, tracks.ToDictionary(p => p.Key, p => Load(p.Value)));
+		return new(effects, tracks.ToDictionary(p => p.Key, p => Load(p.Value, true)));
 	}
 	public static AudioCue? CueFor(SimulationEvent e) => e.Kind switch
 	{

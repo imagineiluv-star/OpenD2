@@ -59,6 +59,16 @@ class MpqHandoffTests(unittest.TestCase):
         self.assertFalse(list(self.output.rglob("*.mpq")))
         self.assertNotIn(str(self.root), json.dumps(result))
 
+    def test_optional_music_remains_unverified_and_uses_real_named_path(self):
+        report = qa.prepare(self.data, self.package, self.metadata, self.output, include_music=True)
+        scene = qa.read_json(self.output/'scene.json')
+        self.assertEqual('data/global/music/act1/town1.wav', scene['Audio']['Music'][0]['Path'])
+        self.assertEqual('NOT_RUN', report['audio_qa'])
+        self.assertEqual('NOT_RUN', report['gui_qa'])
+        self.assertEqual('MPQ-06', report['cases'][-1]['id'])
+        self.assertEqual(qa.digest(self.output/'scene.json'), report['scene_json_sha256'])
+        self.assertEqual(qa.CONTENT_ID, report['expected_content_id'])
+
     def test_modified_missing_extra_mpqs_fail_before_creating_output(self):
         path = self.data / "d2data.mpq"
         original = path.read_bytes()

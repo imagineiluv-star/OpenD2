@@ -152,8 +152,25 @@ def run(args):
                                       "Coverage limited to enumerated paths and implemented formats; GUI and runtime audio NOT_RUN"]
             summary["decoder_failures"] = [{k: e[k] for k in ("SourceArchive", "LogicalPath", "ErrorCode", "Size")}
                                            for e in report["Entries"] if e["ErrorCode"]]
+        if args.mode == "full-audit" and summary["status"] == "PASS":
+            music = subprocess.run([args.dotnet, str(assembly), "--check-demo-music", str(data), str(ROOT / "eng/qa/demo-town-scene.json")],
+                                   capture_output=True, text=True, encoding="utf-8", timeout=120)
+            music_stdout = music.stdout.replace(str(data), "<private-data>")
+            music_stderr = music.stderr.replace(str(data), "<private-data>")
+            (output / "music.json").write_text(music_stdout, encoding="utf-8")
+            (output / "music.stderr.txt").write_text(music_stderr, encoding="utf-8")
+            music_report = json.loads(music_stdout)
+            summary["music_cursor"] = music_report
+            print("Music cursor report: " + json.dumps(music_report, sort_keys=True))
+            if (music.returncode != 0 or music_stderr.strip() or music_report.get("Status") != "PASS"
+                    or music_report.get("Scope") != "actual_demo_pcm_cursor"
+                    or music_report.get("SourceBytes") != 42270644
+                    or not music_report.get("EntireTrackChecked") or not music_report.get("LoopChecked")
+                    or not music_report.get("SceneMusicLoaded") or music_report.get("SceneContentId") != CONTENT_ID):
+                summary["status"] = "FAIL"
         return 0 if summary["status"] == "PASS" else 3
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        summary["status"] = "FAIL"
         summary["error"] = str(error).replace(str(work), "<private-data>")
         return 1
     finally:
