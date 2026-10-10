@@ -27,10 +27,40 @@ public partial class Main : Node3D
 
 	public override void _Ready()
 	{
-		if (OS.GetCmdlineUserArgs().Contains("--online-smoke"))
+		var args = OS.GetCmdlineUserArgs();
+		if (args.Contains("--online-smoke"))
 		{
 			SetProcess(false);
+			SetProcessUnhandledKeyInput(false);
+			if (!ClientInstance.IsLocalValidation(args))
+			{
+				GD.Print("OPEND2_VALIDATION_REFUSED: online smoke requires the local test runner.");
+				GetTree().Quit(74);
+				return;
+			}
 			AddChild(new OnlineSmoke());
+			return;
+		}
+		try
+		{
+			if (!ClientInstance.Acquire())
+			{
+				SetProcess(false);
+				SetProcessUnhandledKeyInput(false);
+				GD.Print("OPEND2_INSTANCE_BLOCKED: another client or local port reservation is active.");
+				if (DisplayServer.GetName() != "headless")
+					OS.Alert("OpenD2 is already running on this PC, or its local lock port (24682) is unavailable. Close the existing client before trying again.", "OpenD2 — one client per PC");
+				GetTree().Quit(73);
+				return;
+			}
+			GD.Print("OPEND2_INSTANCE_ACQUIRED");
+		}
+		catch (Exception error)
+		{
+			SetProcess(false);
+			SetProcessUnhandledKeyInput(false);
+			GD.PushError("Cannot acquire the machine-local client lease: " + error);
+			GetTree().Quit(1);
 			return;
 		}
 		BuildScene();
