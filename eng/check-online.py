@@ -22,15 +22,17 @@ ROOT = Path(__file__).resolve().parents[1]
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dotnet', default='dotnet')
+    parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/online')
     parser.add_argument('--godot')
+    parser.add_argument('--windowed', action='store_true', help='Render two automated client windows; not manual GUI acceptance')
     parser.add_argument('--client-packages', type=Path)
     parser.add_argument('--preset', choices=['Linux', 'Windows', 'macOS'])
     parser.add_argument('--server-exe', type=Path)
     parser.add_argument('--server', type=Path, help='Published server DLL to validate instead of build output')
     args = parser.parse_args()
-    output = ROOT / 'artifacts/online'
+    output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    report = {'http': 'NOT_RUN', 'restart': 'NOT_RUN', 'godot_transport': 'NOT_RUN', 'gui': 'NOT_RUN'}
+    report = {'http': 'NOT_RUN', 'restart': 'NOT_RUN', 'godot_transport': 'NOT_RUN', 'godot_gameplay': 'NOT_RUN', 'rendered': 'NOT_RUN', 'gui': 'NOT_RUN'}
     with tempfile.TemporaryDirectory(prefix='opend2-online-') as temporary:
         private = Path(temporary)
         with socket.socket() as listener:
@@ -42,7 +44,7 @@ def main():
         client_command = None
         if args.godot:
             godot = (ROOT/'.local-tools/godot-path.txt').read_text().strip() if args.godot == 'auto' else args.godot
-            client_command = [godot, '--headless', '--path', 'src/OpenD2.Client']
+            client_command = [godot, '--path', 'src/OpenD2.Client'] + (['--rendering-method', 'gl_compatibility', '--audio-driver', 'Dummy', '--max-fps', '60'] if args.windowed else ['--headless'])
         if args.client_packages:
             metadata = json.loads((args.client_packages/f'package-{args.preset}.json').read_text())
             package = args.client_packages / metadata['file']
@@ -60,7 +62,7 @@ def main():
                 app = next(extracted.glob('*.app'))
                 info = plistlib.loads((app/'Contents/Info.plist').read_bytes())
                 executable = app/'Contents/MacOS'/info['CFBundleExecutable']
-            client_command = [str(executable), '--headless']
+            client_command = [str(executable)] + (['--rendering-method', 'gl_compatibility', '--audio-driver', 'Dummy', '--max-fps', '60'] if args.windowed else ['--headless'])
         process = None
         children = []
         handles = []
@@ -142,16 +144,51 @@ def main():
             request('POST', path+'/close', token=a, expected=404)
             if client_command:
                 run = secrets.token_hex(4)
+                evidence = output / ('gameplay-' + run)
+                evidence.mkdir()
                 for role in ('host', 'guest'):
-                    handle = (output/f'godot-{role}.log').open('w', encoding='utf-8'); handles.append(handle)
-                    children.append((role, subprocess.Popen(client_command + ['--', '--online-smoke', '--server='+url, '--role='+role, '--run='+run], cwd=ROOT,
-                        stdout=handle, stderr=subprocess.STDOUT)))
+                    handle = (evidence/f'godot-{role}.log').open('w', encoding='utf-8'); handles.append(handle)
+                    client_env = os.environ.copy()
+                    if platform.system() == 'Linux':
+                        # Independent clients represent independent user profiles. Avoid
+                        # concurrent engine shader-cache creation in the same user://.
+                        for variable, suffix in [('XDG_DATA_HOME', 'data'), ('XDG_CACHE_HOME', 'cache')]:
+                            folder = private / (role + '-' + suffix)
+                            folder.mkdir()
+                            client_env[variable] = str(folder)
+                    children.append((role, subprocess.Popen(client_command + ['--', '--online-smoke', '--server='+url, '--role='+role, '--run='+run, '--evidence='+str(evidence.resolve())], cwd=ROOT,
+                        stdout=handle, stderr=subprocess.STDOUT, env=client_env)))
+                deadline = time.monotonic() + 150
+                restarted = False
+                while any(child.poll() is None for _, child in children):
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError('Two-client gameplay timed out')
+                    for role, child in children:
+                        if child.poll() not in (None, 0):
+                            raise RuntimeError(f'{role} gameplay failed; see {evidence}/godot-{role}.log')
+                    if not restarted and all((evidence / (role + '-restart-ready')).exists() for role in ('host', 'guest')):
+                        process.kill(); process.wait(timeout=10)
+                        start(3)
+                        (evidence / 'server-restarted').write_text('ready')
+                        restarted = True
+                    time.sleep(0.1)
+                assert restarted, 'Both Godot clients must survive a hard server restart'
                 for role, child in children:
-                    assert child.wait(timeout=60) == 0, role
-                    text = (output/f'godot-{role}.log').read_text(encoding='utf-8')
+                    assert child.returncode == 0, role
+                    text = (evidence/f'godot-{role}.log').read_text(encoding='utf-8')
                     assert 'ERROR:' not in text and 'SCRIPT ERROR:' not in text, role
                     assert 'OPEND2_ONLINE_TRANSPORT_PASS '+role in text, role
+                    assert 'OPEND2_ONLINE_GAMEPLAY_PASS '+role in text, role
+                    result = json.loads((evidence / (role + '-result.json')).read_text())
+                    assert result['result'] == 'PASS' and len(result['checks']) >= 9, role
+                    if args.windowed:
+                        assert result['rendering'] == 'PASS' and len(list(evidence.glob(role + '-*.png'))) == 5, role
+                if platform.system() == 'Linux':
+                    profiles = [json.loads((evidence / (role + '-result.json')).read_text())['user_data'] for role in ('host', 'guest')]
+                    assert profiles[0] != profiles[1], 'Godot clients must have independent user data directories'
                 report['godot_transport'] = 'PASS'
+                report['godot_gameplay'] = 'PASS'
+                report['rendered'] = 'PASS' if args.windowed else 'NOT_RUN'
             print('ONLINE HTTP / RESTART / GODOT:', json.dumps(report))
         finally:
             for _, child in children:

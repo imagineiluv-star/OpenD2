@@ -9,14 +9,18 @@ public partial class OnlinePanel
 {
     // Two independent Godot processes use the same transport and view binding as the UI.
     // This tests networking in Godot, not visible input/rendering acceptance.
-    internal async Task CheckOnline(string url, string role, string run)
+    internal async Task CheckOnline(string url, string role, string run, string evidence)
     {
         busy = true;
         try
         {
             address.Text = url; username.Text = role + run; password.Text = Guid.NewGuid().ToString("N");
+            string secret = password.Text;
             await Login(true);
             var character = await client!.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest(role + "Hero"), lifetime.Token);
+            await Refresh();
+            characters.Select(Array.FindIndex(characterList, c => c.Id == character.Id));
+            if (SelectedCharacter() != character.Id) throw new InvalidDataException("Character selection binding failed.");
             string roomTitle = "test" + run;
             if (role == "host") Apply(await client.Send<RoomView>(HttpMethod.Post, "v1/rooms", new RoomRequest(character.Id, roomTitle, ""), lifetime.Token));
             else
@@ -39,6 +43,8 @@ public partial class OnlinePanel
                 await Task.Delay(100, lifetime.Token);
             }
             if (!started || state!.Members.Length != 2 || state.Entities.Length != 4 || details.Text.Length == 0 || arena.State != state) throw new InvalidDataException("Online view/room start failed.");
+            await Refresh();
+            rooms.Select(Array.FindIndex(roomList, r => r.Id == state.Id));
             // Host moves away from the monster; guest must see that authoritative movement.
             if (role == "host")
             {
@@ -63,6 +69,7 @@ public partial class OnlinePanel
             if (!handled || requests.Count != 0) throw new InvalidDataException("Queued user action was lost.");
             busy = true;
             GD.Print("OPEND2_ONLINE_TRANSPORT_PASS " + role + " GUI_NOT_RUN");
+            await CheckGameplay(role, secret, character.Id, evidence);
         }
         finally { busy = false; }
     }
