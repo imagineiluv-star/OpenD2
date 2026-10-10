@@ -6,6 +6,8 @@ using OpenD2.Online;
 using OpenD2.Server;
 
 var builder = WebApplication.CreateBuilder(args);
+string mode = builder.Configuration["mode"] ?? "realm";
+if (mode is not ("realm" or "open")) throw new ArgumentException("Mode must be realm or open.");
 if (string.IsNullOrEmpty(builder.Configuration["urls"])) builder.WebHost.UseUrls("http://127.0.0.1:5080");
 builder.WebHost.ConfigureKestrel(o => { o.Limits.MaxRequestBodySize = 8192; o.Limits.MaxConcurrentConnections = 64; });
 builder.Services.ConfigureHttpJsonOptions(o => { o.SerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow; o.SerializerOptions.MaxDepth = 16; });
@@ -19,7 +21,7 @@ builder.Services.AddRateLimiter(o =>
     o.AddFixedWindowLimiter("password", x => { x.PermitLimit = 60; x.Window = TimeSpan.FromMinutes(1); x.QueueLimit = 0; });
     o.AddFixedWindowLimiter("game", x => { x.PermitLimit = 1000; x.Window = TimeSpan.FromSeconds(1); x.QueueLimit = 0; });
 });
-builder.Services.AddSingleton(new Realm(builder.Configuration["data"] ?? Path.Combine(AppContext.BaseDirectory, "realm-data")));
+builder.Services.AddSingleton(new Realm(builder.Configuration["data"] ?? Path.Combine(AppContext.BaseDirectory, mode + "-data"), mode: mode));
 builder.Services.AddHostedService<RealmLoop>();
 var app = builder.Build();
 app.Use(async (context, next) =>
@@ -38,7 +40,7 @@ string Token(HttpContext c)
     string header = c.Request.Headers.Authorization.ToString();
     return header.StartsWith("Bearer ", StringComparison.Ordinal) && header.Length == 71 ? header[7..] : "";
 }
-app.MapGet("/health", () => new { protocol = 1, rules = OpenD2.Core.GameSimulation.RulesVersion, roomStream = 1 });
+app.MapGet("/health", () => new { protocol = 1, rules = OpenD2.Core.GameSimulation.RulesVersion, roomStream = 1, mode });
 app.MapPost("/v1/register", (Credentials input, Realm realm) => realm.Login(input, true)).RequireRateLimiting("password");
 app.MapPost("/v1/login", (Credentials input, Realm realm) => realm.Login(input, false)).RequireRateLimiting("password");
 var api = app.MapGroup("/v1").RequireRateLimiting("game");

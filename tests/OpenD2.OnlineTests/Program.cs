@@ -8,6 +8,7 @@ if (args is ["--tls-server", var server, "--fixtures", var fixtures, "--output",
     return;
 }
 if (args.Length != 0) throw new ArgumentException("Unknown online test arguments.");
+ModeContracts.Run();
 
 static void Check(bool yes, string message) { if (!yes) throw new Exception(message); Console.WriteLine("PASS " + message); }
 static void Reject(int code, Action action)
