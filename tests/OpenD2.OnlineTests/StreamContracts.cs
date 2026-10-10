@@ -38,9 +38,24 @@ internal static class StreamContracts
         long tick = second.Current.Tick;
         do { if (!await second.MoveNextAsync()) throw new Exception("Missing pushed tick."); } while (second.Current.Tick <= tick);
         Pass("server ticks arrive without HTTP state polling");
-        var before = second.Current.Entities.Single(e => e.Id.Value == 1).Position.X;
-        await host.Send<RoomView>(HttpMethod.Post, path + "/input", new InputRequest(first.Current.NextSequence, CommandKind.SetMove, -1, 0), stop);
-        do { if (!await second.MoveNextAsync()) throw new Exception("Missing peer movement."); } while (second.Current.Entities.Single(e => e.Id.Value == 1).Position.X >= before);
+        // Keep the host stream drained while measuring the peer; buffering must not
+        // turn this cadence probe into an unintended slow-reader test.
+        long sequence = first.Current.NextSequence;
+        using (var drainStop = new CancellationTokenSource())
+        {
+            async Task Drain()
+            {
+                while (!drainStop.IsCancellationRequested)
+                    if (!await first.MoveNextAsync()) throw new Exception("Host stream ended during metrics.");
+            }
+            Task drain = Drain();
+            try
+            {
+                await StreamMetrics.Measure(host, second, path, sequence,
+                    Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "stream-metrics.json"), stop);
+            }
+            finally { drainStop.Cancel(); await drain; }
+        }
         Pass("HTTP-owned movement is pushed to the peer over WSS");
         await using (var duplicate = host.WatchRoom(room.Id, stop).GetAsyncEnumerator()) await Rejected(duplicate, 409);
         Pass("duplicate stream for the same session rejected");
