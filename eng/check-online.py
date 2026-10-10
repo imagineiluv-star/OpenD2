@@ -29,6 +29,7 @@ def main():
     parser.add_argument('--windowed', action='store_true', help='Render two automated client windows; not manual GUI acceptance')
     parser.add_argument('--client-packages', type=Path)
     parser.add_argument('--preset', choices=['Linux', 'Windows', 'macOS'])
+    parser.add_argument('--mode', choices=['realm', 'open'], default='realm')
     parser.add_argument('--server-exe', type=Path)
     parser.add_argument('--server', type=Path, help='Published server DLL to validate instead of build output')
     args = parser.parse_args()
@@ -52,7 +53,7 @@ def main():
             tls_args = ['--ca=' + str(certificates / 'ca.pem')]
         report['transport'] = 'HTTPS' if context else 'HTTP_LOOPBACK'
         server = args.server or ROOT / 'src/OpenD2.Server/bin/Release/net10.0/OpenD2.Server.dll'
-        command = ([str(args.server_exe.resolve())] if args.server_exe else [args.dotnet, str(server)]) + ['--urls', url, '--data', str(private/'data')]
+        command = ([str(args.server_exe.resolve())] if args.server_exe else [args.dotnet, str(server)]) + ['--urls', url, '--data', str(private/'data'), '--mode', args.mode]
         client_command = None
         if args.godot:
             godot = (ROOT/'.local-tools/godot-path.txt').read_text().strip() if args.godot == 'auto' else args.godot
@@ -101,7 +102,8 @@ def main():
                 if process.poll() is not None:
                     raise RuntimeError('Server exited during startup')
                 try:
-                    request('GET', '/health'); return
+                    assert request('GET', '/health')['mode'] == args.mode
+                    return
                 except (OSError, AssertionError):
                     time.sleep(0.1)
             raise TimeoutError('Server startup timed out')
@@ -173,7 +175,7 @@ def main():
                             folder = private / (role + '-' + suffix)
                             folder.mkdir()
                             client_env[variable] = str(folder)
-                    children.append((role, subprocess.Popen(client_command + ['--', '--online-smoke', '--server='+url, '--role='+role, '--run='+run, '--evidence='+str(evidence.resolve())] + tls_args, cwd=ROOT,
+                    children.append((role, subprocess.Popen(client_command + ['--', '--online-smoke', '--mode='+args.mode, '--server='+url, '--role='+role, '--run='+run, '--evidence='+str(evidence.resolve())] + tls_args, cwd=ROOT,
                         stdout=handle, stderr=subprocess.STDOUT, env=client_env)))
                 deadline = time.monotonic() + 150
                 restarted = False
@@ -197,6 +199,8 @@ def main():
                     assert 'OPEND2_ONLINE_TRANSPORT_PASS '+role in text, role
                     assert 'OPEND2_ONLINE_STREAM_PASS '+role in text, role
                     assert 'OPEND2_ONLINE_GAMEPLAY_PASS '+role in text, role
+                    if args.mode == 'open':
+                        assert 'OPEND2_OPEN_PROFILE_UI_PASS DIALOG_GESTURES_NOT_RUN' in text, role
                     result = json.loads((evidence / (role + '-result.json')).read_text())
                     assert result['result'] == 'PASS' and len(result['checks']) >= 9, role
                     assert result['observations'] == 'room-websocket-stream' and result['http_state_polling'] is False, role
@@ -208,6 +212,7 @@ def main():
                 report['godot_transport'] = 'PASS'
                 report['room_stream'] = 'WSS' if args.tls_fixtures else 'WS_LOOPBACK'
                 report['godot_gameplay'] = 'PASS'
+                report['open_profile_ui_binding'] = 'PASS' if args.mode == 'open' else 'NOT_RUN'
                 report['rendered'] = 'PASS' if args.windowed else 'NOT_RUN'
             print('ONLINE HTTP / RESTART / GODOT:', json.dumps(report))
         finally:
@@ -215,6 +220,7 @@ def main():
                 if child.poll() is None: child.kill(); child.wait(timeout=10)
             if process and process.poll() is None: process.terminate(); process.wait(timeout=10)
             for handle in handles: handle.close()
+            report['mode'] = args.mode
             (output/'result.json').write_text(json.dumps(report, indent=2)+'\n', encoding='utf-8')
             # No account DB, passwords or bearer tokens are uploaded.
 

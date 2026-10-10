@@ -17,6 +17,8 @@ public partial class OnlinePanel : VBoxContainer
     private readonly LineEdit roomName = new() { Text = "Camp", PlaceholderText = "Room name" };
     private readonly LineEdit roomPassword = new() { Secret = true, PlaceholderText = "Optional room password (12+ characters)" };
     private readonly OptionButton characters = new(), rooms = new();
+    private readonly OptionButton serverMode = new();
+    private string SelectedMode => serverMode.Selected == 1 ? "open" : "realm";
     private readonly Label status = new() { Text = "Sign in to your OpenD2 server.", AutowrapMode = TextServer.AutowrapMode.WordSmart };
     private readonly Label details = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
     private readonly OnlineArena arena = new() { CustomMinimumSize = new(640, 430), SizeFlagsVertical = SizeFlags.ExpandFill, FocusMode = FocusModeEnum.All };
@@ -33,6 +35,9 @@ public partial class OnlinePanel : VBoxContainer
     public override void _Ready()
     {
         AddChild(new Label { Text = "Online — account → character → room → cooperative arena", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+        serverMode.AddItem("Realm — server characters");
+        serverMode.AddItem("Open — personal profiles (preview)");
+        AddChild(serverMode);
         AddChild(address);
         var connection = new HFlowContainer(); AddChild(connection);
         var trust = new Label { Text = "Trust: system certificates", AutowrapMode = TextServer.AutowrapMode.WordSmart }; AddChild(trust);
@@ -40,7 +45,7 @@ public partial class OnlinePanel : VBoxContainer
         certificate.FileSelected += file => { caFile = file; trust.Text = "Private CA selected: " + Path.GetFileName(file) + ". Check server to compare its SHA-256 with your administrator."; };
         Button(connection, "Check server", async () =>
         {
-            using var probe = new OnlineClient(address.Text, caFile);
+            using var probe = new OnlineClient(address.Text, caFile, SelectedMode);
             await probe.CheckServer(lifetime.Token);
             status.Text = "Server reachable; protocol and rules match. " + (probe.TrustedRootSha256 is { } hash ? "Private CA SHA-256: " + hash : "System certificate trust.");
         });
@@ -53,6 +58,7 @@ public partial class OnlinePanel : VBoxContainer
         var chars = new HFlowContainer(); AddChild(chars); chars.AddChild(characterName); chars.AddChild(characters);
         Button(chars, "Create character", async () => { RequireLogin(); await client!.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest(characterName.Text), lifetime.Token); await Refresh(); });
         Confirm(chars, "Delete selected", "Delete this character permanently?", async () => { RequireLogin(); await client!.Send<object>(HttpMethod.Delete, "v1/characters/" + SelectedCharacter(), cancellation: lifetime.Token); await Refresh(); });
+        AddProfileControls();
         var lobby = new HFlowContainer(); AddChild(lobby); lobby.AddChild(roomName); lobby.AddChild(roomPassword); lobby.AddChild(rooms);
         Button(lobby, "Refresh", Refresh);
         Button(lobby, "Create room", async () => { RequireLogin(); Apply(await client!.Send<RoomView>(HttpMethod.Post, "v1/rooms", new RoomRequest(SelectedCharacter(), roomName.Text, roomPassword.Text), lifetime.Token)); });
@@ -114,10 +120,10 @@ public partial class OnlinePanel : VBoxContainer
     private Guid SelectedCharacter() => characters.Selected >= 0 && characters.Selected < characterList.Length ? characterList[characters.Selected].Id : throw new InvalidOperationException("Select a character.");
     private async Task Login(bool register)
     {
-        var next = new OnlineClient(address.Text, caFile); var credentials = new Credentials(username.Text, password.Text); password.Text = "";
+        var next = new OnlineClient(address.Text, caFile, SelectedMode); var credentials = new Credentials(username.Text, password.Text); password.Text = "";
         try { await next.Login(credentials, register, lifetime.Token); }
         catch { next.Dispose(); throw; }
-        requests.Clear(); StopRoomStream(); client?.Dispose(); client = next; signedIn = true; ClearRoom(); status.Text = "Logged in. Select a character and room."; await Refresh();
+        requests.Clear(); StopRoomStream(); client?.Dispose(); client = next; signedIn = true; serverMode.Disabled = true; ClearRoom(); status.Text = "Logged in to " + client.Mode + ". Select a character and room."; await Refresh();
     }
     private async Task Refresh()
     {
@@ -189,7 +195,7 @@ public partial class OnlinePanel : VBoxContainer
         throw new TimeoutException("Room stream did not deliver a fresh state.");
     }
     private void ClearRoom() { StopRoomStream(); state = null; arena.State = null; arena.QueueRedraw(); details.Text = ""; moveX = moveY = 0; }
-    private void Reset() { requests.Clear(); signedIn = false; client?.Dispose(); client = null; ClearRoom(); characters.Clear(); rooms.Clear(); }
+    private void Reset() { requests.Clear(); signedIn = false; serverMode.Disabled = false; client?.Dispose(); client = null; ClearRoom(); characters.Clear(); rooms.Clear(); }
     public override void _Process(double delta)
     {
         if (state is null || client is null || busy) return;
