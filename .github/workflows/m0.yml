@@ -64,10 +64,10 @@ jobs:
         run: python eng/smoke-export.py Linux --iterations 8
       - name: Online ownership and persistence contracts
         run: dotnet run --project tests/OpenD2.OnlineTests -c Release
-      - name: Publish server and test two extracted online clients
+      - name: Publish server and test extracted clients over HTTP and TLS
         if: runner.os != 'Linux'
         run: python eng/pack-online-server.py
-      - name: Test extracted Linux clients with headless and rendered gameplay
+      - name: Test extracted Linux clients with TLS and rendered gameplay
         if: runner.os == 'Linux'
         env:
           OPEND2_ONLINE_RENDERED: "1"

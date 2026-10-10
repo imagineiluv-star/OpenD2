@@ -10,6 +10,7 @@ import platform
 import tarfile
 import zipfile
 import socket
+import ssl
 import subprocess
 import tempfile
 import time
@@ -24,6 +25,7 @@ def main():
     parser.add_argument('--dotnet', default='dotnet')
     parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/online')
     parser.add_argument('--godot')
+    parser.add_argument('--tls-fixtures', type=Path, help='Private ephemeral certificates produced by TLS contracts')
     parser.add_argument('--windowed', action='store_true', help='Render two automated client windows; not manual GUI acceptance')
     parser.add_argument('--client-packages', type=Path)
     parser.add_argument('--preset', choices=['Linux', 'Windows', 'macOS'])
@@ -38,7 +40,17 @@ def main():
         with socket.socket() as listener:
             listener.bind(('127.0.0.1', 0))
             port = listener.getsockname()[1]
-        url = f'http://127.0.0.1:{port}'
+        url = f'{"https" if args.tls_fixtures else "http"}://127.0.0.1:{port}'
+        server_env = os.environ.copy()
+        context = None
+        tls_args = []
+        if args.tls_fixtures:
+            certificates = args.tls_fixtures.resolve()
+            server_env['Kestrel__Certificates__Default__Path'] = str(certificates / 'valid.pfx')
+            server_env['Kestrel__Certificates__Default__Password'] = os.environ['OPEND2_TEST_PFX_PASSWORD']
+            context = ssl.create_default_context(cafile=str(certificates / 'ca.pem'))
+            tls_args = ['--ca=' + str(certificates / 'ca.pem')]
+        report['transport'] = 'HTTPS' if context else 'HTTP_LOOPBACK'
         server = args.server or ROOT / 'src/OpenD2.Server/bin/Release/net10.0/OpenD2.Server.dll'
         command = ([str(args.server_exe.resolve())] if args.server_exe else [args.dotnet, str(server)]) + ['--urls', url, '--data', str(private/'data')]
         client_command = None
@@ -73,7 +85,7 @@ def main():
                 headers['Authorization'] = 'Bearer ' + token
             data = json.dumps(body).encode() if body is not None else (b'' if method == 'POST' else None)
             try:
-                response = urllib.request.urlopen(urllib.request.Request(url + path, data, headers, method=method), timeout=10)
+                response = urllib.request.urlopen(urllib.request.Request(url + path, data, headers, method=method), timeout=10, context=context)
             except urllib.error.HTTPError as error:
                 response = error
             with response:
@@ -84,7 +96,7 @@ def main():
         def start(index):
             nonlocal process
             handle = (private/f'server-{index}.log').open('w', encoding='utf-8'); handles.append(handle)
-            process = subprocess.Popen(command, cwd=ROOT, stdout=handle, stderr=subprocess.STDOUT)
+            process = subprocess.Popen(command, cwd=ROOT, stdout=handle, stderr=subprocess.STDOUT, env=server_env)
             for _ in range(200):
                 if process.poll() is not None:
                     raise RuntimeError('Server exited during startup')
@@ -95,7 +107,7 @@ def main():
             raise TimeoutError('Server startup timed out')
 
         try:
-            if client_command and not args.windowed:
+            if client_command and not args.windowed and not args.tls_fixtures:
                 from client_instance_check import check_single_instance
                 check_single_instance(client_command, output / 'single-instance', ROOT)
                 report['single_client_per_pc'] = 'PASS'
@@ -161,7 +173,7 @@ def main():
                             folder = private / (role + '-' + suffix)
                             folder.mkdir()
                             client_env[variable] = str(folder)
-                    children.append((role, subprocess.Popen(client_command + ['--', '--online-smoke', '--server='+url, '--role='+role, '--run='+run, '--evidence='+str(evidence.resolve())], cwd=ROOT,
+                    children.append((role, subprocess.Popen(client_command + ['--', '--online-smoke', '--server='+url, '--role='+role, '--run='+run, '--evidence='+str(evidence.resolve())] + tls_args, cwd=ROOT,
                         stdout=handle, stderr=subprocess.STDOUT, env=client_env)))
                 deadline = time.monotonic() + 150
                 restarted = False
