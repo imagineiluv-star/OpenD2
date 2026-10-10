@@ -51,6 +51,17 @@ def package_name(version, preset):
     return f"OpenD2-{version}-{PLATFORMS[preset]}"
 
 
+def mpq_kit(output, version, commit):
+    # Only authored configuration, metadata and instructions; never game data.
+    path = output / "mpq-qa-kit.zip"
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+        for name in ("mpq_handoff.py", "demo-mpq-hashes.json", "demo-town-scene.json", "MPQ_GROK_TASK.md"):
+            archive.writestr(zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0)), (ROOT / "eng/qa" / name).read_bytes())
+        archive.writestr(zipfile.ZipInfo("kit.json", (2026, 1, 1, 0, 0, 0)),
+                         json.dumps({"schema_version": 1, "version": version, "commit": commit}))
+    return path
+
+
 def pack(source, output, preset, version, commit, smoke=False):
     check_version(version, allow_ci=True)
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
@@ -104,6 +115,7 @@ def pack(source, output, preset, version, commit, smoke=False):
                 "file": archive.name, "bytes": archive.stat().st_size, "sha256": sha256(archive),
                 "headless_smoke": "PASS" if smoke else "NOT_RUN"}
     write_json(output / f"package-{preset}.json", metadata)
+    mpq_kit(output, version, commit)
     return metadata
 
 
@@ -124,6 +136,7 @@ def prepare(folder, version, commit, repository, run_url):
             raise ValueError(f"Extracted package has not passed headless smoke: {preset}")
         packages.append(metadata)
     release_url = f"https://github.com/{repository}/releases/tag/{version}"
+    mpq_kit(folder, version, commit)
     write_json(folder / "release-manifest.json", {
         "schema_version": 2, "version": version, "commit": commit,
         "repository": repository, "build_run": run_url, "release_url": release_url,
@@ -183,6 +196,8 @@ Optional legacy Audio mappings load PCM WAV effects and looping region music fro
 Actual listening/device checks are pending; headless audio checks do not certify audible output.
 
 For Grok Bot, provide [this release]({release_url}), `GROK_TASK.md` and `qa-result-template.json`.
+For public-demo MPQ terrain QA, also use `mpq-qa-kit.zip` and its MPQ_GROK_TASK.md.
+The kit checks local MPQ identity and prepares a separate NOT_RUN GUI report; no game assets are included.
 See `GROK_BOT_SETUP.md` for setup and the currently supported handoff.
 Return screenshots/video, game logs, an action log and a completed result JSON.
 FAIL, BLOCKED, NOT_RUN or missing evidence must not be treated as a pass.

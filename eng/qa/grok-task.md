@@ -137,3 +137,11 @@ HP +40 / MP +30 및 상한 clamp, 이미 가득 찼을 때 물약 보존, 빈 �
 `qa_plan=PLAY-17`과 manifest의 `required_case_ids`를 기준으로 누락 항목을 NOT_RUN으로 남긴다.
 이전 QA-01~10 결과만으로 새 후보 전체 PASS를 기록하지 않는다. 회차별 20분 제한은 그대로 유지한다.
 이전 회차 결과를 이어받을 때 버전·커밋·플랫폼·패키지 해시가 전부 같아야 한다. 다른 빌드의 PASS는 합치지 않는다.
+
+
+## 공개 데모 MPQ 지형 검증
+
+같은 빌드의 `mpq-qa-kit.zip`에 포함된 `MPQ_GROK_TASK.md`를 따른다.
+이 검사는 `public_demo_terrain_preview` 범위이며 기존 전체 QA-09/원본 아트/음향 인수를 대체하지 않는다.
+원본 MPQ는 사용자 로컬 경로로 제공하고 키트의 SHA256 검사를 통과해야 한다.
+키트 준비 성공은 GUI PASS가 아니며 별도 `mpq-qa-result.json`에 실제 창 조작 증거를 남긴다.
