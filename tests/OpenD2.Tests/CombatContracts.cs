@@ -75,6 +75,34 @@ internal static class CombatContracts
 			var game = new GameSimulation(1, [Player, obstacle], Grid()); Accept(game, Move(1)); game.Step(); Check(game.GetEntity(Player.Id).Position == Player.Position);
 			var dead = new GameSimulation(1, [Player, obstacle with { Health = 0 }], Grid()); Accept(dead, Move(1)); dead.Step(); Check(dead.GetEntity(Player.Id).Position.X == 416);
 		});
+		test("Melee endpoint on a grid corner stops at its owning cell in both directions", () =>
+		{
+			var grid = Grid();
+			foreach (int x in new[] { -213, 0, 213 }) foreach (int y in new[] { -213, 0, 213 })
+			{
+				var corner = new GamePosition(1280, 768); var nearby = new GamePosition(corner.X + x, corner.Y + y);
+				Check(grid.HasMeleeLine(nearby, corner) && grid.HasMeleeLine(corner, nearby));
+			}
+			// Beyond-endpoint cells are not part of this segment; traversed cells still block.
+			foreach (var blocked in new[] { CollisionCell.Blocked, CollisionCell.Unknown })
+			{
+				Check(Grid((5, 2, blocked)).HasMeleeLine(new(1067, 981), new(1280, 768)));
+				var wall = Grid((4, 3, blocked));
+				Check(!wall.HasMeleeLine(new(1067, 981), new(1280, 768)) && !wall.HasMeleeLine(new(1280, 768), new(1067, 981)));
+			}
+		});
+		test("Recorded macOS online corner geometry permits skill damage and mana cost", () =>
+		{
+			// CI 38057529654, guest tick 33: clear line, 301 units apart, but old DDA overshot.
+			var host = Player with { Position = new(1024, 768), Health = 93 };
+			var guest = Player with { Id = new(2), Position = new(1067, 981) };
+			var enemy = Monster with { Id = new(100), Position = new(1280, 768), Health = 45, MaxHealth = 60 };
+			var game = new GameSimulation(42, [host, guest, enemy], Grid());
+			Accept(game, new(1, 1, guest.Id, Region, CommandKind.CastSkill, Target: enemy.Id));
+			game.Step();
+			Check(game.GetEntity(guest.Id).Mana == 48 && game.GetEntity(enemy.Id).Health < 45);
+			Check(game.Events.ToArray().Any(e => e.Kind == SimulationEventKind.SkillCast && e.Actor == guest.Id));
+		});
 		test("Melee supercover blocks both sides of a corner and handles extreme inputs", () =>
 		{
 			var grid = Grid((1, 0, CollisionCell.Blocked));
