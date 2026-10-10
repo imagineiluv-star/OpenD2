@@ -32,7 +32,7 @@ def main():
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    report = {'http': 'NOT_RUN', 'restart': 'NOT_RUN', 'godot_transport': 'NOT_RUN', 'godot_gameplay': 'NOT_RUN', 'rendered': 'NOT_RUN', 'gui': 'NOT_RUN'}
+    report = {'single_client_per_pc': 'NOT_RUN', 'http': 'NOT_RUN', 'restart': 'NOT_RUN', 'godot_transport': 'NOT_RUN', 'godot_gameplay': 'NOT_RUN', 'rendered': 'NOT_RUN', 'gui': 'NOT_RUN'}
     with tempfile.TemporaryDirectory(prefix='opend2-online-') as temporary:
         private = Path(temporary)
         with socket.socket() as listener:
@@ -95,6 +95,10 @@ def main():
             raise TimeoutError('Server startup timed out')
 
         try:
+            if client_command and not args.windowed:
+                from client_instance_check import check_single_instance
+                check_single_instance(client_command, output / 'single-instance', ROOT)
+                report['single_client_per_pc'] = 'PASS'
             start(1)
             passwords = [secrets.token_hex(16) for _ in range(3)]
             users = ['alice', 'bob', 'eve']
@@ -149,6 +153,7 @@ def main():
                 for role in ('host', 'guest'):
                     handle = (evidence/f'godot-{role}.log').open('w', encoding='utf-8'); handles.append(handle)
                     client_env = os.environ.copy()
+                    client_env['OPEND2_ONLINE_VALIDATION_RUN'] = run
                     if platform.system() == 'Linux':
                         # Independent clients represent independent user profiles. Avoid
                         # concurrent engine shader-cache creation in the same user://.

@@ -48,8 +48,11 @@ public sealed class CollisionGrid
 		{
 			if (At(x, y) != CollisionCell.Open) return false;
 			if (x == endX && y == endY) return true;
-			long horizontal = sx == 0 ? long.MaxValue : nx * ay;
-			long vertical = sy == 0 ? long.MaxValue : ny * ax;
+			// A negative-axis crossing at the endpoint can leave its owning cell
+			// and overshoot forever toward the map edge. Stop each axis at its end
+			// cell; interior corner crossings still check both neighboring cells.
+			long horizontal = x == endX ? long.MaxValue : nx * ay;
+			long vertical = y == endY ? long.MaxValue : ny * ax;
 			if (horizontal == vertical)
 			{
 				if (At(x + sx, y) != CollisionCell.Open || At(x, y + sy) != CollisionCell.Open) return false;
