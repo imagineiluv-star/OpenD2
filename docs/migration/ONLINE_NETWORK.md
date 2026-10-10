@@ -162,6 +162,23 @@ Godot 두 클라이언트의 상태 관측도 HTTP GET 대신 실제 WS/WSS 스�
 재로그인→서버 재시작/복원을 실행하고 두 화면과 비밀 값 없는 로그를 첨부한다.
 같은 PC의 두 일반 클라이언트를 열어 이 인수를 대체하지 않는다.
 
+## CI 로컬 통신 측정
+
+`stream-metrics.json`은 세 OS의 실제 압축 해제 서버와 production OnlineClient를 연결해 기록한다.
+상태 100개 수신 간격과 HTTPS 이동 입력 50회의 WSS 상대 관측 시간을 단일 Stopwatch로 측정한다.
+매 이동 뒤 정지 상태를 확인한 다음 반대 방향 입력을 보낸다. 시간은 입력 요청 시작부터
+상대 상태 수신까지이며 HTTP 응답 대기와 시험 코드 스케줄링을 포함한다. Godot 화면 표시 시간은 아니다.
+p50/p95/p99는 nearest-rank 표본 통계로, 50개 표본의 p99는 최댓값이다. 장시간 성능 보장을 뜻하지 않는다.
+
+`reconstructed_json_bytes_per_second`는 수신한 RoomUpdate를 서버와 같은 JSON 옵션으로
+다시 직렬화한 애플리케이션 데이터 크기다. 실제 NIC/TLS/TCP/WebSocket 바이트는 측정하지 않는다.
+CI 부하에 민감한 진단값에 임의의 지연 합격 기준을 넣지 않는다. 상태 역행, 스트림 종료,
+이동 미전파와 기존 60초 계약 제한은 계속 실패한다. 수신 간격은 서버 tick 실행시간과 다르다.
+기존 TLS/WSS 접근 제어 및 실제 Godot 패키지 검사도 유지한다.
+
+이 자료로 OS별 기준값을 먼저 확보한다. WAN 지연·손실 주입, CPU/GC, 32개 스트림 상한,
+느린 수신자, 장시간 시험과 실제 두 PC/수동 GUI 인수는 별도 미완료 항목이다.
+
 ## 공식 참고 자료
 
 - Kestrel HTTPS/인증서: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints?view=aspnetcore-10.0

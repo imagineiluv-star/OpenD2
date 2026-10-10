@@ -161,7 +161,14 @@ public partial class OnlinePanel
         await Capture("restored"); await Barrier("restored");
         if (role == "host") await Room<object>("close");
         await Barrier("closed");
-        try { await Poll(); throw new InvalidDataException("Closed room is still accessible."); }
+        try
+        {
+            // The HTTP close reply can overtake states already sent on the stream.
+            // Require the terminal 404, not an assumption about the next frame.
+            async Task ObserveClosure() { while (true) await Poll(); }
+            await ObserveClosure().WaitAsync(TimeSpan.FromSeconds(10), lifetime.Token);
+            throw new InvalidDataException("Closed room is still accessible.");
+        }
         catch (HttpRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.NotFound) { Check(true, "Room closure reaches both clients"); }
         File.WriteAllText(System.IO.Path.Combine(evidence, role + "-result.json"), JsonSerializer.Serialize(new
         {
