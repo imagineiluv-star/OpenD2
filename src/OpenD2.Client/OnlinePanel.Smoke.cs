@@ -9,12 +9,13 @@ public partial class OnlinePanel
 {
     // Two independent Godot processes use the same transport and view binding as the UI.
     // This tests networking in Godot, not visible input/rendering acceptance.
-    internal async Task CheckOnline(string url, string role, string run)
+    internal async Task CheckOnline(string url, string role, string run, string evidence)
     {
         busy = true;
         try
         {
             address.Text = url; username.Text = role + run; password.Text = Guid.NewGuid().ToString("N");
+            string secret = password.Text;
             await Login(true);
             var character = await client!.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest(role + "Hero"), lifetime.Token);
             string roomTitle = "test" + run;
@@ -63,6 +64,7 @@ public partial class OnlinePanel
             if (!handled || requests.Count != 0) throw new InvalidDataException("Queued user action was lost.");
             busy = true;
             GD.Print("OPEND2_ONLINE_TRANSPORT_PASS " + role + " GUI_NOT_RUN");
+            await CheckGameplay(role, secret, character.Id, evidence);
         }
         finally { busy = false; }
     }

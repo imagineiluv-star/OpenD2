@@ -65,7 +65,13 @@ jobs:
       - name: Online ownership and persistence contracts
         run: dotnet run --project tests/OpenD2.OnlineTests -c Release
       - name: Publish server and test two extracted online clients
+        if: runner.os != 'Linux'
         run: python eng/pack-online-server.py
+      - name: Test extracted Linux clients with headless and rendered gameplay
+        if: runner.os == 'Linux'
+        env:
+          OPEND2_ONLINE_RENDERED: "1"
+        run: xvfb-run -a -s "-screen 0 2400x1100x24" python eng/pack-online-server.py
       - name: Preserve online validation reports
         if: always()
         uses: actions/upload-artifact@v4

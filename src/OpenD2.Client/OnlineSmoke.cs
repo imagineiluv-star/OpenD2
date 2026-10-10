@@ -10,8 +10,10 @@ public partial class OnlineSmoke : Node
         {
             var args = OS.GetCmdlineUserArgs();
             string Value(string prefix) => args.Single(a => a.StartsWith(prefix, StringComparison.Ordinal))[prefix.Length..];
+            GetWindow().Size = new(1100, 900);
             var panel = new OnlinePanel(); AddChild(panel);
-            await panel.CheckOnline(Value("--server="), Value("--role="), Value("--run="));
+            panel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+            await panel.CheckOnline(Value("--server="), Value("--role="), Value("--run="), Value("--evidence="));
             GetTree().Quit();
         }
         catch (Exception error) { GD.PushError(error.ToString()); GetTree().Quit(1); }

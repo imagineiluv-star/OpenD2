@@ -36,10 +36,15 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
     executable = extracted/('OpenD2.Server.exe' if preset == 'Windows' else 'OpenD2.Server')
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith('DOTNET_ROOT') and k.upper() != 'DOTNET_HOST_PATH'}
     env['PATH'] = os.pathsep.join([str(Path(os.environ['SystemRoot'])/'System32'), os.environ['SystemRoot']]) if preset == 'Windows' else '/usr/bin:/bin:/usr/sbin:/sbin'
-    subprocess.run([sys.executable, 'eng/check-online.py', '--server-exe', str(executable),
-                    '--client-packages', 'artifacts/packages', '--preset', preset], cwd=ROOT, env=env, check=True)
+    check = [sys.executable, 'eng/check-online.py', '--server-exe', str(executable),
+             '--client-packages', 'artifacts/packages', '--preset', preset]
+    subprocess.run(check, cwd=ROOT, env=env, check=True)
+    rendered = os.environ.get('OPEND2_ONLINE_RENDERED') == '1'
+    if rendered:
+        subprocess.run(check + ['--windowed', '--output', 'artifacts/online/rendered'], cwd=ROOT, env=env, check=True)
     with package.open('rb') as stream: digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     (output/f'server-{rid}.json').write_text(json.dumps({'commit': os.environ.get('GITHUB_SHA', 'local'), 'runtime': rid,
         'file': package.name, 'sha256': digest, 'bytes': package.stat().st_size,
-        'extracted_server_and_two_clients': 'PASS', 'gui': 'NOT_RUN'}, indent=2)+'\n')
+        'extracted_server_and_two_clients': 'PASS', 'two_client_gameplay': 'PASS',
+        'rendered_gameplay': 'PASS' if rendered else 'NOT_RUN', 'gui': 'NOT_RUN'}, indent=2)+'\n')
 print('ONLINE SERVER PACKAGE PASS', rid)
