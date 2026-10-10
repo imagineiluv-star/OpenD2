@@ -44,7 +44,7 @@ def main():
         client_command = None
         if args.godot:
             godot = (ROOT/'.local-tools/godot-path.txt').read_text().strip() if args.godot == 'auto' else args.godot
-            client_command = [godot, '--path', 'src/OpenD2.Client'] + (['--rendering-method', 'gl_compatibility', '--audio-driver', 'Dummy'] if args.windowed else ['--headless'])
+            client_command = [godot, '--path', 'src/OpenD2.Client'] + (['--rendering-method', 'gl_compatibility', '--audio-driver', 'Dummy', '--max-fps', '60'] if args.windowed else ['--headless'])
         if args.client_packages:
             metadata = json.loads((args.client_packages/f'package-{args.preset}.json').read_text())
             package = args.client_packages / metadata['file']
@@ -62,7 +62,7 @@ def main():
                 app = next(extracted.glob('*.app'))
                 info = plistlib.loads((app/'Contents/Info.plist').read_bytes())
                 executable = app/'Contents/MacOS'/info['CFBundleExecutable']
-            client_command = [str(executable)] + (['--rendering-method', 'gl_compatibility', '--audio-driver', 'Dummy'] if args.windowed else ['--headless'])
+            client_command = [str(executable)] + (['--rendering-method', 'gl_compatibility', '--audio-driver', 'Dummy', '--max-fps', '60'] if args.windowed else ['--headless'])
         process = None
         children = []
         handles = []
