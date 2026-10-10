@@ -80,6 +80,12 @@ internal static class TlsContracts
                         throw new Exception("TLS room ownership.");
                     await client.Send<object>(HttpMethod.Post, "v1/rooms/" + room.Id + "/close");
                     Pass("trusted TLS health, login, character and room via production OnlineClient");
+                    try { await client.Send<OpenCharacter>(HttpMethod.Get, $"v1/characters/{character.Id}/export"); throw new Exception("Realm export accepted."); }
+                    catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.Forbidden) { }
+                    try { await client.Send<CharacterInfo>(HttpMethod.Post, "v1/characters/import", new OpenCharacter(1, OpenD2.Core.GameSimulation.RulesVersion, "open", "ForeignHero", 1)); throw new Exception("Realm import accepted."); }
+                    catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.Forbidden) { }
+                    Pass("Realm rejects personal character import and export over TLS");
+
                     await RejectTls(url, null); Pass("untrusted certificate rejected with system trust");
                     await RejectTls(url, Path.Combine(fixtures, "other-ca.pem")); Pass("wrong private CA rejected");
                     try { using var bad = new OnlineClient(url, Path.Combine(fixtures, "leaf.pem")); throw new Exception("Leaf accepted as CA."); }
@@ -93,7 +99,7 @@ internal static class TlsContracts
                 else if (name == "open")
                 {
                     await ModeContracts.VerifyOpenServer(url, ca);
-                    Pass("Open server mode, pre-login mismatch rejection and WSS identity");
+                    Pass("Open server mode, pre-login mismatch rejection, WSS identity and personal profile file transfer");
                 }
                 else { await RejectTls(url, ca); Pass(name + " certificate rejected"); }
             }

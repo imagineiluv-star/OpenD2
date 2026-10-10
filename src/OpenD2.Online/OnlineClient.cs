@@ -80,6 +80,17 @@ public sealed class OnlineClient : IDisposable
             throw new InvalidDataException("Server protocol or game rules do not match this client.");
         if (health.Mode != Mode) throw new InvalidDataException("Server mode does not match the selected character mode.");
     }
+    public async Task ExportCharacter(Guid id, string path, CancellationToken cancellation = default)
+    {
+        if (Mode != "open") throw new InvalidOperationException("Select Open mode for personal characters.");
+        var character = await Send<OpenCharacter>(HttpMethod.Get, $"v1/characters/{id}/export", cancellation: cancellation);
+        OpenCharacterFile.Save(path, character);
+    }
+    public async Task<CharacterInfo> ImportCharacter(string path, CancellationToken cancellation = default)
+    {
+        if (Mode != "open") throw new InvalidOperationException("Select Open mode for personal characters.");
+        return await Send<CharacterInfo>(HttpMethod.Post, "v1/characters/import", OpenCharacterFile.Load(path), cancellation);
+    }
     public async IAsyncEnumerable<RoomView> WatchRoom(Guid room, [EnumeratorCancellation] CancellationToken cancellation = default)
     {
         using var session = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
