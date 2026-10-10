@@ -22,12 +22,13 @@ public partial class OnlinePanel : VBoxContainer
     private CharacterInfo[] characterList = [];
     private RoomInfo[] roomList = [];
     private RoomView? state;
+    private readonly Queue<Func<Task>> requests = new();
     private bool busy, signedIn;
     private double poll;
     private int moveX, moveY;
     public override void _Ready()
     {
-        AddChild(new Label { Text = "Online — account → character → room → cooperative arena" });
+        AddChild(new Label { Text = "Online — account → character → room → cooperative arena", AutowrapMode = TextServer.AutowrapMode.WordSmart });
         AddChild(address); AddChild(username); AddChild(password);
         var auth = new HFlowContainer(); AddChild(auth);
         Button(auth, "Register", () => Login(true)); Button(auth, "Login", () => Login(false));
@@ -45,26 +46,51 @@ public partial class OnlinePanel : VBoxContainer
         Button(actions, "Leave lobby", async () => { await Room<object>("leave"); ClearRoom(); await Refresh(); });
         Confirm(actions, "Close room (host)", "Close this room for everyone? Arena items are room-local; only victories carry to new rooms.", async () => { await Room<object>("close"); ClearRoom(); await Refresh(); });
         AddChild(status); AddChild(details); AddChild(arena);
-        AddChild(new Label { Text = "Click arena to focus. WASD/arrows: move; Space: attack; Q: skill; F: pick up. Server judges all actions.\nFour-player preview arena. Original campaign/art is not connected to online play yet." });
+        AddChild(new Label { Text = "Click arena to focus. WASD/arrows: move; Space: attack; Q: skill; F: pick up. Server judges all actions.\nFour-player preview arena. Original campaign/art is not connected to online play yet.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
         if (OS.GetCmdlineUserArgs().Contains("--smoke-test")) GD.Print("OPEND2_ONLINE_UI_READY");
     }
     private void Button(Node parent, string text, Func<Task> action)
     {
-        var button = new Godot.Button { Text = text }; parent.AddChild(button); button.Pressed += () => _ = Run(action);
+        var button = new Godot.Button { Text = text }; parent.AddChild(button); button.Pressed += () => UserAction(action);
     }
     private void Confirm(Node parent, string text, string message, Func<Task> action)
     {
         var dialog = new ConfirmationDialog { DialogText = message }; AddChild(dialog);
-        dialog.Confirmed += () => _ = Run(action);
+        dialog.Confirmed += () => UserAction(action);
         var button = new Godot.Button { Text = text }; parent.AddChild(button);
-        button.Pressed += () => { if (!busy) dialog.PopupCentered(); };
+        button.Pressed += () => dialog.PopupCentered();
     }
-    private async Task Run(Func<Task> action)
+    private void UserAction(Func<Task> action)
     {
-        if (busy) return; busy = true;
-        try { await action(); }
-        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
-        catch (Exception e) { if (!lifetime.IsCancellationRequested) { status.Text = e.Message; if (e is HttpRequestException { StatusCode: System.Net.HttpStatusCode.Unauthorized }) Reset(); else if (e is HttpRequestException { StatusCode: System.Net.HttpStatusCode.NotFound }) ClearRoom(); } }
+        var connection = client; var room = state?.Id;
+        Guid? character = characters.Selected >= 0 && characters.Selected < characterList.Length ? characterList[characters.Selected].Id : null;
+        _ = Run(async () =>
+        {
+            Guid? current = characters.Selected >= 0 && characters.Selected < characterList.Length ? characterList[characters.Selected].Id : null;
+            if (client != connection || state?.Id != room || character != current) throw new InvalidOperationException("Selection changed; retry the action.");
+            await action();
+        }, true);
+    }
+    private async Task Run(Func<Task> action, bool queue = false)
+    {
+        if (busy)
+        {
+            if (queue && requests.Count < 8) requests.Enqueue(action);
+            else if (queue) status.Text = "Please wait for pending requests.";
+            return;
+        }
+        busy = true;
+        try
+        {
+            while (true)
+            {
+                try { await action(); }
+                catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+                catch (Exception e) { if (!lifetime.IsCancellationRequested) { status.Text = e.Message; if (e is HttpRequestException { StatusCode: System.Net.HttpStatusCode.Unauthorized }) Reset(); else if (e is HttpRequestException { StatusCode: System.Net.HttpStatusCode.NotFound }) ClearRoom(); } }
+                if (lifetime.IsCancellationRequested || !requests.TryDequeue(out var next)) break;
+                action = next;
+            }
+        }
         finally { busy = false; }
     }
     private void RequireLogin() { if (!signedIn || client is null) throw new InvalidOperationException("Login first."); }
@@ -74,7 +100,7 @@ public partial class OnlinePanel : VBoxContainer
         var next = new OnlineClient(address.Text); var credentials = new Credentials(username.Text, password.Text); password.Text = "";
         try { await next.Login(credentials, register, lifetime.Token); }
         catch { next.Dispose(); throw; }
-        client?.Dispose(); client = next; signedIn = true; ClearRoom(); status.Text = "Logged in. Select a character and room."; await Refresh();
+        requests.Clear(); client?.Dispose(); client = next; signedIn = true; ClearRoom(); status.Text = "Logged in. Select a character and room."; await Refresh();
     }
     private async Task Refresh()
     {
@@ -97,7 +123,7 @@ public partial class OnlinePanel : VBoxContainer
         if (next.Started) { var me = next.Entities.First(e => e.Id.Value == next.Actor); details.Text += $" | HP {me.Health}/{me.MaxHealth} | Mana {me.Mana}/{me.MaxMana}"; }
     }
     private void ClearRoom() { state = null; arena.State = null; arena.QueueRedraw(); details.Text = ""; moveX = moveY = 0; }
-    private void Reset() { signedIn = false; client?.Dispose(); client = null; ClearRoom(); characters.Clear(); rooms.Clear(); }
+    private void Reset() { requests.Clear(); signedIn = false; client?.Dispose(); client = null; ClearRoom(); characters.Clear(); rooms.Clear(); }
     public override void _Process(double delta)
     {
         if (state is null || client is null || busy) return;
@@ -124,13 +150,13 @@ public partial class OnlinePanel : VBoxContainer
         {
             var me = state.Entities.First(e => e.Id.Value == state.Actor);
             var target = state.Entities.Where(e => e.Kind == EntityKind.Monster && e.IsAlive).OrderBy(e => Math.Abs(e.Position.X - me.Position.X) + Math.Abs(e.Position.Y - me.Position.Y)).FirstOrDefault();
-            if (target.Id.Value != 0) _ = Run(() => InputCommand(key.Keycode == Key.Q ? CommandKind.CastSkill : CommandKind.Attack, target: target.Id.Value));
+            if (target.Id.Value != 0) UserAction(() => InputCommand(key.Keycode == Key.Q ? CommandKind.CastSkill : CommandKind.Attack, target: target.Id.Value));
         }
         else if (key.Keycode == Key.F)
         {
             var me = state.Entities.First(e => e.Id.Value == state.Actor);
             var item = state.Items.Where(i => i.Location == ItemLocation.Ground).OrderBy(i => Math.Abs(i.Position.X - me.Position.X) + Math.Abs(i.Position.Y - me.Position.Y)).FirstOrDefault();
-            if (item.Id.Value != 0) _ = Run(() => InputCommand(CommandKind.Pickup, item: item.Id.Value));
+            if (item.Id.Value != 0) UserAction(() => InputCommand(CommandKind.Pickup, item: item.Id.Value));
         }
         else return;
         GetViewport().SetInputAsHandled();
@@ -141,7 +167,11 @@ public partial class OnlinePanel : VBoxContainer
 public partial class OnlineArena : Control
 {
     public RoomView? State { get; set; }
-    public override void _GuiInput(InputEvent @event) { if (@event is InputEventMouseButton { Pressed: true }) GrabFocus(); }
+    public override void _GuiInput(InputEvent @event)
+    {
+        if (@event is InputEventMouseButton { Pressed: true }) GrabFocus();
+        if (@event is InputEventKey key && key.PhysicalKeycode is Key.W or Key.A or Key.S or Key.D or Key.Up or Key.Down or Key.Left or Key.Right) AcceptEvent();
+    }
     public override void _Draw()
     {
         float scale = Math.Min(Size.X / Arena.Width, Size.Y / Arena.Height); var grid = Arena.Grid();

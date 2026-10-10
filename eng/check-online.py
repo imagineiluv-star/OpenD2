@@ -42,7 +42,7 @@ def main():
         client_command = None
         if args.godot:
             godot = (ROOT/'.local-tools/godot-path.txt').read_text().strip() if args.godot == 'auto' else args.godot
-            client_command = [godot, '--headless', '--path', 'src/OpenD2.Client', 'res://OnlineSmoke.tscn']
+            client_command = [godot, '--headless', '--path', 'src/OpenD2.Client']
         if args.client_packages:
             metadata = json.loads((args.client_packages/f'package-{args.preset}.json').read_text())
             package = args.client_packages / metadata['file']
@@ -60,7 +60,7 @@ def main():
                 app = next(extracted.glob('*.app'))
                 info = plistlib.loads((app/'Contents/Info.plist').read_bytes())
                 executable = app/'Contents/MacOS'/info['CFBundleExecutable']
-            client_command = [str(executable), '--headless', 'res://OnlineSmoke.tscn']
+            client_command = [str(executable), '--headless']
         process = None
         children = []
         handles = []
@@ -144,7 +144,7 @@ def main():
                 run = secrets.token_hex(4)
                 for role in ('host', 'guest'):
                     handle = (output/f'godot-{role}.log').open('w', encoding='utf-8'); handles.append(handle)
-                    children.append((role, subprocess.Popen(client_command + ['--', '--server='+url, '--role='+role, '--run='+run], cwd=ROOT,
+                    children.append((role, subprocess.Popen(client_command + ['--', '--online-smoke', '--server='+url, '--role='+role, '--run='+run], cwd=ROOT,
                         stdout=handle, stderr=subprocess.STDOUT)))
                 for role, child in children:
                     assert child.wait(timeout=60) == 0, role

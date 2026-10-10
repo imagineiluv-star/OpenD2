@@ -55,6 +55,13 @@ public partial class OnlinePanel
                 await Task.Delay(100, lifetime.Token);
             }
             if (!observed) throw new InvalidDataException("Peer movement was not replicated.");
+            bool handled = false;
+            UserAction(() => { handled = true; return Task.CompletedTask; });
+            if (handled || requests.Count != 1) throw new InvalidDataException("Busy user action was not queued.");
+            busy = false;
+            await Run(() => Task.CompletedTask);
+            if (!handled || requests.Count != 0) throw new InvalidDataException("Queued user action was lost.");
+            busy = true;
             GD.Print("OPEND2_ONLINE_TRANSPORT_PASS " + role + " GUI_NOT_RUN");
         }
         finally { busy = false; }
