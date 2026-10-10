@@ -38,6 +38,11 @@ jobs:
           python-version: "3.12"
       - name: Test packaging and download contracts
         run: python -m unittest discover -s eng -p "test_*.py" -v
+      - name: Install bounded Linux hang diagnostics
+        if: runner.os == 'Linux'
+        run: |
+          dotnet tool install dotnet-stack --version 10.0.750501 --tool-path "$RUNNER_TEMP/dotnet-tools"
+          echo "OPEND2_STACK_TOOL=$RUNNER_TEMP/dotnet-tools/dotnet-stack" >> "$GITHUB_ENV"
       - name: Install pinned Godot and templates
         run: python eng/bootstrap.py
       - name: Stress macOS editor initialization and export teardown
