@@ -12,6 +12,7 @@ public partial class OnlinePanel
     // Every gameplay action still uses the client's real HTTP transport and authoritative Core.
     private async Task CheckGameplay(string role, string secret, Guid character, string evidence)
     {
+        status.Text = "Automated two-client gameplay validation. Manual input: NOT_RUN.";
         string peer = role == "host" ? "guest" : "host";
         Guid room = state!.Id;
         string path = $"v1/rooms/{room}";
@@ -160,7 +161,7 @@ public partial class OnlinePanel
         catch (HttpRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.NotFound) { Check(true, "Room closure reaches both clients"); }
         File.WriteAllText(System.IO.Path.Combine(evidence, role + "-result.json"), JsonSerializer.Serialize(new
         {
-            role, result = "PASS", checks, rendering = DisplayServer.GetName() == "headless" ? "NOT_RUN" : "PASS",
+            role, result = "PASS", checks, user_data = OS.GetUserDataDir(), rendering = DisplayServer.GetName() == "headless" ? "NOT_RUN" : "PASS",
             manual_gui = "NOT_RUN", multi_pc = "NOT_RUN"
         }, new JsonSerializerOptions { WriteIndented = true }));
         GD.Print("OPEND2_ONLINE_GAMEPLAY_PASS " + role + " MANUAL_GUI_NOT_RUN");

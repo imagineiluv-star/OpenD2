@@ -148,8 +148,16 @@ def main():
                 evidence.mkdir()
                 for role in ('host', 'guest'):
                     handle = (evidence/f'godot-{role}.log').open('w', encoding='utf-8'); handles.append(handle)
+                    client_env = os.environ.copy()
+                    if platform.system() == 'Linux':
+                        # Independent clients represent independent user profiles. Avoid
+                        # concurrent engine shader-cache creation in the same user://.
+                        for variable, suffix in [('XDG_DATA_HOME', 'data'), ('XDG_CACHE_HOME', 'cache')]:
+                            folder = private / (role + '-' + suffix)
+                            folder.mkdir()
+                            client_env[variable] = str(folder)
                     children.append((role, subprocess.Popen(client_command + ['--', '--online-smoke', '--server='+url, '--role='+role, '--run='+run, '--evidence='+str(evidence.resolve())], cwd=ROOT,
-                        stdout=handle, stderr=subprocess.STDOUT)))
+                        stdout=handle, stderr=subprocess.STDOUT, env=client_env)))
                 deadline = time.monotonic() + 150
                 restarted = False
                 while any(child.poll() is None for _, child in children):
@@ -175,6 +183,9 @@ def main():
                     assert result['result'] == 'PASS' and len(result['checks']) >= 9, role
                     if args.windowed:
                         assert result['rendering'] == 'PASS' and len(list(evidence.glob(role + '-*.png'))) == 5, role
+                if platform.system() == 'Linux':
+                    profiles = [json.loads((evidence / (role + '-result.json')).read_text())['user_data'] for role in ('host', 'guest')]
+                    assert profiles[0] != profiles[1], 'Godot clients must have independent user data directories'
                 report['godot_transport'] = 'PASS'
                 report['godot_gameplay'] = 'PASS'
                 report['rendered'] = 'PASS' if args.windowed else 'NOT_RUN'
