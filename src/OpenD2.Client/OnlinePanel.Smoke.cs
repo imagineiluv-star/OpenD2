@@ -9,11 +9,13 @@ public partial class OnlinePanel
 {
     // Two independent Godot processes use the same transport and view binding as the UI.
     // This tests networking in Godot, not visible input/rendering acceptance.
-    internal async Task CheckOnline(string url, string role, string run, string evidence, string? certificate = null)
+    internal async Task CheckOnline(string url, string role, string run, string evidence, string? certificate = null, string mode = "realm")
     {
         busy = true;
         try
         {
+            if (mode is not ("realm" or "open")) throw new InvalidDataException("Unknown smoke mode.");
+            serverMode.Select(mode == "open" ? 1 : 0);
             caFile = certificate ?? "";
             address.Text = url; username.Text = role + run; password.Text = Guid.NewGuid().ToString("N");
             string secret = password.Text;
@@ -22,6 +24,8 @@ public partial class OnlinePanel
             await Refresh();
             characters.Select(Array.FindIndex(characterList, c => c.Id == character.Id));
             if (SelectedCharacter() != character.Id) throw new InvalidDataException("Character selection binding failed.");
+            if (!serverMode.Disabled || client.Mode != mode) throw new InvalidDataException("Mode selection binding failed.");
+            if (mode == "open") await CheckProfileFiles(character);
             string roomTitle = "test" + run;
             if (role == "host") Apply(await client.Send<RoomView>(HttpMethod.Post, "v1/rooms", new RoomRequest(character.Id, roomTitle, ""), lifetime.Token));
             else
