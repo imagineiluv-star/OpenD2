@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import platform
 import shutil
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -23,6 +24,7 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
     subprocess.run(['dotnet', 'publish', 'src/OpenD2.Server', '-c', 'Release', '-r', rid,
                     '--self-contained', 'true', '-o', str(stage), '-m:1'], cwd=ROOT, check=True)
     shutil.copyfile(ROOT/'docs/migration/ONLINE_PLAY.md', stage/'ONLINE_PLAY.md')
+    shutil.copyfile(ROOT/'docs/migration/ONLINE_NETWORK.md', stage/'ONLINE_NETWORK.md')
     package = output/f'OpenD2-server-{rid}.zip'
     with zipfile.ZipFile(package, 'w', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(stage.rglob('*')):
@@ -42,9 +44,19 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
     rendered = os.environ.get('OPEND2_ONLINE_RENDERED') == '1'
     if rendered:
         subprocess.run(check + ['--windowed', '--output', 'artifacts/online/rendered'], cwd=ROOT, env=env, check=True)
+    # Temporary roots are scoped to the explicit client connection, never installed
+    # in the OS trust store. Neither PFX/private keys nor account DBs are artifacts.
+    certificates = Path(temporary) / 'tls'
+    tls_env = os.environ.copy()
+    tls_env['OPEND2_TEST_PFX_PASSWORD'] = secrets.token_hex(24)
+    subprocess.run(['dotnet', 'run', '--project', 'tests/OpenD2.OnlineTests', '-c', 'Release', '--no-build', '--',
+        '--tls-server', str(executable), '--fixtures', str(certificates), '--output', 'artifacts/online/tls-contracts.json'],
+        cwd=ROOT, env=tls_env, check=True)
+    env['OPEND2_TEST_PFX_PASSWORD'] = tls_env['OPEND2_TEST_PFX_PASSWORD']
+    subprocess.run(check + ['--tls-fixtures', str(certificates), '--output', 'artifacts/online/tls'], cwd=ROOT, env=env, check=True)
     with package.open('rb') as stream: digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     (output/f'server-{rid}.json').write_text(json.dumps({'commit': os.environ.get('GITHUB_SHA', 'local'), 'runtime': rid,
         'file': package.name, 'sha256': digest, 'bytes': package.stat().st_size,
-        'extracted_server_and_two_clients': 'PASS', 'two_client_gameplay': 'PASS',
+        'extracted_server_and_two_clients': 'PASS', 'two_client_gameplay': 'PASS', 'tls_certificates': 'PASS', 'tls_two_client_gameplay': 'PASS',
         'rendered_gameplay': 'PASS' if rendered else 'NOT_RUN', 'gui': 'NOT_RUN'}, indent=2)+'\n')
 print('ONLINE SERVER PACKAGE PASS', rid)

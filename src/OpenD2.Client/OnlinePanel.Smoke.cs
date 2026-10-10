@@ -9,11 +9,12 @@ public partial class OnlinePanel
 {
     // Two independent Godot processes use the same transport and view binding as the UI.
     // This tests networking in Godot, not visible input/rendering acceptance.
-    internal async Task CheckOnline(string url, string role, string run, string evidence)
+    internal async Task CheckOnline(string url, string role, string run, string evidence, string? certificate = null)
     {
         busy = true;
         try
         {
+            caFile = certificate ?? "";
             address.Text = url; username.Text = role + run; password.Text = Guid.NewGuid().ToString("N");
             string secret = password.Text;
             await Login(true);

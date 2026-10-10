@@ -72,3 +72,4 @@ artifacts/
 
 # Private online server accounts and checkpoints
 **/realm-data/
+/server-private/

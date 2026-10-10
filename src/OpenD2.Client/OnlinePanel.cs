@@ -8,6 +8,7 @@ namespace OpenD2.Client;
 public partial class OnlinePanel : VBoxContainer
 {
     private OnlineClient? client;
+    private string caFile = "";
     private readonly CancellationTokenSource lifetime = new();
     private readonly LineEdit address = new() { Text = "http://127.0.0.1:5080", PlaceholderText = "Server HTTPS address" };
     private readonly LineEdit username = new() { PlaceholderText = "Account (3–24 letters/digits)" };
@@ -29,7 +30,20 @@ public partial class OnlinePanel : VBoxContainer
     public override void _Ready()
     {
         AddChild(new Label { Text = "Online — account → character → room → cooperative arena", AutowrapMode = TextServer.AutowrapMode.WordSmart });
-        AddChild(address); AddChild(username); AddChild(password);
+        AddChild(address);
+        var connection = new HFlowContainer(); AddChild(connection);
+        var trust = new Label { Text = "Trust: system certificates", AutowrapMode = TextServer.AutowrapMode.WordSmart }; AddChild(trust);
+        var certificate = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.pem,*.crt ; Public root CA certificate"] }; AddChild(certificate);
+        certificate.FileSelected += file => { caFile = file; trust.Text = "Private CA selected: " + Path.GetFileName(file) + ". Check server to compare its SHA-256 with your administrator."; };
+        Button(connection, "Check server", async () =>
+        {
+            using var probe = new OnlineClient(address.Text, caFile);
+            await probe.CheckServer(lifetime.Token);
+            status.Text = "Server reachable; protocol and rules match. " + (probe.TrustedRootSha256 is { } hash ? "Private CA SHA-256: " + hash : "System certificate trust.");
+        });
+        Button(connection, "Choose private CA", () => { certificate.PopupCenteredRatio(0.7f); return Task.CompletedTask; });
+        Button(connection, "Use system trust", () => { caFile = ""; trust.Text = "Trust: system certificates"; return Task.CompletedTask; });
+        AddChild(username); AddChild(password);
         var auth = new HFlowContainer(); AddChild(auth);
         Button(auth, "Register", () => Login(true)); Button(auth, "Login", () => Login(false));
         Button(auth, "Logout", async () => { RequireLogin(); await client!.Send<object>(HttpMethod.Post, "v1/logout", cancellation: lifetime.Token); Reset(); });
@@ -97,7 +111,7 @@ public partial class OnlinePanel : VBoxContainer
     private Guid SelectedCharacter() => characters.Selected >= 0 && characters.Selected < characterList.Length ? characterList[characters.Selected].Id : throw new InvalidOperationException("Select a character.");
     private async Task Login(bool register)
     {
-        var next = new OnlineClient(address.Text); var credentials = new Credentials(username.Text, password.Text); password.Text = "";
+        var next = new OnlineClient(address.Text, caFile); var credentials = new Credentials(username.Text, password.Text); password.Text = "";
         try { await next.Login(credentials, register, lifetime.Token); }
         catch { next.Dispose(); throw; }
         requests.Clear(); client?.Dispose(); client = next; signedIn = true; ClearRoom(); status.Text = "Logged in. Select a character and room."; await Refresh();

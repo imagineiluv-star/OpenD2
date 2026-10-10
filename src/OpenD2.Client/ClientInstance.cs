@@ -41,7 +41,7 @@ internal static class ClientInstance
         string run = runs[0][6..];
         string server = servers[0][9..];
         return !string.IsNullOrEmpty(run) && run == Environment.GetEnvironmentVariable("OPEND2_ONLINE_VALIDATION_RUN")
-            && Uri.TryCreate(server, UriKind.Absolute, out var uri) && uri.Scheme == "http"
+            && Uri.TryCreate(server, UriKind.Absolute, out var uri) && (uri.Scheme is "http" or "https")
             && uri.Host == "127.0.0.1" && uri.Port > 0 && uri.UserInfo.Length == 0
             && uri.AbsolutePath == "/" && uri.Query.Length == 0 && uri.Fragment.Length == 0;
     }

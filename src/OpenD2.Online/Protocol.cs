@@ -2,6 +2,7 @@ using OpenD2.Core;
 
 namespace OpenD2.Online;
 
+public sealed record ServerInfo(int Protocol, int Rules);
 public sealed record Credentials(string Username, string Password);
 public sealed record LoginResult(string Token, string Username);
 public sealed record NameRequest(string Name);
