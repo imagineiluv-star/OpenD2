@@ -1,4 +1,4 @@
-"""Independent little-endian rule-v7 state vectors for the four fixed contract scenarios."""
+"""Independent little-endian rule-v8 state vectors for the four fixed contract scenarios."""
 import hashlib
 from pathlib import Path
 import struct
@@ -21,6 +21,6 @@ vectors = {
 }
 layout = hashlib.sha256(i(10) + i(4) + i(0) + b"\0" + i(1) + i(3) + i(1) + b"\0" + i(2) + i(3)).hexdigest()
 for name, body in vectors.items():
-    digest = hashlib.sha256(i(7) + body + b"\x40" + layout.encode("ascii")).hexdigest()
+    digest = hashlib.sha256(i(8) + body + b"\x40" + layout.encode("ascii")).hexdigest()
     print(name, digest)
-    assert digest in (root / 'tests/OpenD2.Tests' / name).read_text(), 'Contract must pin the independent rule-v7 vector'
+    assert digest in (root / 'tests/OpenD2.Tests' / name).read_text(), 'Contract must pin the independent rule-v8 vector'

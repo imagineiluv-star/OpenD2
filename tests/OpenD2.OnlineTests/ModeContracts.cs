@@ -58,6 +58,23 @@ internal static class ModeContracts
             try { using var bad = new Realm(Path.Combine(root, "invalid"), mode: "unknown"); throw new Exception("Unknown mode accepted."); }
             catch (ArgumentException) { }
             if (Directory.Exists(Path.Combine(root, "invalid"))) throw new Exception("Invalid mode created storage.");
+            string oldRules = Path.Combine(root, "old-rules"); Directory.CreateDirectory(oldRules);
+            byte[] fixture = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Fixtures/realm-rules7.json"));
+            File.WriteAllBytes(Path.Combine(oldRules, "realm.json"), fixture);
+            using (var upgraded = new Realm(oldRules))
+            {
+                var login = upgraded.Login(new("migration-user", "migration-fixture-password"), false);
+                var room = upgraded.Rooms(login.Token).Single();
+                if (!upgraded.State(login.Token, room.Id).Started || upgraded.Characters(login.Token).Single().Name != "MigrationHero") throw new Exception("Rules7 room migration lost identity/state.");
+                upgraded.Checkpoint();
+            }
+            using (var reopened = new Realm(oldRules)) { }
+            var oldHeader = JsonNode.Parse(fixture)!;
+            oldHeader["Rooms"]![0]!["Game"]!["StateHash"] = new string('0', 64);
+            File.WriteAllText(Path.Combine(oldRules, "realm.json"), oldHeader.ToJsonString());
+            try { using var corrupted = new Realm(oldRules); throw new Exception("Corrupt rules7 room accepted."); }
+            catch (InvalidDataException) { }
+            Console.WriteLine("MODE PASS rules7 active room migration, reopen and original checksum rejection");
             Console.WriteLine("MODE PASS legacy Realm migration and unknown mode rejection");
         }
         finally { Directory.Delete(root, true); }

@@ -28,7 +28,7 @@ public sealed record SimulationSnapshot(int RulesVersion, long Tick, uint Random
 // A single owner advances authoritative state. No wall clock, rendering, I/O or callbacks in Step.
 public sealed partial class GameSimulation
 {
-	public const int RulesVersion = 7, UnitsPerTile = 256, PositionLimit = 16777216;
+	public const int RulesVersion = 8, UnitsPerTile = 256, PositionLimit = 16777216;
 	public const int MaxEntities = 1024, MaxPendingCommands = 4096, MaxCommandsPerTick = 128, CommandHorizon = 250;
 	public const int MaxReplayCommands = 16384, MaxReplayTicks = 100000;
 	private readonly EntityState[] entities;
@@ -72,7 +72,7 @@ public sealed partial class GameSimulation
 		}
 		else Collision = collision;
 		if (world is null && collision is not null && entities.Length > MaxCombatEntities) throw new ArgumentException("Combat entity budget exceeded.");
-		items = new ItemState[2 * entities.Length]; usedPotions = new bool[entities.Length];
+		items = new ItemState[2 * entities.Length + MaxCarriedItems]; usedPotions = new bool[entities.Length];
 		inputs = new CommandCursor[entities.Length]; events = new SimulationEvent[8 * entities.Length + MaxCommandsPerTick + (world is null ? 0 : 4)];
 		attacks = new EntityId[entities.Length]; skillAttacks = new bool[entities.Length]; castSkills = new SkillId[entities.Length]; canAct = new bool[entities.Length]; attacked = new bool[entities.Length];
 		for (int i = 0; i < entities.Length; i++)
@@ -189,7 +189,7 @@ public sealed partial class GameSimulation
 		return result;
 	}
 	private GameCommand[] OrderedCommands() => commands.UnorderedItems.OrderBy(p => p.Priority).Select(p => p.Element).ToArray();
-	// Canonical little-endian v7 state, including scheduling, world content, quest and item ownership.
+	// Canonical little-endian v8 state, including scheduling, world content, quest and item ownership.
 	// Explicit diagnostic operation: allocates, so callers must not invoke it for every render frame.
 	public string ComputeStateHash() => ComputeStateHash(RulesVersion);
 	internal string ComputeStateHash(int version)

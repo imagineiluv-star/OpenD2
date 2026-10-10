@@ -19,6 +19,10 @@ internal static class CharacterTransferContracts
             string path = Path.Combine(root, "hero.json");
             OpenCharacterFile.Save(path, profile);
             if (OpenCharacterFile.Load(path) != profile) throw new Exception("Local profile roundtrip failed.");
+            string legacyProfile = Path.Combine(root, "old-profile.json");
+            File.WriteAllText(legacyProfile, System.Text.Json.JsonSerializer.Serialize(profile with { Rules = 7 }, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
+            byte[] legacyBytes = File.ReadAllBytes(legacyProfile);
+            if (OpenCharacterFile.Load(legacyProfile) != profile || !legacyBytes.SequenceEqual(File.ReadAllBytes(legacyProfile))) throw new Exception("Old profile migration changed data/file.");
             byte[] original = File.ReadAllBytes(path);
             try { OpenCharacterFile.Save(path, profile with { Victories = 8 }); throw new Exception("Existing save overwritten."); }
             catch (IOException) { }

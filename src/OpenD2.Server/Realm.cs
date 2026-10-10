@@ -9,10 +9,10 @@ namespace OpenD2.Server;
 // One process, one owner lock. Simulation never trusts client actor, tick or outcomes.
 public sealed class Realm : IDisposable
 {
-    private sealed class Room(SavedRoom saved)
+    private sealed class Room(SavedRoom saved, int rules = GameSimulation.RulesVersion)
     {
         public SavedRoom Saved = saved;
-        public GameSimulation? Game = saved.Game?.Restore();
+        public GameSimulation? Game = saved.Game?.Restore(rules);
         public readonly Dictionary<Guid, DateTimeOffset> Seen = new();
         public readonly Dictionary<Guid, DateTimeOffset> Moved = new();
     }
@@ -38,10 +38,10 @@ public sealed class Realm : IDisposable
         {
             if (File.Exists(file) && new FileInfo(file).Length > 16 * 1024 * 1024) throw new InvalidDataException("Realm exceeds storage budget.");
             var db = File.Exists(file) ? JsonSerializer.Deserialize<Database>(File.ReadAllBytes(file)) ?? throw new InvalidDataException("Empty realm.") : new(2, GameSimulation.RulesVersion, [], [], [], Mode);
-            if (db.Version is not (1 or 2) || db.RulesVersion != GameSimulation.RulesVersion || db.Accounts.Length > 256 || db.Characters.Length > 1024 || db.Rooms.Length > 32) throw new InvalidDataException("Unsupported realm version/budget.");
+            if (db.Version is not (1 or 2) || db.RulesVersion is not (7 or GameSimulation.RulesVersion) || db.Accounts.Length > 256 || db.Characters.Length > 1024 || db.Rooms.Length > 32) throw new InvalidDataException("Unsupported realm version/budget.");
             string? storedMode = db.Version == 1 && db.Mode is null ? "realm" : db.Mode;
             if (storedMode != Mode || (db.Version == 1 && Mode != "realm")) throw new InvalidDataException("Database mode does not match this server. Use separate data directories.");
-            accounts = db.Accounts.ToList(); characters = db.Characters.ToList(); rooms = db.Rooms.ToDictionary(r => r.Id, r => new Room(r));
+            accounts = db.Accounts.ToList(); characters = db.Characters.ToList(); rooms = db.Rooms.ToDictionary(r => r.Id, r => new Room(r, db.RulesVersion));
             if (accounts.Select(a => a.Id).Distinct().Count() != accounts.Count || accounts.Select(a => a.Name).Distinct().Count() != accounts.Count ||
                 characters.Select(c => c.Id).Distinct().Count() != characters.Count || characters.Any(c => !accounts.Any(a => a.Id == c.Account)) ||
                 rooms.Values.SelectMany(r => r.Saved.Members).GroupBy(m => m.Character).Any(g => g.Count() > 1)) throw new InvalidDataException("Invalid realm ownership.");
@@ -52,6 +52,8 @@ public sealed class Realm : IDisposable
                     room.Saved.Members.Any(m => m.ClientSequence < 0 || m.ClientSequence == long.MaxValue) ||
                     (room.Game is not null && !room.Game.Entities.ToArray().Where(e => e.Kind == EntityKind.Player).Select(e => e.Id.Value).Order().SequenceEqual(room.Saved.Members.Select(m => m.Actor).Order())))
                     throw new InvalidDataException("Invalid room members.");
+            foreach (var character in characters)
+                if (character.Inventory is { } inventory) Arena.Create(1).WithCarriedItems(inventory);
             // Restarts never replay held movement. Preserve combat/items and command cursors.
             foreach (var room in rooms.Values.Where(r => r.Game is not null)) StopAll(room);
         }
@@ -191,7 +193,9 @@ public sealed class Realm : IDisposable
         {
             var (r, c) = Access(token, id); Need(r.Saved.Host == c.Id, 403, "Only the host can start."); Need(r.Game is null, 409, "Already started.");
             r.Saved = r.Saved with { Members = r.Saved.Members.Select((m, i) => m with { Actor = (uint)i + 1 }).ToArray() };
-            r.Game = Arena.Create(r.Saved.Members.Length); Save(); return View(r, c);
+            r.Game = Arena.Create(r.Saved.Members.Length).WithCarriedItems(r.Saved.Members.SelectMany(m =>
+                (characters.Single(x => x.Id == m.Character).Inventory ?? []).Select(item => item with { Owner = new(m.Actor) })).ToArray());
+            Save(); return View(r, c);
         }
     }
     public RoomView Input(string token, Guid id, InputRequest input)
@@ -251,8 +255,16 @@ public sealed class Realm : IDisposable
         lock (gate)
         {
             var (r, c) = Access(token, id); Need(r.Saved.Host == c.Id, 403, "Only the host can close.");
-            if (r.Game is not null && r.Game.Entities.ToArray().Where(e => e.Kind == EntityKind.Monster).All(e => !e.IsAlive))
-                foreach (var m in r.Saved.Members) { int i = characters.FindIndex(x => x.Id == m.Character); characters[i] = characters[i] with { Victories = checked(characters[i].Victories + 1) }; }
+            if (r.Game is not null)
+            {
+                bool victory = r.Game.Entities.ToArray().Where(e => e.Kind == EntityKind.Monster).All(e => !e.IsAlive);
+                foreach (var m in r.Saved.Members)
+                {
+                    int i = characters.FindIndex(x => x.Id == m.Character);
+                    characters[i] = characters[i] with { Victories = checked(characters[i].Victories + (victory ? 1 : 0)),
+                        Inventory = r.Game.CaptureCarriedItems(new(m.Actor)).Select(item => item with { Owner = new(1) }).ToArray() };
+                }
+            }
             rooms.Remove(id); Save(); return new { ok = true };
         }
     }

@@ -170,6 +170,15 @@ public partial class OnlinePanel
             throw new InvalidDataException("Closed room is still accessible.");
         }
         catch (HttpRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.NotFound) { Check(true, "Room closure reaches both clients"); }
+        var ownedBefore = beforeItems.Where(i => i.Owner.Value == (role == "host" ? 1u : 2u) && i.Location is ItemLocation.Inventory or ItemLocation.Equipped or ItemLocation.Belt)
+            .Select(i => (i.Definition, i.Location, i.Slot)).OrderBy(i => i.Definition).ThenBy(i => i.Slot).ToArray();
+        ClearRoom();
+        Apply(await client!.Send<RoomView>(HttpMethod.Post, "v1/rooms", new RoomRequest(character, "carry" + role, ""), lifetime.Token));
+        Apply(await Room<RoomView>("start"));
+        var carriedAfter = state!.Items.Where(i => i.Owner.Value == state.Actor)
+            .Select(i => (i.Definition, i.Location, i.Slot)).OrderBy(i => i.Definition).ThenBy(i => i.Slot).ToArray();
+        Check(ownedBefore.SequenceEqual(carriedAfter) && state.Items.All(i => i.Id.Value >> 32 == 2), "Owned inventory survives room closure and fresh room admission");
+        await Room<object>("close"); ClearRoom();
         File.WriteAllText(System.IO.Path.Combine(evidence, role + "-result.json"), JsonSerializer.Serialize(new
         {
             role, result = "PASS", checks, user_data = OS.GetUserDataDir(), rendering = DisplayServer.GetName() == "headless" ? "NOT_RUN" : "PASS",

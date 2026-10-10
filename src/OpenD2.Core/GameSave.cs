@@ -11,7 +11,7 @@ public sealed record SaveLoadResult(GameSimulation Simulation, bool RecoveredFro
 // File I/O is outside Step. One writer per slot; crash remnants never become load candidates.
 public static class GameSave
 {
-	public const int SchemaVersion = 4, MaxFileBytes = 4 * 1024 * 1024;
+	public const int SchemaVersion = 5, MaxFileBytes = 4 * 1024 * 1024;
 	private sealed record Document(int SchemaVersion, int RulesVersion, string ContentHash, string StateHash, long Tick, uint RandomState,
 		EntityState[] Entities, CommandCursor[] Inputs, GameCommand[] PendingCommands, EntityId WorldPlayer, QuestStage QuestState, ItemState[] Items, ItemFootprint[]? Inventory = null);
 	private static readonly JsonSerializerOptions Options = new()
@@ -45,7 +45,7 @@ public static class GameSave
 				!root.TryGetProperty("RulesVersion", out var rules) || rules.ValueKind != JsonValueKind.Number || !rules.TryGetInt32(out int rulesVersion)) throw new InvalidDataException("Save header missing.");
 			bool oldGrid = version == 1 && rulesVersion == 4;
 			bool oldResources = oldGrid || (version == 2 && rulesVersion == 5);
-			bool legacy = oldResources || (version == 3 && rulesVersion == 6);
+			bool legacy = oldResources || (version == 3 && rulesVersion == 6) || (version == 4 && rulesVersion == 7);
 			if (!legacy && (version != SchemaVersion || rulesVersion != GameSimulation.RulesVersion)) throw new SaveCompatibilityException("Unsupported save schema or game rules. File preserved.");
 			if (!root.TryGetProperty("ContentHash", out var content) || content.ValueKind != JsonValueKind.String) throw new InvalidDataException("Missing content identity.");
 			if (content.GetString() != ContentHash(collision, world)) throw new SaveCompatibilityException("Save requires different level content. File preserved.");
