@@ -80,5 +80,21 @@ internal static class ModeContracts
         await using var feed = client.WatchRoom(room.Id, deadline.Token).GetAsyncEnumerator();
         if (!await feed.MoveNextAsync() || feed.Current.Actor != 1) throw new Exception("Open stream identity failed.");
         await client.Send<object>(HttpMethod.Post, $"v1/rooms/{room.Id}/close");
+        string file = Path.Combine(Path.GetTempPath(), "opend2-tls-character-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            await client.ExportCharacter(character.Id, file);
+            using var peer = new OnlineClient(url, ca, "open");
+            await peer.Login(new("open-transfer-peer", Guid.NewGuid().ToString("N")), true);
+            var imported = await peer.ImportCharacter(file);
+            if (imported.Id == character.Id || imported.Name != character.Name || imported.Victories != character.Victories)
+                throw new Exception("TLS profile transfer did not assign a new owned identity.");
+            var transferred = await peer.Send<OpenCharacter>(HttpMethod.Get, $"v1/characters/{imported.Id}/export");
+            if (transferred != OpenCharacterFile.Load(file)) throw new Exception("TLS imported profile mismatch.");
+            try { await peer.ImportCharacter(file); throw new Exception("Duplicate TLS import accepted."); }
+            catch (HttpRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.Conflict) { }
+        }
+        finally { if (File.Exists(file)) File.Delete(file); }
+
     }
 }
