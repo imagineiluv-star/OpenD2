@@ -58,5 +58,6 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
     (output/f'server-{rid}.json').write_text(json.dumps({'commit': os.environ.get('GITHUB_SHA', 'local'), 'runtime': rid,
         'file': package.name, 'sha256': digest, 'bytes': package.stat().st_size,
         'extracted_server_and_two_clients': 'PASS', 'two_client_gameplay': 'PASS', 'tls_certificates': 'PASS', 'tls_two_client_gameplay': 'PASS',
+        'room_stream_contracts': 'PASS', 'room_stream_transport': 'WSS',
         'rendered_gameplay': 'PASS' if rendered else 'NOT_RUN', 'gui': 'NOT_RUN'}, indent=2)+'\n')
 print('ONLINE SERVER PACKAGE PASS', rid)

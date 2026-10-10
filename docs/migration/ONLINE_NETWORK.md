@@ -1,17 +1,17 @@
 # ONLINE-04: 서버 연결, TLS와 저지연 전송 검토
 
 검토일: 2026-10-10. 기본안은 **가까운 지역의 공개 전용 서버에 클라이언트가 직접 접속**하는 구조다.
-계정/로비에는 HTTPS를 유지하고, 다음 구현은 WSS 서버 푸시, 게임 전송의 성능 비교 후보는
+계정/로비/입력에는 HTTPS를 유지하고, 방 상태는 WSS 서버 푸시, 게임 전송의 성능 비교 후보는
 암호화 UDP다. VPN이나 공유기 자동 설정을 플레이어의 필수 조건으로 두지 않는다.
-WSS/UDP/자동 포트포워딩/중계는 아직 구현하지 않았다. 아래 선택은 코드·공식 문서에 기반한
+WSS 방 상태 스트림을 구현했다. UDP/자동 포트포워딩/중계는 아직 구현하지 않았다. 아래 선택은 코드·공식 문서에 기반한
 설계 판단이며 WAN 성능 측정 결과가 아니다.
 
 ## 현재 어떻게 연결되는가
 
 `OnlinePanel` → `OnlineClient`의 HTTP JSON 요청 → ASP.NET Core/Kestrel → 방별 Core 시뮬레이션이다.
-서버는 40ms마다 계산한다(25Hz). 일반 UI는 요청이 진행 중이지 않을 때 약 100ms마다 입력을
-보내거나 상태를 조회한다(최대 약 10Hz, 응답 지연이 있으면 더 낮아진다).
-HTTP 연결은 재사용하며 조회마다 TLS 연결을 새로 만드는 구조는 아니다.
+서버는 40ms마다 계산한다(25Hz). 인증된 `/v1/rooms/{id}/stream` WSS 연결로 최대 25Hz의
+전체 방 상태를 보낸다. 일반 UI의 주기적 HTTP 상태 조회는 제거했다. 로그인·로비·입력 명령은
+HTTPS이며, 이동 입력/lease 갱신은 기존 약 100ms 주기를 유지한다. HTTP 연결도 재사용한다.
 현재 자체 전투장은 원본 Battle.net 프로토콜을 사용하지 않는다.
 
 | 환경 | 연결 주소와 필요한 설정 | 공유기/VPN |
@@ -74,7 +74,7 @@ CA 폐기/회전과 공개 운영의 폐기 확인 정책은 별도 운영 인�
 | 후보 | 판단과 다음 조치 |
 | --- | --- |
 | 가까운 지역의 전용 권위 서버 | 채택할 기본 토폴로지. 서버가 위치/전투/소유권을 결정하고 방은 한 서버가 소유. 지역 선택은 실제 RTT로 결정 |
-| HTTPS + WSS | 다음 구현 우선순위. 계정/로비 HTTPS 유지, 게임 상태를 지속 연결로 푸시. 현재 .NET 서버와 Godot C# 모두 적용하기 쉽고 TCP 443 사용 가능. TCP 손실에 따른 대기 문제는 남음 |
+| HTTPS + WSS | 방 상태 스트림 구현. 계정/로비/입력 HTTPS 유지, 상태는 지속 연결로 푸시. 같은 Kestrel TLS 포트 사용. TCP 손실에 따른 대기 문제와 입력 HTTPS 요청 비용은 남음 |
 | GameNetworkingSockets 암호화 UDP | 게임 전송 성능 실험의 우선 후보. 신뢰/비신뢰 메시지, 암호화, 지연/손실 통계와 lanes 제공. C ABI/C# 연동, 네이티브 라이브러리 3 OS 패키징·종료 수명·라이선스를 검증한 뒤 최종 채택 |
 | Godot ENet | 서버도 Godot를 사용할 때 통합 편의가 큼. 현재 서버는 순수 ASP.NET/Core이므로 Godot 고수준 RPC와 바로 호환된다고 볼 수 없음. 엔진 서버 전환 또는 별도 프로토콜 구현 비용까지 비교 |
 | LiteNetLib | C# 기반 UDP 비교 후보. 전달 모드·NAT 펀칭은 유용하지만 인증된 암호화와 서버 신원 확인을 별도로 확인해야 함. 자체 암호 프로토콜 제작을 기본안으로 삼지 않음 |
@@ -85,8 +85,7 @@ GameNetworkingSockets 오픈소스 사용만으로 Steam Datagram Relay 사용 �
 Steam 인증/SDR 서비스 이용 조건과 자체 중계 운영 비용은 별개다. VPN도 직접 경로라면 빠를 수 있고
 중계 경로라면 추가 지연이 생길 수 있으므로 “VPN은 항상 느리다” 또는 “UDP면 무조건 빠르다”라고 가정하지 않는다.
 
-WSS 단계부터 입력 sequence/서버 tick, 제한된 송신 큐, 느린 클라이언트 처리, heartbeat/세션 만료,
-재접속 후 전체 스냅샷 재동기화를 설계한다. UDP 실험에서는 다음을 유지한다.
+WSS의 현재 제한과 검증 경계는 아래를 따른다. UDP 실험에서는 다음을 유지한다.
 
 - 위치/이동은 최신 순서가 우선인 메시지로, 인벤토리/전리품/방 종료 등은 확인 가능한 신뢰 메시지로 분리한다.
 - 짧은 유효기간의 방 참가 티켓을 HTTPS로 발급하고 게임 연결의 서버 신원과 연결한다.
@@ -107,9 +106,33 @@ WSS 단계부터 입력 sequence/서버 tick, 제한된 송신 큐, 느린 클�
 
 ## 성능 검증과 남은 인수
 
-현재 32방 × 4명 × 초당 10회 조회는 **최대 1,280 요청/s의 산술 추정**이다. 현재 전체 게임 요청
-1,000/s와 연결 64개 한도는 이 규모를 보장하지 못한다. 입력 요청도 같은 예산을 소비한다.
-한도를 늘리는 변경 전에 서버 푸시·부분 상태 전송·동시성/저장 비용을 측정한다. 이 계산은 부하 실측이 아니다.
+이전 HTTP 조회 방식의 32방 × 4명 × 초당 10회는 **최대 1,280 요청/s의 산술 추정**이었다.
+상태 GET은 제거했지만 모든 플레이어가 이동할 때 입력 HTTPS 요청량 문제는 남는다.
+전체 게임 요청 1,000/s와 연결 64개, 스트림 32개의 한도는 32방 동시 4인 접속을 보장하지 못한다.
+최대 25Hz 전체 상태 전송은 이전 10Hz 조회보다 송신량이 늘 수 있다. 부분 상태·관심 범위·입력 전송을
+다음 성능 단계로 둔다. 실제 WAN 지연/대역폭/부하를 측정하기 전에는 전체 성능 개선을 주장하지 않는다.
+
+### 구현한 WSS 방 상태 스트림
+
+- 네이티브 클라이언트 전용, bearer 헤더와 `opend2.room.v1` 서브프로토콜. 토큰을 URL에 넣지 않는다.
+  Origin 헤더를 가진 브라우저 요청은 거부하며 인증 없는/타인 방 요청은 HTTP upgrade 전에 거부한다.
+- 세션당 스트림 하나, 서버 전체 32개와 대기열 0. 일반 HTTP의 동시 요청 8개와 별도 예산이다.
+  기존 TCP 연결 64개와 handshake의 게임 요청 rate limit은 유지한다.
+- 최대 40ms 주기로 현재 권한과 방 상태를 확인한다. 재로그인/로그아웃/세션 만료/방 종료는 기존
+  Realm 권한 검사를 거쳐 401/403/404 등으로 전달하며 연결을 닫는다. JSON 메시지는 최대 1MiB다.
+- 연결당 sender/receiver 하나, 누적 상태 큐 없음. 송신 2초 제한과 5초 ping/5초 pong 제한을 둔다.
+  클라이언트는 handshake/완전한 상태 수신에 각각 10초 제한을 둔다. OS 스케줄링까지 실시간 보장하지는 않는다.
+- 스트림으로 입력 메시지를 보내면 연결을 끊는다. 명령은 기존 HTTPS의 소유권/sequence/이동 lease
+  검사를 거친다. HTTP 응답과 WSS 프레임 도착 순서가 바뀌어도 UI의 tick/input cursor를 역행시키지 않는다.
+- WSS는 HTTPS와 같은 인증서 정책/handler를 사용한다. loopback 개발 검사에서만 WS를 허용한다.
+  화면에 현재 WS/WSS를 표시하고, 스트림 장애 때 조회 방식으로 조용히 우회하지 않는다.
+  방 재참가 시 전체 상태부터 받는다. 서버 재시작은 재로그인이 필요하며 자동 backoff 재접속은 후속 작업이다.
+- 실제 단절은 pong/수신 제한으로 감지한다. 이동은 계속 기존 500ms lease로 정지한다.
+  방 휴면은 마지막 관측에서 15초 기준이므로 이동 정지와 연결 감지/방 휴면은 같은 시간이 아니다.
+
+스트림 계약은 WSS 이동 전파, 조회 없는 tick 수신, 타인 방·중복·Origin·서브프로토콜 거부,
+입력 메시지 차단, 기존 세션 폐기, 재접속과 방 종료, 9개 스트림과 일반 API의 공존을 실제 서버에서 검사한다.
+32개 상한 부하·느린 수신자/손실 망·장시간 연결의 실측은 아직 완료하지 않았다.
 
 | 측정 항목 | 시험 조건/판정 자료 |
 | --- | --- |
@@ -128,10 +151,11 @@ WSS 단계부터 입력 sequence/서버 tick, 제한된 송신 큐, 느린 클�
 - 실제 `OnlineClient`의 TLS 로그인/캐릭터/방, 미신뢰·다른 CA·호스트 불일치·만료 인증서 거부.
 - 서버 인증서를 루트 CA로 사용하거나 사설 CA를 평문 HTTP에 사용하는 것과 원격 HTTP 거부.
 - 세 OS의 압축 해제한 Godot 클라이언트 2개로 기존 전투/재접속/서버 강제 재시작 시나리오를 HTTPS에서도 실행.
-- `tls-contracts.json`, `tls/result.json`, 양쪽 Godot 로그/단계 증거를 Actions에 보존.
+- `tls-contracts.json`, `stream-contracts.json`, `tls/result.json`, 양쪽 Godot 로그/단계 증거를 Actions에 보존.
   CA/PFX/개인 키/계정 DB는 임시 폴더에서 삭제하고 업로드하지 않는다.
 
-자동 TLS는 loopback 검사다. Linux 창 렌더링 자동 검사는 기존 HTTP 경로이며 수동 GUI와 별도다.
+Godot 두 클라이언트의 상태 관측도 HTTP GET 대신 실제 WS/WSS 스트림으로 수행한다. 입력 명령은 HTTPS다.
+자동 TLS/WSS는 loopback 검사다. Linux 창 렌더링 자동 검사는 HTTP 명령+WS 상태 경로이며 수동 GUI와 별도다.
 **서로 다른 실제 PC·WAN·사람의 GUI 입력·실제 음성 장치 인수는 NOT_RUN**이다.
 실제 인수자는 OS/서버·클라이언트 커밋, 접속 주소와 인증서 지문, 직접/중계 경로, 네트워크 조건을 기록한다.
 두 PC에서 각각 정상 클라이언트 하나로 로그인→캐릭터→같은 방→동시 이동/전투/획득→연결 단절→
@@ -142,6 +166,8 @@ WSS 단계부터 입력 sequence/서버 tick, 제한된 송신 큐, 느린 클�
 
 - Kestrel HTTPS/인증서: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/endpoints?view=aspnetcore-10.0
 - .NET 연결별 체인 정책: https://learn.microsoft.com/en-us/dotnet/api/system.net.security.sslclientauthenticationoptions.certificatechainpolicy?view=net-10.0
+- ASP.NET WebSocket 수명/keep-alive: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/websockets?view=aspnetcore-10.0
+- .NET 공유 HTTP handler 연결: https://learn.microsoft.com/en-us/dotnet/api/system.net.websockets.clientwebsocket.connectasync?view=net-10.0
 - Godot 멀티플레이/ENet/NAT: https://docs.godotengine.org/en/stable/tutorials/networking/high_level_multiplayer.html
 - GameNetworkingSockets: https://github.com/ValveSoftware/GameNetworkingSockets
 - LiteNetLib: https://github.com/RevenantX/LiteNetLib

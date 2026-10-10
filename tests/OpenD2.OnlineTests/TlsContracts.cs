@@ -82,6 +82,7 @@ internal static class TlsContracts
                     catch (ArgumentException) { Pass("remote plaintext address rejected"); }
                     try { using var bad = new OnlineClient("http://127.0.0.1", ca); throw new Exception("CA with plaintext accepted."); }
                     catch (ArgumentException) { Pass("private CA cannot enable plaintext"); }
+                    await StreamContracts.Run(url, ca, Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "stream-contracts.json"));
                 }
                 else { await RejectTls(url, ca); Pass(name + " certificate rejected"); }
             }

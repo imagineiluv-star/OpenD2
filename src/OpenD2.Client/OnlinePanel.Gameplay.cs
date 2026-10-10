@@ -9,7 +9,7 @@ namespace OpenD2.Client;
 public partial class OnlinePanel
 {
     // File barriers coordinate test processes only. The production server has no test endpoints.
-    // Every gameplay action still uses the client's real HTTP transport and authoritative Core.
+    // Commands use real HTTP; observations use the production room stream, never HTTP polling.
     private async Task CheckGameplay(string role, string secret, Guid character, string evidence)
     {
         status.Text = "Automated two-client gameplay validation. Manual input: NOT_RUN.";
@@ -18,7 +18,7 @@ public partial class OnlinePanel
         string path = $"v1/rooms/{room}";
         var checks = new List<string>();
         Directory.CreateDirectory(evidence);
-        async Task Poll() => Apply(await client!.Send<RoomView>(HttpMethod.Get, path, cancellation: lifetime.Token));
+        Task Poll() => WaitForRoomUpdate();
         EntityState Entity(uint id) => state!.Entities.Single(e => e.Id.Value == id);
         void Check(bool condition, string message)
         {
@@ -96,17 +96,20 @@ public partial class OnlinePanel
         await Barrier("in-range");
         if (role == "host")
             await Until(() => Entity(100).Health < 60, "Host attack caused no damage", () => Strike(CommandKind.Attack));
-        await Barrier("host-hit"); await Poll();
+        await Barrier("host-hit");
+        await Until(() => Entity(100).Health is > 0 and < 60, "Host damage stream was not observed");
         Check(Entity(100).Health is > 0 and < 60, "Host damage visible in both clients");
         await Barrier("host-observed");
         if (role == "guest")
             await Until(() => Entity(state!.Actor).Mana < Entity(state.Actor).MaxMana, "Guest skill did not consume mana", () => Strike(CommandKind.CastSkill));
-        await Barrier("guest-skill"); await Poll();
+        await Barrier("guest-skill");
+        await Until(() => Entity(2).Mana < Entity(2).MaxMana && Entity(100).Health < 46, "Guest skill stream was not observed");
         Check(Entity(2).Mana < Entity(2).MaxMana && Entity(100).Health < 46, "Guest skill and mana visible in both clients");
         await Barrier("skill-observed");
         if (role == "host")
             await Until(() => !Entity(100).IsAlive, "Monster did not die", () => Strike(CommandKind.Attack));
-        await Barrier("kill"); await Poll();
+        await Barrier("kill");
+        await Until(() => !Entity(100).IsAlive && state!.Items.Any(i => i.Location == ItemLocation.Ground), "Loot stream was not observed");
         Check(!Entity(100).IsAlive && state!.Items.Any(i => i.Location == ItemLocation.Ground), "Monster death and loot replicated");
         var loot = state!.Items.First(i => i.Location == ItemLocation.Ground);
         await Capture("combat");
@@ -116,7 +119,8 @@ public partial class OnlinePanel
             await Approach(() => loot.Position);
             await Until(() => state!.Items.Any(i => i.Id == loot.Id && i.Location == ItemLocation.Inventory), "Loot pickup failed", () => InputCommand(CommandKind.Pickup, item: loot.Id.Value));
         }
-        await Barrier("pickup"); await Poll();
+        await Barrier("pickup");
+        await Until(() => state!.Items.Single(i => i.Id == loot.Id).Location == ItemLocation.Inventory, "Pickup stream was not observed");
         Check(state!.Items.Single(i => i.Id == loot.Id) is { Location: ItemLocation.Inventory, Owner.Value: 1 }, "Exactly one player owns loot");
         if (role == "guest") await InputCommand(CommandKind.Pickup, item: loot.Id.Value);
         await Barrier("steal"); await Task.Delay(150, lifetime.Token); await Poll();
@@ -126,7 +130,7 @@ public partial class OnlinePanel
         if (role == "host")
         {
             await InputCommand(CommandKind.SetMove, -1, 0);
-            client!.Dispose(); client = null; Signal("disconnected");
+            StopRoomStream(); client!.Dispose(); client = null; Signal("disconnected");
             await Wait("guest-lease-checked");
             password.Text = secret; await Login(false);
             Apply(await client!.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(character, ""), lifetime.Token));
@@ -162,7 +166,7 @@ public partial class OnlinePanel
         File.WriteAllText(System.IO.Path.Combine(evidence, role + "-result.json"), JsonSerializer.Serialize(new
         {
             role, result = "PASS", checks, user_data = OS.GetUserDataDir(), rendering = DisplayServer.GetName() == "headless" ? "NOT_RUN" : "PASS",
-            manual_gui = "NOT_RUN", multi_pc = "NOT_RUN"
+            manual_gui = "NOT_RUN", multi_pc = "NOT_RUN", observations = "room-websocket-stream", http_state_polling = false
         }, new JsonSerializerOptions { WriteIndented = true }));
         GD.Print("OPEND2_ONLINE_GAMEPLAY_PASS " + role + " MANUAL_GUI_NOT_RUN");
     }
