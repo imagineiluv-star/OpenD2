@@ -92,7 +92,11 @@ public partial class SceneAudio : Node
 			{
 				generator = new AudioStreamGenerator { MixRate = track.SampleRate, BufferLength = 0.25f };
 				loop = new(track); music.Stream = generator; music.Play();
-				playback = (AudioStreamGeneratorPlayback)music.GetStreamPlayback(); FillMusic();
+				playback = (AudioStreamGeneratorPlayback)music.GetStreamPlayback();
+				// Godot's generator playback holds a raw pointer to its stream. Stop() only
+				// schedules mixer fade-out, so keep a native reference until playback dies.
+				playback.SetMeta("opend2_generator_owner", generator);
+				FillMusic();
 				music.StreamPaused = suspend;
 			}
 		}
