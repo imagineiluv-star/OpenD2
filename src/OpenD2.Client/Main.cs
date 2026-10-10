@@ -15,18 +15,24 @@ public partial class Main : Node3D
 	private Label performance = null!;
 	private LineEdit dataPath = null!;
 	private SimulationPreview simulation = null!;
-	private readonly SpinBox fpsLimit = new() { MinValue = 30, MaxValue = 240, Step = 1, Value = 60 };
-	private readonly CheckButton fullscreen = new() { Text = "Fullscreen (F11)" };
-	private readonly CheckButton diagnostics = new() { Text = "Show diagnostics" };
-	private readonly SpinBox masterVolume = new() { MinValue = 0, MaxValue = 100, Step = 1, Value = 80 };
-	private readonly SpinBox effectsVolume = new() { MinValue = 0, MaxValue = 100, Step = 1, Value = 80 };
-	private readonly SpinBox musicVolume = new() { MinValue = 0, MaxValue = 100, Step = 1, Value = 50 };
-	private readonly CheckButton muted = new() { Text = "Mute audio" };
+	private SpinBox fpsLimit = null!;
+	private CheckButton fullscreen = null!;
+	private CheckButton diagnostics = null!;
+	private SpinBox masterVolume = null!;
+	private SpinBox effectsVolume = null!;
+	private SpinBox musicVolume = null!;
+	private CheckButton muted = null!;
 	private double elapsed;
 	private bool settingsLoaded;
 
 	public override void _Ready()
 	{
+		if (OS.GetCmdlineUserArgs().Contains("--online-smoke"))
+		{
+			SetProcess(false);
+			AddChild(new OnlineSmoke());
+			return;
+		}
 		BuildScene();
 		try
 		{
@@ -65,6 +71,14 @@ public partial class Main : Node3D
 
 	private void BuildScene()
 	{
+		// Create controls only for the scene that will own and free them.
+		fpsLimit = new() { MinValue = 30, MaxValue = 240, Step = 1, Value = 60 };
+		fullscreen = new() { Text = "Fullscreen (F11)" };
+		diagnostics = new() { Text = "Show diagnostics" };
+		masterVolume = new() { MinValue = 0, MaxValue = 100, Step = 1, Value = 80 };
+		effectsVolume = new() { MinValue = 0, MaxValue = 100, Step = 1, Value = 80 };
+		musicVolume = new() { MinValue = 0, MaxValue = 100, Step = 1, Value = 50 };
+		muted = new() { Text = "Mute audio" };
 		GetWindow().MinSize = new Vector2I(1000, 680);
 		var camera = new Camera3D { Position = new Vector3(0, 2, 5), Current = true };
 		AddChild(camera); camera.LookAt(Vector3.Zero);
@@ -127,6 +141,9 @@ public partial class Main : Node3D
 		{ previews.CurrentTab = 0; simulation.RequestSceneLoad(file); },
 		file => { previews.CurrentTab = 4; artwork.RequestOpen(file); }) { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
 		previews.AddChild(artScroll); artScroll.AddChild(artwork);
+		var onlineScroll = new ScrollContainer { Name = "Online", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+		previews.AddChild(onlineScroll);
+		onlineScroll.AddChild(new OnlinePanel { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
 		previews.CurrentTab = 0;
 		var quit = new Button { Text = "Quit" }; panel.AddChild(quit); quit.Pressed += () => GetTree().Quit();
 	}

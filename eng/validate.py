@@ -34,6 +34,7 @@ run("dotnet", "run", "--project", "tests/OpenD2.Tests", "-c", "Debug", "--no-bui
 # --import waits for the scan to finish; no timing-based teardown workaround.
 run(godot, "--headless", "--path", "src/OpenD2.Client", "--import", capture=True, stage="import")
 output = run(godot, "--headless", "--path", "src/OpenD2.Client", "--quit-after", "600", "--max-fps", "60", "--", "--smoke-test", capture=True, stage="project-smoke")
+assert "OPEND2_ONLINE_UI_READY" in output, "Online UI marker missing"
 assert "OPEND2_M0_READY" in output, "Startup marker missing"
 assert "OPEND2_M104_PREVIEW_READY" in output, "DC6 preview marker missing"
 assert "OPEND2_M105_ANIMATION_READY" in output, "DCC/COF animation marker missing"

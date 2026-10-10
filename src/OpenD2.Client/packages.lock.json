@@ -37,6 +37,12 @@
         "dependencies": {
           "OpenD2.Core": "[1.0.0, )"
         }
+      },
+      "opend2.online": {
+        "type": "Project",
+        "dependencies": {
+          "OpenD2.Core": "[1.0.0, )"
+        }
       }
     }
   }

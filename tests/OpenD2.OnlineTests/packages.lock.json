@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0": {
+      "opend2.core": {
+        "type": "Project"
+      },
+      "opend2.online": {
+        "type": "Project",
+        "dependencies": {
+          "OpenD2.Core": "[1.0.0, )"
+        }
+      },
+      "opend2.server": {
+        "type": "Project",
+        "dependencies": {
+          "OpenD2.Online": "[1.0.0, )"
+        }
+      }
+    }
+  }
+}

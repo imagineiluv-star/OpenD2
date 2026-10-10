@@ -26,6 +26,8 @@ jobs:
             preset: macOS
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    env:
+      DOTNET_PROCESSOR_COUNT: "2"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -36,6 +38,11 @@ jobs:
           python-version: "3.12"
       - name: Test packaging and download contracts
         run: python -m unittest discover -s eng -p "test_*.py" -v
+      - name: Install bounded Linux hang diagnostics
+        if: runner.os == 'Linux'
+        run: |
+          dotnet tool install dotnet-stack --version 10.0.750501 --tool-path "$RUNNER_TEMP/dotnet-tools"
+          echo "OPEND2_STACK_TOOL=$RUNNER_TEMP/dotnet-tools/dotnet-stack" >> "$GITHUB_ENV"
       - name: Install pinned Godot and templates
         run: python eng/bootstrap.py
       - name: Stress macOS editor initialization and export teardown
@@ -52,6 +59,28 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag || 'ci' }}
           SOURCE_SHA: ${{ github.sha }}
         run: python eng/release.py pack --preset ${{ matrix.preset }} --smoke
+      - name: Repeat Linux client initialization and audio teardown
+        if: runner.os == 'Linux'
+        run: python eng/smoke-export.py Linux --iterations 8
+      - name: Online ownership and persistence contracts
+        run: dotnet run --project tests/OpenD2.OnlineTests -c Release
+      - name: Publish server and test two extracted online clients
+        run: python eng/pack-online-server.py
+      - name: Preserve online validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenD2-online-${{ matrix.preset }}
+          path: artifacts/online/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload validated online server
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenD2-server-${{ matrix.preset }}
+          path: artifacts/server-packages/
+          if-no-files-found: error
+          retention-days: 14
       - name: Preserve Godot validation logs
         if: always()
         uses: actions/upload-artifact@v4
