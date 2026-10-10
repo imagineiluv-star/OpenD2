@@ -3,7 +3,7 @@ using OpenD2.Assets;
 
 if (args.Length == 0 || args[0] is "--help" or "-h")
 {
-	Console.WriteLine("Usage: OpenD2.AssetAudit --check-scene|--check-play-ready <game-data-directory> <scene-request.json>\n       OpenD2.AssetAudit --check-map <game-data-directory> <map-request.json>\n       OpenD2.AssetAudit --inspect-save <legacy-v96.d2s> (read-only header/checksum; no import)\n       OpenD2.AssetAudit [--probe|--decode] <game-data-directory> [known-paths.txt]\n       OpenD2.AssetAudit --items-txt <game-data-directory> (lod-1.10f reference data; no gameplay import)\n       OpenD2.AssetAudit --tables-txt|--tables-bin-110f <game-data-directory>\nJSON goes to stdout. Scan uses read-only MPQs; no resource extraction. --decode validates Palette/text TBL/DC6/DCC/COF/DT1/DS1 and TXT structure. BIN schemas require explicit --tables-bin-110f.\nExit 0: scan completed without reported errors; 3: missing archives, read, decode or reference failures; 1: fatal error; 2: usage.\nA successful scan does not establish version compatibility or complete coverage.");
+	Console.WriteLine("Usage: OpenD2.AssetAudit --check-scene|--check-play-ready <game-data-directory> <scene-request.json>\n       OpenD2.AssetAudit --check-map <game-data-directory> <map-request.json>\n       OpenD2.AssetAudit --inspect-save <legacy-v96.d2s> (read-only header/checksum; no import)\n       OpenD2.AssetAudit [--probe|--decode|--decode-demo] <game-data-directory> [known-paths.txt]\n       OpenD2.AssetAudit --items-txt <game-data-directory> (lod-1.10f reference data; no gameplay import)\n       OpenD2.AssetAudit --tables-txt|--tables-bin-110f <game-data-directory>\nJSON goes to stdout. Scan uses read-only MPQs; no resource extraction. --decode validates Palette/text TBL/DC6/DCC/COF/DT1/DS1 and TXT structure. BIN schemas require explicit --tables-bin-110f.\nExit 0: scan completed without reported errors; 3: missing archives, read, decode or reference failures; 1: fatal error; 2: usage.\nA successful scan does not establish version compatibility or complete coverage.");
 	return args.Length == 0 ? 2 : 0;
 }
 try
@@ -53,6 +53,8 @@ try
 			tables.LevelCount, tables.TypeCount, tables.PresetCount, tables.Sources, Issues = issues, DecoderVersion = AssetDecoders.Version }, new JsonSerializerOptions { WriteIndented = true }));
 		return installation.MissingArchives.Count > 0 || issues.Any(i => i.IsError) ? 3 : 0;
 	}
+	string profile = "lod-1.10f";
+	if (args[0] == "--decode-demo") { profile = "demo-1.04"; args[0] = "--decode"; }
 	bool decode = args[0] == "--decode";
 	if (decode) args = args[1..];
 	if (args.Length == 0) return 2;
@@ -73,7 +75,7 @@ try
 		if (new FileInfo(args[1]).Length > 16 * 1024 * 1024) throw new InvalidDataException("Known-path file exceeds 16 MiB.");
 		known = File.ReadLines(args[1]).Where(line => !string.IsNullOrWhiteSpace(line));
 	}
-	var report = AssetInventory.Scan(args[0], new AuditOptions(Decode: decode), known);
+	var report = AssetInventory.Scan(args[0], new AuditOptions(Decode: decode, Profile: profile), known);
 	Console.WriteLine(JsonSerializer.Serialize(report, json));
 	return report.Installation.MissingArchives.Count > 0 || report.Archives.Any(a => a.ErrorCode != null) || report.Entries.Any(e => e.ErrorCode != null) ? 3 : 0;
 }

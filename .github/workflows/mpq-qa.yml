@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'full-audit is strict and currently fails on known demo limitations; terrain checks only map/scene connectivity'
+        description: 'full-audit checks the pinned demo inventory; terrain checks map/scene connectivity'
         type: choice
         required: true
         default: full-audit
@@ -15,6 +15,9 @@ on:
       - 'eng/qa/demo-*.json'
       - 'eng/qa/mpq_handoff.py'
       - 'eng/test_mpq_action.py'
+      - 'src/OpenD2.Assets/**'
+      - 'tools/OpenD2.AssetAudit/**'
+      - 'tests/OpenD2.Tests/**'
 permissions:
   contents: read
 concurrency:
@@ -22,11 +25,12 @@ concurrency:
   cancel-in-progress: true
 jobs:
   mpq:
-    name: '${{ inputs.mode || ''terrain'' }} (${{ matrix.os }})'
+    name: '${{ matrix.mode }} (${{ matrix.os }})'
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-2025, macos-15]
+        mode: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.mode) || '["terrain","full-audit"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
@@ -47,7 +51,7 @@ jobs:
         run: dotnet build tools/OpenD2.AssetAudit -c Release -m:1 -p:BuildInParallel=false
       - name: Fetch pinned public demo and validate actual MPQs
         env:
-          MPQ_MODE: ${{ inputs.mode || 'terrain' }}
+          MPQ_MODE: ${{ matrix.mode }}
         shell: python
         run: |
           import os, pathlib, subprocess, sys
@@ -58,7 +62,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: MPQ-${{ inputs.mode || 'terrain' }}-${{ matrix.os }}
+          name: MPQ-${{ matrix.mode }}-${{ matrix.os }}
           path: artifacts/mpq-qa/
           if-no-files-found: warn
           retention-days: 14

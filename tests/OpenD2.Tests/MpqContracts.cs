@@ -120,6 +120,29 @@ internal static class MpqContracts
 			File.WriteAllBytes(Path.Combine(decoded, "patch_d2.mpq"), [0, 1, 2]);
 			Throws<MpqException>(() => AssetDecoders.ReadFromInstall(decoded, "sample.dc6"));
 		});
+		test("demo inventory rejects changed opaque records instead of waiving decode errors", () =>
+		{
+			string folder = Path.Combine(root, "demo-opaque"); Directory.CreateDirectory(folder);
+			const string logical = @"data\global\sfx\cursor\curindx.wav";
+			Check(Fixture(Path.Combine(folder, "d2sfx.mpq"), logical, new byte[72], 72, 1) == 0);
+			var entry = AssetInventory.Scan(folder, new AuditOptions(Decode: true, Profile: "demo-1.04"))
+				.Entries.Single(e => e.LogicalPath == logical);
+			Check(entry.Format == "demo_opaque_record" && entry.ErrorCode != null && entry.DecodeStatus == "failed");
+			var standard = AssetInventory.Scan(folder, new AuditOptions(Decode: true)).Entries.Single(e => e.LogicalPath == logical);
+			Check(standard.Format == "wav" && standard.ErrorCode != null);
+		});
+		test("demo profile is explicit and keeps required archive failures", () =>
+		{
+			string folder = Path.Combine(root, "demo-profile"); Directory.CreateDirectory(folder);
+			foreach (var name in new[] { "patch_d2.mpq", "d2music.mpq", "d2speech.mpq", "d2sfx.mpq", "d2char.mpq", "d2data.mpq" })
+				File.WriteAllBytes(Path.Combine(folder, name), []);
+			Check(GameInstall.Probe(folder).MissingArchives.Count == 5);
+			var demo = GameInstall.Probe(folder, "demo-1.04");
+			Check(demo.MissingArchives.Count == 0 && demo.VersionStatus == "unverified");
+			File.Delete(Path.Combine(folder, "d2data.mpq"));
+			Check(GameInstall.Probe(folder, "demo-1.04").MissingArchives.SequenceEqual(new[] { "d2data.mpq" }));
+			Throws<ArgumentException>(() => GameInstall.Probe(folder, "guess"));
+		});
 		test("probe and inventory budgets report gaps", () =>
 		{
 			Check(GameInstall.Probe(dir).MissingArchives.Contains("d2exp.mpq"));

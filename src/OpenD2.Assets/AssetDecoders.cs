@@ -2,7 +2,7 @@ namespace OpenD2.Assets;
 
 public static class AssetDecoders
 {
-	public const string Version = "m2.06-audio-1";
+	public const string Version = "m2.07-audit-2";
 	public const int MaxInputBytes = 33554432;
 	public static string? Kind(string logicalPath)
 	{
@@ -23,7 +23,7 @@ public static class AssetDecoders
 		switch (kind)
 		{
 			case "excel_txt": ExcelTextTable.Parse(data); break;
-			case "wav_pcm": PcmWave.Parse(data); break;
+			case "wav_pcm": PcmWave.Validate(data); break;
 			case "ds1": Ds1Map.Parse(data); break;
 			case "dt1":
 				var tiles = Dt1Tileset.Parse(data);

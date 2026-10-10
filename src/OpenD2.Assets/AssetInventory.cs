@@ -3,7 +3,7 @@ using System.Text;
 
 namespace OpenD2.Assets;
 
-public sealed record AuditOptions(long MaxFileBytes = 268435456, long MaxTotalBytes = 4294967296, int MaxEntries = 100000, bool Decode = false);
+public sealed record AuditOptions(long MaxFileBytes = 268435456, long MaxTotalBytes = 4294967296, int MaxEntries = 100000, bool Decode = false, string Profile = "lod-1.10f");
 public sealed record AssetEntry(string SourceArchive, string SourceVersion, string LogicalPath, string ContentId,
 	string? ContentHash, long? Size, string Format, string DecoderVersion, string DecodeStatus,
 	string RuntimeStatus, string? HdReplacementId, bool Selected, string? ErrorCode);
@@ -19,7 +19,7 @@ public static class AssetInventory
 		options ??= new AuditOptions();
 		if (options.MaxFileBytes < 0 || options.MaxTotalBytes < 0 || options.MaxEntries is < 1 or > 1000000)
 			throw new ArgumentOutOfRangeException(nameof(options));
-		var install = GameInstall.Probe(directory);
+		var install = GameInstall.Probe(directory, options.Profile);
 		var known = (knownPaths ?? []).Select(MpqArchive.NormalizePath).Take(options.MaxEntries + 1).ToArray();
 		if (known.Length > options.MaxEntries) throw new InvalidDataException("Known-path list exceeds entry budget.");
 		var archives = new List<ArchiveAudit>(); var entries = new List<AssetEntry>();
@@ -50,6 +50,7 @@ public static class AssetInventory
 					catch (MpqException ex) when (ex.Code == 2 && !listed.Contains(logical)) { continue; }
 					catch (Exception ex) when (ex is IOException or InvalidDataException) { error = Error(ex); }
 					string? kind = AssetDecoders.Kind(logical);
+					bool opaqueDemoRecord = options.Profile == "demo-1.04" && DemoOpaqueRecords.IsRecord(name, logical);
 					string decoder = kind is null ? "none" : AssetDecoders.Version;
 					string decodeStatus = kind is null ? "not_implemented" : "not_requested";
 					if (options.Decode && kind is not null)
@@ -59,9 +60,14 @@ public static class AssetInventory
 						{
 							try
 							{
-								var raw = archive.Read(logical, Math.Min(AssetDecoders.MaxInputBytes, Math.Min(options.MaxFileBytes, options.MaxTotalBytes - bytes - decodeBytes)));
+								var raw = archive.Read(logical, Math.Min(kind == "wav_pcm" ? PcmWave.MaxAuditInputBytes : AssetDecoders.MaxInputBytes, Math.Min(options.MaxFileBytes, options.MaxTotalBytes - bytes - decodeBytes)));
 								decodeBytes += raw.Length;
-								AssetDecoders.Validate(kind, raw); decodeStatus = "validated";
+								if (opaqueDemoRecord)
+								{
+									DemoOpaqueRecords.Validate(logical, raw);
+									decodeStatus = "opaque_integrity_validated";
+								}
+								else { AssetDecoders.Validate(kind, raw); decodeStatus = "validated"; }
 							}
 							catch (Exception ex) when (ex is IOException or InvalidDataException)
 							{ decodeStatus = "failed"; error = "decode_" + Error(ex); }
@@ -69,7 +75,7 @@ public static class AssetInventory
 					}
 					entries.Add(new AssetEntry(name, install.VersionStatus, logical,
 						Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(logical))), hash, size,
-						Path.GetExtension(logical.Replace('\\', '/')).TrimStart('.').ToLowerInvariant(), decoder, decodeStatus,
+						opaqueDemoRecord ? "demo_opaque_record" : Path.GetExtension(logical.Replace('\\', '/')).TrimStart('.').ToLowerInvariant(), decoder, decodeStatus,
 						"not_loaded", null, selected.Add(logical), error));
 				}
 				archives.Add(new ArchiveAudit(name, archiveHash, false, listed.Count, null));
