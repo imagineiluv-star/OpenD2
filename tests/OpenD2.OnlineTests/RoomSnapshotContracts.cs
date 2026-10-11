@@ -33,6 +33,9 @@ internal static class RoomSnapshotContracts
                 for (int i = 1; i < 4; i++) realm.Join(users[i].Token, room, new(characters[i].Id, ""));
                 realm.Start(users[0].Token, room);
                 var original = realm.StreamState(users[0].Token, room);
+                var filtered = realm.StreamState(users[0].Token, room, interest: true);
+                Check(ReferenceEquals(filtered.Entities, realm.StreamState(users[0].Token, room, interest: true).Entities), "per-actor projection reused");
+                Check(filtered.Entities.SequenceEqual(RoomInterest.Project(original).Entities), "stream projection matches policy");
                 string originalJson = JsonSerializer.Serialize(original);
                 long builds = realm.SnapshotBuilds;
                 var reference = Arena.Create(4);
@@ -60,6 +63,7 @@ internal static class RoomSnapshotContracts
                 var before = realm.StreamState(users[0].Token, room);
                 realm.AcknowledgeInput(users[0].Token, room, new(1, CommandKind.SetMove, -1));
                 var pending = realm.StreamState(users[0].Token, room);
+                Check(realm.StreamState(users[0].Token, room, interest: true).StateHash == pending.StateHash, "projection same tick refresh");
                 Check(pending.Tick == before.Tick && pending.StateHash != before.StateHash && pending.NextSequence == 2, "same tick acknowledgement invalidates hash");
                 realm.BatchInput(users[0].Token, room, new([new(2, CommandKind.SetMove, 1), new(3, CommandKind.SetMove, -1)]));
                 var batch = realm.StreamState(users[0].Token, room);
@@ -83,8 +87,8 @@ internal static class RoomSnapshotContracts
                 var idle = realm.StreamState(users[0].Token, room);
                 Check(idle.Tick == idlePending.Tick && idle.StateHash != idlePending.StateHash, "idle replacement invalidates without tick advance");
                 Check(idle.Entities.Single(e => e.Id.Value == 1).MoveX == 0, "idle clears movement");
-                Reject(401, () => realm.StreamState("invalid", room));
-                Reject(403, () => realm.StreamState(users[2].Token, room));
+                Reject(401, () => realm.StreamState("invalid", room, interest: true));
+                Reject(403, () => realm.StreamState(users[2].Token, room, interest: true));
                 var renewed = realm.Login(new("snapshot0", password), false);
                 Reject(401, () => realm.StreamState(users[0].Token, room));
                 realm.Logout(users[1].Token); Reject(401, () => realm.StreamState(users[1].Token, room));

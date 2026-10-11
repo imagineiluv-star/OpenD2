@@ -16,6 +16,7 @@ if (args.Length != 0) throw new ArgumentException("Unknown online test arguments
 await RoomFrameContracts.Run();
 RoomPresentationContracts.Run();
 RoomSnapshotContracts.Run();
+RoomInterestContracts.Run();
 await InputReceiptContracts.Run();
 await InputBatchContracts.Run();
 ServerCatalogContracts.Run();

@@ -22,6 +22,7 @@ internal static class StreamContracts
         await host.Login(credentials, true, stop);
         await guest.Login(new("stream-guest", password), true, stop);
         await outsider.Login(new("stream-outsider", password), true, stop);
+        if (!host.SupportsRoomInterest || !guest.SupportsRoomInterest) throw new Exception("Interest capability missing.");
         var a = await host.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest("StreamHost"), stop);
         var b = await guest.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest("StreamGuest"), stop);
         var room = await host.Send<RoomView>(HttpMethod.Post, "v1/rooms", new RoomRequest(a.Id, "StreamRoom", ""), stop);
@@ -67,6 +68,9 @@ internal static class StreamContracts
         if (!await first.MoveNextAsync() || !await second.MoveNextAsync() || first.Current.Actor != 1 || second.Current.Actor != 2)
             throw new Exception("Stream members differ.");
         Pass("two authenticated WSS streams receive their own actor and room");
+        if (!started.Entities.Any(e => e.Id.Value == 101) || first.Current.Entities.Any(e => e.Id.Value == 101) || second.Current.Entities.Any(e => e.Id.Value == 101))
+            throw new Exception("v3 did not filter the distant monster while HTTP retained full state.");
+        Pass("v3 interest filters distant monster; HTTP retains full authoritative state");
         long tick = second.Current.Tick;
         do { if (!await second.MoveNextAsync()) throw new Exception("Missing pushed tick."); } while (second.Current.Tick <= tick);
         Pass("server ticks arrive without HTTP state polling");
@@ -91,7 +95,7 @@ internal static class StreamContracts
         Pass("100 compact HTTP input receipts; owned movement is pushed to the peer over WSS");
         if (!host.SupportsRoomDeltas || !guest.SupportsRoomDeltas || host.RoomFullFrames < 2 || guest.RoomFullFrames < 2 || host.RoomDeltaFrames == 0 || guest.RoomDeltaFrames == 0)
             throw new Exception("Missing negotiated delta stream or periodic full refresh.");
-        Pass("v2 deltas and periodic full refresh reach both authenticated clients");
+        Pass("v3 deltas and periodic full refresh reach both authenticated clients");
         await using (var duplicate = host.WatchRoom(room.Id, stop).GetAsyncEnumerator()) await Rejected(duplicate, 409);
         Pass("duplicate stream for the same session rejected");
         await using (var denied = outsider.WatchRoom(room.Id, stop).GetAsyncEnumerator()) await Rejected(denied, 403);
@@ -159,15 +163,15 @@ internal static class StreamContracts
         var character = await member.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest("RawMember"), stop);
         await member.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(character.Id, ""), stop);
         // This fresh token is used only by the raw protocol-boundary probes below.
-        var session = await member.Send<LoginResult>(HttpMethod.Post, "v1/login", credentials, stop);
         using var root = X509Certificate2.CreateFromPem(File.ReadAllText(ca));
         using var handler = new SocketsHttpHandler { AllowAutoRedirect = false };
         handler.SslOptions.CertificateChainPolicy = new() { TrustMode = X509ChainTrustMode.CustomRootTrust,
             RevocationMode = X509RevocationMode.NoCheck, CustomTrustStore = { root } };
         using var http = new HttpClient(handler);
         var uri = new UriBuilder(new Uri(new Uri(url), path + "/stream")) { Scheme = "wss" }.Uri;
-        foreach (var (expected, protocol) in new[] { (400, ""), (403, "opend2.room.v1"), (403, RoomFrames.Protocol), (0, "opend2.room.v1") })
+        foreach (var (expected, protocol) in new[] { (400, ""), (403, "opend2.room.v1"), (403, RoomFrames.Protocol), (403, RoomInterest.Protocol), (0, "opend2.room.v1"), (0, RoomFrames.Protocol), (0, RoomInterest.Protocol) })
         {
+            var session = await member.Send<LoginResult>(HttpMethod.Post, "v1/login", credentials, stop);
             using var socket = new ClientWebSocket();
             socket.Options.CollectHttpResponseDetails = true;
             socket.Options.SetRequestHeader("Authorization", "Bearer " + session.Token);
@@ -180,10 +184,13 @@ internal static class StreamContracts
                 var legacyBytes = new byte[16384]; int length = 0;
                 ValueWebSocketReceiveResult part;
                 do { part = await socket.ReceiveAsync(legacyBytes.AsMemory(length), stop); length += part.Count; } while (!part.EndOfMessage);
-                var legacy = JsonSerializer.Deserialize<RoomUpdate>(legacyBytes.AsSpan(0, length), new JsonSerializerOptions(JsonSerializerDefaults.Web));
-                if (socket.SubProtocol != "opend2.room.v1" || legacy?.State is not { } view || path != $"v1/rooms/{view.Id}" || legacy.Status != 200)
-                    throw new Exception("Legacy v1 stream changed its full-state contract.");
-                Console.WriteLine("STREAM LEGACY PASS v1 full-state response retained");
+                var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+                var view = protocol == "opend2.room.v1"
+                    ? JsonSerializer.Deserialize<RoomUpdate>(legacyBytes.AsSpan(0, length), json)?.State
+                    : JsonSerializer.Deserialize<RoomFrame>(legacyBytes.AsSpan(0, length), json)?.State;
+                if (socket.SubProtocol != protocol || view is null || path != $"v1/rooms/{view.Id}")
+                    throw new Exception("Stream protocol or initial full-state contract changed.");
+                Console.WriteLine("STREAM PROTOCOL PASS " + protocol + " initial full-state response");
                 await socket.SendAsync("{}"u8.ToArray().AsMemory(), WebSocketMessageType.Text, true, stop);
                 using var closed = CancellationTokenSource.CreateLinkedTokenSource(stop); closed.CancelAfter(TimeSpan.FromSeconds(5));
                 try

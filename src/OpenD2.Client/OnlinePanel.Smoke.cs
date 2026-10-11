@@ -104,11 +104,13 @@ public partial class OnlinePanel
             // while the deterministic UI probe above verifies the actual display path.
             GD.Print($"OPEND2_ROOM_PRESENTATION_LIVE {role} transitions={arena.PresentationTransitions}");
             GD.Print("OPEND2_ONLINE_STREAM_PASS " + role);
-            // Observe actual decoded v2 frames, not only the advertised capability.
+            // Observe actual decoded v3 frames, not only the advertised capability.
             for (int attempt = 0; attempt < 100 && client!.RoomDeltaFrames == 0; attempt++) await WaitForRoomUpdate();
             if (!client!.SupportsRoomDeltas || client.RoomFullFrames == 0 || client.RoomDeltaFrames == 0)
                 throw new InvalidDataException("Packaged client did not reconstruct a delta stream.");
             GD.Print("OPEND2_ROOM_DELTA_UI_PASS " + role);
+            if (!client.SupportsRoomInterest) throw new InvalidDataException("Packaged client did not negotiate interest filtering.");
+            GD.Print("OPEND2_ROOM_INTEREST_UI_PASS " + role);
             bool handled = false;
             UserAction(() => { handled = true; return Task.CompletedTask; });
             if (handled || requests.Count != 1) throw new InvalidDataException("Busy user action was not queued.");

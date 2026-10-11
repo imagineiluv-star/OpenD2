@@ -65,7 +65,7 @@ string Token(HttpContext c)
     string header = c.Request.Headers.Authorization.ToString();
     return header.StartsWith("Bearer ", StringComparison.Ordinal) && header.Length == 71 ? header[7..] : "";
 }
-app.MapGet("/health", () => new { protocol = 1, rules = OpenD2.Core.GameSimulation.RulesVersion, roomStream = 1, mode, characterFileVersion = 2, inputReceipt = 1, roomDelta = 1, inputBatch = 1 });
+app.MapGet("/health", () => new { protocol = 1, rules = OpenD2.Core.GameSimulation.RulesVersion, roomStream = 1, mode, characterFileVersion = 2, inputReceipt = 1, roomDelta = 1, inputBatch = 1, roomInterest = 1 });
 if (catalog is not null)
     app.MapGet("/v1/server-catalog", (HttpContext context) => context.Request.IsHttps
         ? Results.Bytes(catalog, "application/json") : (IResult)Results.StatusCode(400)).RequireRateLimiting("catalog");
