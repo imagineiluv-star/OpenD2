@@ -42,10 +42,10 @@ public sealed class LanHostSettings
     {
         var ip = Validate();
         if (new FileInfo(CertificateFile).Length > 1024 * 1024) throw new InvalidDataException("PFX exceeds 1 MiB.");
-        // macOS does not support EphemeralKeySet for PFX loading; the runtime owns
-        // its temporary keychain. Never request PersistKeySet or install a trust root.
-        var storage = OperatingSystem.IsMacOS() ? X509KeyStorageFlags.DefaultKeySet : X509KeyStorageFlags.EphemeralKeySet;
-        var certificate = X509CertificateLoader.LoadPkcs12FromFile(CertificateFile, CertificatePassword, storage);
+        // Use the platform's temporary import: Schannel needs an accessible key
+        // container, and macOS rejects EphemeralKeySet. Dispose owns cleanup;
+        // never request PersistKeySet or install a trust root.
+        var certificate = X509CertificateLoader.LoadPkcs12FromFile(CertificateFile, CertificatePassword, X509KeyStorageFlags.DefaultKeySet);
         try
         {
             var now = DateTime.UtcNow;
