@@ -9,12 +9,15 @@ namespace OpenD2.Server;
 // One process, one owner lock. Simulation never trusts client actor, tick or outcomes.
 public sealed partial class Realm : IDisposable
 {
+    // Arrays are owned by this snapshot and read only by the internal stream serializer.
+    private sealed record RoomSnapshot(GameSimulation Source, long Tick, string Hash, EntityState[] Entities, ItemState[] Items);
     private sealed class Room(SavedRoom saved, int rules = GameSimulation.RulesVersion)
     {
         public byte[]? InviteHash;
         public DateTimeOffset InviteUntil;
         public SavedRoom Saved = saved;
         public GameSimulation? Game = saved.Game?.Restore(rules);
+        public RoomSnapshot? Snapshot;
         public readonly Dictionary<Guid, DateTimeOffset> Seen = new();
         public readonly Dictionary<Guid, DateTimeOffset> Moved = new();
     }
@@ -27,6 +30,8 @@ public sealed partial class Realm : IDisposable
     private readonly Dictionary<Guid, Room> rooms;
     private readonly Dictionary<string, (Guid Account, DateTimeOffset Until)> sessions = new();
     private bool failed;
+    private long snapshotBuilds;
+    internal long SnapshotBuilds { get { lock (gate) return snapshotBuilds; } }
     public string Mode { get; }
     public Realm(string directory, TimeProvider? time = null, string mode = "realm")
     {
@@ -187,12 +192,27 @@ public sealed partial class Realm : IDisposable
         Need(c is not null, 403, "Room membership required."); return (room, c!);
     }
     public RoomView State(string token, Guid id) { lock (gate) { var (r, c) = Access(token, id); return View(r, c); } }
-    private RoomView View(Room room, Character character)
+    // Only internal serialization may borrow these arrays. Authorization and recipient metadata
+    // are evaluated on every read, even when the simulation snapshot is reused.
+    internal RoomView StreamState(string token, Guid id) { lock (gate) { var (r, c) = Access(token, id); return View(r, c, shared: true); } }
+    private RoomSnapshot? Snapshot(Room room)
+    {
+        if (room.Game is not { } game) return null;
+        if (room.Snapshot is not { } snapshot || !ReferenceEquals(snapshot.Source, game) || snapshot.Tick != game.Tick)
+        {
+            room.Snapshot = new(game, game.Tick, game.ComputeStateHash(), game.Entities.ToArray(), game.Items.ToArray());
+            snapshotBuilds++;
+        }
+        return room.Snapshot;
+    }
+    private RoomView View(Room room, Character character, bool shared = false)
     {
         room.Seen[character.Id] = clock.GetUtcNow(); var member = room.Saved.Members.Single(m => m.Character == character.Id);
+        var snapshot = Snapshot(room);
         return new(room.Saved.Id, room.Saved.Name, room.Game is not null, room.Saved.Host == character.Id, member.Actor, member.ClientSequence + 1,
-            room.Game?.Tick ?? 0, room.Game?.ComputeStateHash() ?? "", room.Saved.Members.Select(m => new MemberInfo(m.Character, characters.Single(c => c.Id == m.Character).Name, m.Actor)).ToArray(),
-            room.Game?.Entities.ToArray() ?? [], room.Game?.Items.ToArray() ?? []);
+            snapshot?.Tick ?? 0, snapshot?.Hash ?? "", room.Saved.Members.Select(m => new MemberInfo(m.Character, characters.Single(c => c.Id == m.Character).Name, m.Actor)).ToArray(),
+            snapshot is null ? [] : shared ? snapshot.Entities : (EntityState[])snapshot.Entities.Clone(),
+            snapshot is null ? [] : shared ? snapshot.Items : (ItemState[])snapshot.Items.Clone());
     }
     public RoomView Start(string token, Guid id)
     {
@@ -245,6 +265,7 @@ public sealed partial class Realm : IDisposable
             }
             var result = game.SubmitBatch(commands);
             Need(result == CommandResult.Accepted, 400, "Command batch rejected: " + result);
+            r.Snapshot = null; // Pending commands change the hash without advancing the tick.
             r.Saved = r.Saved with { Members = r.Saved.Members.Select(x => x == m ? x with { ClientSequence = inputs[^1].Sequence } : x).ToArray() };
             var now = clock.GetUtcNow(); r.Seen[c.Id] = now;
             if (inputs.Any(input => input.Kind == CommandKind.SetMove)) r.Moved[c.Id] = now;
@@ -261,6 +282,7 @@ public sealed partial class Realm : IDisposable
         var e = r.Game!.GetEntity(new(m.Actor)); var cursor = r.Game.CaptureSnapshot().Inputs.Single(i => i.Actor == e.Id);
         var result = r.Game.Submit(new(r.Game.Tick + 1, cursor.Sequence + 1, e.Id, e.Region, input.Kind, input.X, input.Y, new(input.Target), new(input.Item)));
         Need(result == CommandResult.Accepted, 400, "Command rejected: " + result);
+        r.Snapshot = null;
         r.Saved = r.Saved with { Members = r.Saved.Members.Select(x => x == m ? x with { ClientSequence = input.Sequence } : x).ToArray() };
         r.Seen[c.Id] = clock.GetUtcNow();
         if (input.Kind == CommandKind.SetMove) r.Moved[c.Id] = clock.GetUtcNow();
@@ -271,9 +293,11 @@ public sealed partial class Realm : IDisposable
         var game = r.Game!; var e = game.GetEntity(new(m.Actor)); if (!e.IsAlive || (e.MoveX == 0 && e.MoveY == 0)) return;
         var cursor = game.CaptureSnapshot().Inputs.Single(i => i.Actor == e.Id);
         if (game.Submit(new(game.Tick + 1, cursor.Sequence + 1, e.Id, e.Region, CommandKind.SetMove)) != CommandResult.Accepted) throw new InvalidDataException("Cannot stop disconnected actor.");
+        r.Snapshot = null;
     }
     private static void StopAll(Room r)
     {
+        r.Snapshot = null;
         var s = r.Game!.CaptureSnapshot();
         r.Game = GameSimulation.Restore(s with { PendingCommands = [], Entities = s.Entities.Select(e => e with { MoveX = 0, MoveY = 0 }).ToArray() });
     }

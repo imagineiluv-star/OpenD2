@@ -13,7 +13,7 @@ internal static class RoomStream
 
     internal static async Task Run(HttpContext context, Realm realm, Guid room, string token)
     {
-        realm.State(token, room); // Authorize before upgrading the HTTP response.
+        realm.StreamState(token, room); // Authorize before upgrading the HTTP response.
         bool delta = context.WebSockets.WebSocketRequestedProtocols.Contains(RoomFrames.Protocol);
         if (!context.WebSockets.IsWebSocketRequest || (!delta && !context.WebSockets.WebSocketRequestedProtocols.Contains("opend2.room.v1")))
             throw new Rejected(400, "Room stream protocol required.");
@@ -51,7 +51,7 @@ internal static class RoomStream
         do
         {
             RoomUpdate update;
-            try { update = new(realm.State(token, room)); }
+            try { update = new(realm.StreamState(token, room)); }
             catch (Rejected error) { update = new(null, error.Status, error.Message); }
             byte[] bytes = delta ? JsonSerializer.SerializeToUtf8Bytes(update.State is { } state
                 ? RoomFrames.Create(state, previous, checked(++sequence))
