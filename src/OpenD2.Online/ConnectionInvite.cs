@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace OpenD2.Online;
 
-// Public connection metadata only. An invite grants neither trust nor room access.
+// Versions 1/2 are public locators. Version 3 carries a single-use room admission secret.
 public sealed record ConnectionInvite
 {
     public required int Version { get; init; }
@@ -12,15 +12,21 @@ public sealed record ConnectionInvite
     public required string Mode { get; init; }
     public string? RootCaSha256 { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Guid? Room { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Invitation { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? ExpiresAt { get; init; }
+    public override string ToString() => $"Connection invite v{Version} ({Mode}, room {Room}); credentials omitted";
     public const int MaxCharacters = 4096;
     private static readonly JsonSerializerOptions Json = new()
     { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, AllowDuplicateProperties = false, MaxDepth = 4 };
 
     public void Validate()
     {
-        if (Version is not (1 or 2) || Mode is not ("open" or "realm")) throw new InvalidDataException("Unsupported connection invite version or mode.");
-        if ((Version == 1 && Room is not null) || (Version == 2 && (Room is null || Room == Guid.Empty)))
-            throw new InvalidDataException("Room invites require version 2 and a nonempty room ID.");
+        if (Version is not (1 or 2 or 3) || Mode is not ("open" or "realm")) throw new InvalidDataException("Unsupported connection invite version or mode.");
+        if ((Version == 1 && Room is not null) || (Version >= 2 && (Room is null || Room == Guid.Empty)))
+            throw new InvalidDataException("Room invites require version 2 or 3 and a nonempty room ID.");
+        if (Version == 3 ? Invitation is null || Invitation.Length != 64 || !Invitation.All(Uri.IsHexDigit) || ExpiresAt is null
+            : Invitation is not null || ExpiresAt is not null)
+            throw new InvalidDataException("Timed invites require version 3, a token and an expiry.");
         if (Address is null || Address.Length > 2048 || !Uri.TryCreate(Address, UriKind.Absolute, out var uri) ||
             uri.Scheme != "https" || uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
             uri.AbsolutePath != "/" || uri.Port <= 0 || string.IsNullOrEmpty(uri.Host) ||

@@ -9,7 +9,14 @@ public sealed record LoginResult(string Token, string Username);
 public sealed record NameRequest(string Name);
 public sealed record CharacterInfo(Guid Id, string Name, int Victories);
 public sealed record RoomRequest(Guid Character, string Name, string Password);
-public sealed record JoinRequest(Guid Character, string Password);
+public sealed record JoinRequest(Guid Character, string Password, [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? Invitation = null)
+{
+    public override string ToString() => $"Join request for {Character}; credentials omitted";
+}
+public sealed record RoomInvitation(string Token, DateTimeOffset ExpiresAt)
+{
+    public override string ToString() => $"Room invitation expires {ExpiresAt:O}; token omitted";
+}
 public sealed record RoomInfo(Guid Id, string Name, int Players, bool Started, bool Locked);
 public sealed record MemberInfo(Guid Character, string Name, uint Actor);
 public sealed record InputRequest(long Sequence, CommandKind Kind, int X = 0, int Y = 0, uint Target = 0, ulong Item = 0);
