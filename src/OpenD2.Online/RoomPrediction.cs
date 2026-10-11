@@ -7,6 +7,10 @@ namespace OpenD2.Online;
 public sealed class RoomPrediction(CollisionGrid grid)
 {
     public const double MaxLead = 4.0 / FixedTickClock.TicksPerSecond;
+    public const double CorrectionDuration = 2.0 / FixedTickClock.TicksPerSecond;
+    public const int MaxCorrection = CollisionGrid.BodyRadius;
+    private DisplayPosition correction;
+    private double corrected, moveStarted;
     private RoomView? state;
     private EntityState self;
     private double received, sent;
@@ -15,7 +19,7 @@ public sealed class RoomPrediction(CollisionGrid grid)
     private bool pending, suspended;
     public long Predictions { get; private set; }
 
-    public void Reset() { state = null; pending = suspended = false; queuedTick = -1; Predictions = 0; }
+    public void Reset() { state = null; pending = suspended = false; queuedTick = -1; correction = default; Predictions = 0; }
     public void Push(RoomView next, double now)
     {
         CheckTime(now);
@@ -28,6 +32,10 @@ public sealed class RoomPrediction(CollisionGrid grid)
             actor.Region == self.Region && actor.Kind == self.Kind && actor.IsAlive && self.IsAlive &&
             actor.Health >= self.Health && (next.Tick != state!.Tick || actor.Position == self.Position) && Math.Abs((long)actor.Position.X - self.Position.X) <= GameSimulation.UnitsPerTile &&
             Math.Abs((long)actor.Position.Y - self.Position.Y) <= GameSimulation.UnitsPerTile;
+        long oldTick = state?.Tick ?? -1;
+        bool wasMoving = IsAnimating(now);
+        var before = Position(self, now);
+        int previousX = pending ? moveX : self.MoveX, previousY = pending ? moveY : self.MoveY;
         if (!continuous) { pending = false; queuedTick = -1; }
         if (!continuous || state is null || next.Tick > state.Tick) suspended = !continuous;
         if (pending && next.NextSequence > sequence)
@@ -38,12 +46,26 @@ public sealed class RoomPrediction(CollisionGrid grid)
         // Same-tick metadata/receipt projections cannot extend the prediction horizon.
         if (state is null || !same || next.Tick != state.Tick || now < received) received = now;
         state = next; self = actor;
+        if (!continuous || !CanMove || suspended || actor.MoveX != previousX || actor.MoveY != previousY) correction = default;
+        else if (next.Tick > oldTick)
+        {
+            correction = default;
+            var error = new DisplayPosition(before.X - actor.Position.X, before.Y - actor.Position.Y);
+            if (wasMoving && (actor.MoveX != 0 || actor.MoveY != 0) && actor.MoveX == previousX && actor.MoveY == previousY &&
+                Math.Abs(error.X) <= MaxCorrection && Math.Abs(error.Y) <= MaxCorrection &&
+                ClearCorrectionPath(new(actor.Position.X, actor.Position.Y), before))
+            { correction = error; corrected = now; }
+        }
+        // Same-tick projections preserve the original correction deadline.
     }
     public void Move(long inputSequence, int x, int y, double now)
     {
         CheckTime(now);
         if (x is < -1 or > 1 || y is < -1 or > 1) throw new ArgumentOutOfRangeException(nameof(x));
         if (state is not { Started: true } || inputSequence < state.NextSequence || inputSequence == long.MaxValue || !CanMove || now < received || now - received > MaxLead) return;
+        bool continuing = IsAnimating(now) && x == (pending ? moveX : self.MoveX) && y == (pending ? moveY : self.MoveY);
+        if (!continuing) correction = default;
+        moveStarted = continuing ? (pending ? moveStarted : received) : now;
         sequence = inputSequence; moveX = x; moveY = y; sent = now;
         queuedTick = -1; pending = true; suspended = false; Predictions++;
     }
@@ -54,7 +76,7 @@ public sealed class RoomPrediction(CollisionGrid grid)
         queuedTick = receipt.Tick;
         if (state.NextSequence >= receipt.NextSequence && state.Tick > receipt.Tick) pending = false;
     }
-    public void Cancel() { pending = false; suspended = true; queuedTick = -1; }
+    public void Cancel() { pending = false; suspended = true; queuedTick = -1; correction = default; }
     private bool CanMove => self.Id.Value != 0 && self.IsAlive && self.HitStun == 0 && self.AttackCooldown == 0 && self.Region == grid.Region;
     public bool IsAnimating(double now)
     {
@@ -68,7 +90,7 @@ public sealed class RoomPrediction(CollisionGrid grid)
         var position = entity.Position;
         if (entity != self || !IsAnimating(now)) return new(position.X, position.Y);
         int x = pending ? moveX : self.MoveX, y = pending ? moveY : self.MoveY;
-        double ticks = Math.Min(MaxLead, now - (pending ? Math.Max(sent, received) : received)) * FixedTickClock.TicksPerSecond;
+        double ticks = Math.Min(MaxLead, now - (pending ? Math.Max(moveStarted, received) : received)) * FixedTickClock.TicksPerSecond;
         int distance = x != 0 && y != 0 ? 23 : 32;
         // Match the server's fixed X-then-Y sliding, including known living bodies.
         for (int i = 0; i < 4 && ticks > 0; i++, ticks -= 1)
@@ -79,7 +101,20 @@ public sealed class RoomPrediction(CollisionGrid grid)
             var vertical = position with { Y = position.Y + y * step };
             if (CanOccupy(vertical)) position = vertical;
         }
-        return new(position.X, position.Y);
+        var predicted = new DisplayPosition(position.X, position.Y);
+        double remaining = 1 - Math.Clamp((now - corrected) / CorrectionDuration, 0, 1);
+        if (remaining == 0 || correction == default) return predicted;
+        var adjusted = new DisplayPosition(predicted.X + correction.X * remaining, predicted.Y + correction.Y * remaining);
+        return ClearCorrectionPath(predicted, adjusted) ? adjusted : predicted;
+    }
+    private bool ClearCorrectionPath(DisplayPosition from, DisplayPosition to)
+    {
+        // The offset is at most one body radius per axis. The four overlapping body
+        // footprints cover the entire swept rectangle, including its interior.
+        int left = (int)Math.Floor(Math.Min(from.X, to.X)), right = (int)Math.Ceiling(Math.Max(from.X, to.X));
+        int top = (int)Math.Floor(Math.Min(from.Y, to.Y)), bottom = (int)Math.Ceiling(Math.Max(from.Y, to.Y));
+        return CanOccupy(new(left, top)) && CanOccupy(new(right, top)) &&
+            CanOccupy(new(left, bottom)) && CanOccupy(new(right, bottom));
     }
     private bool CanOccupy(GamePosition position) => grid.CanOccupy(position) && !state!.Entities.Any(e =>
         e.Id != self.Id && e.IsAlive && e.Region == self.Region &&

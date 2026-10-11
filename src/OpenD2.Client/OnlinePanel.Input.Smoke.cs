@@ -42,6 +42,19 @@ public partial class OnlinePanel
         if (arena.Display(me, 2.02).X != 768 || arena.PredictionStarts != 0)
             throw new Exception("Reconnect retained local prediction.");
         arena.State = null;
+        arena.SetState(view, 3); arena.PredictMove(1, 1, 0, 3);
+        arena.AcceptInput(new(view.Id, 1, 2, 0));
+        var moving = view with { Tick = 1, NextSequence = 2, Entities = [me with { Position = new(784, 768), MoveX = 1 }] };
+        arena.SetState(moving, 3.04);
+        if (Math.Abs(arena.Display(moving.Entities[0], 3.04).X - 800) > 0.000001 ||
+            Math.Abs(arena.Display(moving.Entities[0], 3.08).X - 824) > 0.000001 ||
+            Math.Abs(arena.Display(moving.Entities[0], 3.12).X - 848) > 0.000001 ||
+            !ReferenceEquals(arena.State, moving) || moving.Entities[0].Position.X != 784)
+            throw new Exception("Render-only correction did not preserve continuity and expire.");
+        arena.CancelPrediction();
+        if (arena.Display(moving.Entities[0], 3.13).X != 784) throw new Exception("Cancelled correction retained an offset.");
+        arena.State = null;
+        Godot.GD.Print("OPEND2_ROOM_CORRECTION_UI_PASS");
         Godot.GD.Print("OPEND2_ROOM_PREDICTION_UI_PASS");
     }
     private void CheckInputReceiptOrdering()
