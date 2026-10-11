@@ -65,7 +65,7 @@ string Token(HttpContext c)
     string header = c.Request.Headers.Authorization.ToString();
     return header.StartsWith("Bearer ", StringComparison.Ordinal) && header.Length == 71 ? header[7..] : "";
 }
-app.MapGet("/health", () => new { protocol = 1, rules = OpenD2.Core.GameSimulation.RulesVersion, roomStream = 1, mode, characterFileVersion = 2, inputReceipt = 1, roomDelta = 1 });
+app.MapGet("/health", () => new { protocol = 1, rules = OpenD2.Core.GameSimulation.RulesVersion, roomStream = 1, mode, characterFileVersion = 2, inputReceipt = 1, roomDelta = 1, inputBatch = 1 });
 if (catalog is not null)
     app.MapGet("/v1/server-catalog", (HttpContext context) => context.Request.IsHttps
         ? Results.Bytes(catalog, "application/json") : (IResult)Results.StatusCode(400)).RequireRateLimiting("catalog");
@@ -88,6 +88,7 @@ api.MapGet("/rooms/{id:guid}/stream", (HttpContext c, Realm r, Guid id) => RoomS
 api.MapPost("/rooms/{id:guid}/start", (HttpContext c, Realm r, Guid id) => r.Start(Token(c), id));
 api.MapPost("/rooms/{id:guid}/input", (HttpContext c, Realm r, Guid id, InputRequest input) => r.Input(Token(c), id, input));
 api.MapPost("/rooms/{id:guid}/input/ack", (HttpContext c, Realm r, Guid id, InputRequest input) => r.AcknowledgeInput(Token(c), id, input));
+api.MapPost("/rooms/{id:guid}/input/batch", (HttpContext c, Realm r, Guid id, InputBatchRequest input) => r.BatchInput(Token(c), id, input));
 api.MapPost("/rooms/{id:guid}/save", (HttpContext c, Realm r, Guid id) => r.Checkpoint(Token(c), id));
 api.MapPost("/rooms/{id:guid}/leave", (HttpContext c, Realm r, Guid id) => r.Leave(Token(c), id));
 api.MapPost("/rooms/{id:guid}/close", (HttpContext c, Realm r, Guid id) => r.Close(Token(c), id));

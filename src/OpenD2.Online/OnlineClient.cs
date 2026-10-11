@@ -19,6 +19,9 @@ public sealed partial class OnlineClient : IDisposable
     public string Mode { get; }
     public bool SupportsInputReceipts { get; private set; }
     public bool SupportsRoomDeltas { get; private set; }
+    public bool SupportsInputBatches { get; private set; }
+    private long inputBatchRequests;
+    public long InputBatchRequests => Interlocked.Read(ref inputBatchRequests);
     private long roomPayloadBytes, roomFullFrames, roomDeltaFrames;
     // Cumulative successfully decoded application payloads for this client; excludes transport headers.
     public long RoomPayloadBytes => Interlocked.Read(ref roomPayloadBytes);
@@ -90,6 +93,7 @@ public sealed partial class OnlineClient : IDisposable
         if (health.Mode != Mode) throw new InvalidDataException("Server mode does not match the selected character mode.");
         SupportsInputReceipts = health.InputReceipt == 1;
         SupportsRoomDeltas = health.RoomDelta == 1;
+        SupportsInputBatches = health.InputBatch == 1;
     }
     public async Task<InputReceipt> SendInput(Guid room, InputRequest input, CancellationToken cancellation = default)
     {
@@ -105,6 +109,22 @@ public sealed partial class OnlineClient : IDisposable
         }
         if (receipt.Room != room || receipt.Actor == 0 || receipt.NextSequence != input.Sequence + 1 || receipt.Tick < 0)
             throw new InvalidDataException("Invalid input receipt. Reconnect to recover the input sequence.");
+        return receipt;
+    }
+    public async Task<InputReceipt> SendInputs(Guid room, InputRequest[] inputs, CancellationToken cancellation = default)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        if (!SupportsInputBatches) throw new NotSupportedException("Server does not support atomic input batches.");
+        if (inputs.Length is < 1 or > OpenD2.Core.GameSimulation.MaxCommandBatch) throw new ArgumentOutOfRangeException(nameof(inputs));
+        inputs = (InputRequest[])inputs.Clone();
+        for (int i = 0; i < inputs.Length; i++)
+            if (inputs[i] is not { Sequence: > 0 and < long.MaxValue } || (i > 0 && inputs[i].Sequence != inputs[i - 1].Sequence + 1))
+                throw new ArgumentException("Batch sequences must be positive and contiguous.", nameof(inputs));
+        // No retry or downgrade after transmission: acceptance may outlive a lost response.
+        var receipt = await Send<InputReceipt>(HttpMethod.Post, $"v1/rooms/{room}/input/batch", new InputBatchRequest(inputs), cancellation);
+        if (receipt.Room != room || receipt.Actor == 0 || receipt.NextSequence != inputs[^1].Sequence + 1 || receipt.Tick < 0)
+            throw new InvalidDataException("Invalid batch receipt. Reconnect to recover the input sequence.");
+        Interlocked.Increment(ref inputBatchRequests);
         return receipt;
     }
     public async Task ExportCharacter(Guid id, string path, CancellationToken cancellation = default)

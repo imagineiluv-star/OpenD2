@@ -43,6 +43,7 @@ def main():
     report.update(result='FAIL', invite_to_gameplay='NOT_RUN', guest_reconnect='NOT_RUN',
                   physical_multi_pc='NOT_RUN', wan='NOT_RUN', clipboard_gestures='NOT_RUN')
     report['room_delta_ui'] = 'NOT_RUN'
+    report['input_batch_ui'] = 'NOT_RUN'
     with tempfile.TemporaryDirectory(prefix='opend2-online-') as temporary:
         private = Path(temporary)
         with socket.socket() as listener:
@@ -233,6 +234,7 @@ def main():
                     assert 'OPEND2_ONLINE_TRANSPORT_PASS '+role in text, role
                     assert 'OPEND2_ONLINE_STREAM_PASS '+role in text, role
                     assert 'OPEND2_ROOM_DELTA_UI_PASS '+role in text, role
+                    assert 'OPEND2_INPUT_BATCH_UI_PASS '+role in text, role
                     assert 'OPEND2_ONLINE_GAMEPLAY_PASS '+role in text, role
                     assert 'OPEND2_INPUT_RECEIPT_ORDERING_PASS' in text, role
                     assert 'OPEND2_INPUT_RECEIPT_GAMEPLAY_PASS '+role in text, role
@@ -262,6 +264,7 @@ def main():
                 report['godot_transport'] = 'PASS'
                 report['input_receipt_ui'] = 'PASS'
                 report['room_delta_ui'] = 'PASS'
+                report['input_batch_ui'] = 'PASS'
                 report['catalog_download_ui'] = 'PASS' if args.tls_fixtures else 'NOT_RUN'
                 report['room_stream'] = 'WSS' if args.tls_fixtures else 'WS_LOOPBACK'
                 report['godot_gameplay'] = 'PASS'

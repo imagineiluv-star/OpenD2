@@ -216,9 +216,7 @@ public partial class OnlinePanel : VBoxContainer
             return;
         }
         poll += delta; if (poll < 0.1) return; poll = 0;
-        bool focus = IsVisibleInTree() && arena.HasFocus() && GetWindow().HasFocus();
-        int x = focus ? (Input.IsPhysicalKeyPressed(Key.D) || Input.IsPhysicalKeyPressed(Key.Right) ? 1 : 0) - (Input.IsPhysicalKeyPressed(Key.A) || Input.IsPhysicalKeyPressed(Key.Left) ? 1 : 0) : 0;
-        int y = focus ? (Input.IsPhysicalKeyPressed(Key.S) || Input.IsPhysicalKeyPressed(Key.Down) ? 1 : 0) - (Input.IsPhysicalKeyPressed(Key.W) || Input.IsPhysicalKeyPressed(Key.Up) ? 1 : 0) : 0;
+        var (x, y) = MovementDirection();
         _ = Run(async () =>
         {
             if (state!.Started && state.Entities.First(e => e.Id.Value == state.Actor).IsAlive && (x != 0 || y != 0 || x != moveX || y != moveY))
@@ -231,6 +229,35 @@ public partial class OnlinePanel : VBoxContainer
         var owner = client!;
         var receipt = await owner.SendInput(state.Id, new InputRequest(nextInputSequence, kind, x, y, target, item), lifetime.Token);
         if (client == owner) ApplyInputReceipt(receipt);
+    }
+    private (int X, int Y) MovementDirection()
+    {
+        bool focus = IsVisibleInTree() && arena.HasFocus() && GetWindow().HasFocus();
+        int x = focus ? (Input.IsPhysicalKeyPressed(Key.D) || Input.IsPhysicalKeyPressed(Key.Right) ? 1 : 0) - (Input.IsPhysicalKeyPressed(Key.A) || Input.IsPhysicalKeyPressed(Key.Left) ? 1 : 0) : 0;
+        int y = focus ? (Input.IsPhysicalKeyPressed(Key.S) || Input.IsPhysicalKeyPressed(Key.Down) ? 1 : 0) - (Input.IsPhysicalKeyPressed(Key.W) || Input.IsPhysicalKeyPressed(Key.Up) ? 1 : 0) : 0;
+        return (x, y);
+    }
+    private Task InputAction(CommandKind kind, uint target = 0, ulong item = 0)
+    {
+        var (x, y) = MovementDirection();
+        return InputWithMovement(kind, x, y, target, item);
+    }
+    private async Task InputWithMovement(CommandKind kind, int x = 0, int y = 0, uint target = 0, ulong item = 0)
+    {
+        if (state is null) return;
+        var owner = client!;
+        if (owner.SupportsInputBatches)
+        {
+            var receipt = await owner.SendInputs(state.Id,
+                [new(nextInputSequence, CommandKind.SetMove, x, y), new(checked(nextInputSequence + 1), kind, Target: target, Item: item)], lifetime.Token);
+            if (client == owner) ApplyInputReceipt(receipt);
+        }
+        else
+        {
+            await InputCommand(CommandKind.SetMove, x, y);
+            await InputCommand(kind, target: target, item: item);
+        }
+        if (client == owner) { moveX = x; moveY = y; }
     }
     private void ApplyInputReceipt(InputReceipt receipt)
     {
@@ -246,13 +273,13 @@ public partial class OnlinePanel : VBoxContainer
         {
             var me = state.Entities.First(e => e.Id.Value == state.Actor);
             var target = state.Entities.Where(e => e.Kind == EntityKind.Monster && e.IsAlive).OrderBy(e => Math.Abs(e.Position.X - me.Position.X) + Math.Abs(e.Position.Y - me.Position.Y)).FirstOrDefault();
-            if (target.Id.Value != 0) UserAction(() => InputCommand(key.Keycode == Key.Q ? CommandKind.CastSkill : CommandKind.Attack, target: target.Id.Value));
+            if (target.Id.Value != 0) UserAction(() => InputAction(key.Keycode == Key.Q ? CommandKind.CastSkill : CommandKind.Attack, target: target.Id.Value));
         }
         else if (key.Keycode == Key.F)
         {
             var me = state.Entities.First(e => e.Id.Value == state.Actor);
             var item = state.Items.Where(i => i.Location == ItemLocation.Ground).OrderBy(i => Math.Abs(i.Position.X - me.Position.X) + Math.Abs(i.Position.Y - me.Position.Y)).FirstOrDefault();
-            if (item.Id.Value != 0) UserAction(() => InputCommand(CommandKind.Pickup, item: item.Id.Value));
+            if (item.Id.Value != 0) UserAction(() => InputAction(CommandKind.Pickup, item: item.Id.Value));
         }
         else return;
         GetViewport().SetInputAsHandled();
