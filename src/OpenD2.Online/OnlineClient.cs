@@ -9,7 +9,7 @@ using System.Runtime.CompilerServices;
 namespace OpenD2.Online;
 
 // No credential/token persistence, redirects or certificate validation bypass.
-public sealed class OnlineClient : IDisposable
+public sealed partial class OnlineClient : IDisposable
 {
     private readonly HttpClient http;
     private readonly CancellationTokenSource lifetime = new();

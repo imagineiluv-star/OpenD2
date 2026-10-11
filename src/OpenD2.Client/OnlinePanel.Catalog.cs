@@ -20,6 +20,7 @@ public partial class OnlinePanel
         dialog.FileSelected += path => UserAction(() => { ImportCatalog(path, CatalogPath); return Task.CompletedTask; });
         Button(row, "Import server list", () => { RequireCatalogLogout(); dialog.PopupCenteredRatio(0.7f); return Task.CompletedTask; });
         Button(row, "Use selected server", () => { ApplyCatalogSelection(); return Task.CompletedTask; });
+        AddCatalogDownloadControls();
         catalogRegions.ItemSelected += _ => FilterCatalog();
         SetCatalog(null);
         try { if (File.Exists(CatalogPath)) SetCatalog(ServerCatalog.Load(CatalogPath)); }
@@ -34,9 +35,14 @@ public partial class OnlinePanel
     {
         RequireCatalogLogout();
         var next = ServerCatalog.Load(source);
+        ReplaceCatalog(next, destination);
+        status.Text = "Server list saved. Select a region and server, then Use selected server. Importing does not connect or change certificate trust.";
+    }
+    private void ReplaceCatalog(ServerCatalog next, string destination)
+    {
+        lifetime.Token.ThrowIfCancellationRequested(); RequireCatalogLogout();
         next.Save(destination); // Preserve the current list and connection if validation or storage fails.
         SetCatalog(next);
-        status.Text = "Server list saved. Select a region and server, then Use selected server. Importing does not connect or change certificate trust.";
     }
     private void SetCatalog(ServerCatalog? catalog)
     {
