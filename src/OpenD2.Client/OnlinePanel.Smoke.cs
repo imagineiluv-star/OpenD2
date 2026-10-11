@@ -76,11 +76,15 @@ public partial class OnlinePanel
             for (int attempt = 0; attempt < 100; attempt++)
             {
                 await WaitForRoomUpdate();
-                if (role == "host" && state!.Members.Length == 2 && !state.Started) Apply(await Room<RoomView>("start"));
+                if (role == "host" && state!.Members.Length == 2 && !state.Started)
+                {
+                    Apply(await Room<RoomView>("start"));
+                    continue; // The HTTP response is full; validate the next negotiated WSS view.
+                }
                 if (state!.Started) { started = true; break; }
                 await Task.Delay(100, lifetime.Token);
             }
-            if (!started || state!.Members.Length != 2 || state.Entities.Length != 4 || details.Text.Length == 0 || arena.State != state) throw new InvalidDataException("Online view/room start failed.");
+            if (!started || state!.Members.Length != 2 || !state.Entities.Select(e => e.Id.Value).Order().SequenceEqual(new uint[] { 1, 2, 100 }) || details.Text.Length == 0 || arena.State != state) throw new InvalidDataException("Online view/room start failed.");
             Acceptance("same_room");
             await Refresh();
             rooms.Select(Array.FindIndex(roomList, r => r.Id == state.Id));
