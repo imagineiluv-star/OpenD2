@@ -29,6 +29,7 @@ if (args.Length != 0) throw new ArgumentException("Unknown online test arguments
 await RoomFrameContracts.Run();
 await StreamSendDeadlineContracts.Run();
 RoomPresentationContracts.Run();
+RoomPredictionContracts.Run();
 RoomSnapshotContracts.Run();
 RoomInterestContracts.Run();
 await InputReceiptContracts.Run();

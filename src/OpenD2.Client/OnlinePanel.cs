@@ -189,7 +189,7 @@ public partial class OnlinePanel : VBoxContainer
         {
             try { previous.Cancel(); } catch (ObjectDisposedException) { }
         }
-        streamError = null; streamFrames = 0;
+        streamError = null; streamFrames = 0; arena.CancelPrediction();
     }
     private void ApplyStream(RoomView update)
     {
@@ -234,8 +234,14 @@ public partial class OnlinePanel : VBoxContainer
     {
         if (state is null) return;
         var owner = client!;
-        var receipt = await owner.SendInput(state.Id, new InputRequest(nextInputSequence, kind, x, y, target, item), lifetime.Token);
-        if (client == owner) ApplyInputReceipt(receipt);
+        if (kind == CommandKind.SetMove) arena.PredictMove(nextInputSequence, x, y);
+        else arena.CancelPrediction();
+        try
+        {
+            var receipt = await owner.SendInput(state.Id, new InputRequest(nextInputSequence, kind, x, y, target, item), lifetime.Token);
+            if (client == owner) ApplyInputReceipt(receipt);
+        }
+        catch { if (client == owner) arena.CancelPrediction(); throw; }
     }
     private (int X, int Y) MovementDirection()
     {
@@ -255,6 +261,7 @@ public partial class OnlinePanel : VBoxContainer
         var owner = client!;
         if (owner.SupportsInputBatches)
         {
+            arena.CancelPrediction();
             var receipt = await owner.SendInputs(state.Id,
                 [new(nextInputSequence, CommandKind.SetMove, x, y), new(checked(nextInputSequence + 1), kind, Target: target, Item: item)], lifetime.Token);
             if (client == owner) ApplyInputReceipt(receipt);
@@ -271,7 +278,10 @@ public partial class OnlinePanel : VBoxContainer
         // HTTP replies can overtake WSS frames. Advance only the input cursor;
         // keep rendering fresh pushed states even before their sequence catches up.
         if (state?.Id == receipt.Room && state.Actor == receipt.Actor)
+        {
             nextInputSequence = Math.Max(nextInputSequence, receipt.NextSequence);
+            arena.AcceptInput(receipt);
+        }
     }
     public override void _UnhandledKeyInput(InputEvent @event)
     {
@@ -298,6 +308,7 @@ public partial class OnlineArena : Control
 {
     private static readonly CollisionGrid grid = Arena.Grid();
     private readonly RoomPresentation presentation = new();
+    private readonly RoomPrediction prediction = new(grid);
     private RoomView? state;
     private bool wasAnimating;
     private static double Now => Time.GetTicksUsec() / 1_000_000.0;
@@ -305,14 +316,19 @@ public partial class OnlineArena : Control
     internal long PresentationTransitions => presentation.Transitions;
     internal void SetState(RoomView? value, double now)
     {
-        if (value is null) { presentation.Reset(); state = null; wasAnimating = false; }
-        else if (presentation.Push(value, now)) state = value;
+        if (value is null) { presentation.Reset(); prediction.Reset(); state = null; wasAnimating = false; }
+        else if (presentation.Push(value, now)) { prediction.Push(value, now); state = value; }
         QueueRedraw();
     }
-    internal DisplayPosition Display(EntityState entity, double now) => presentation.Position(entity, now);
+    internal void PredictMove(long sequence, int x, int y, double? now = null) => prediction.Move(sequence, x, y, now ?? Now);
+    internal long PredictionStarts => prediction.Predictions;
+    internal void AcceptInput(InputReceipt receipt) => prediction.Accept(receipt);
+    internal void CancelPrediction() { prediction.Cancel(); QueueRedraw(); }
+    internal DisplayPosition Display(EntityState entity, double now) => entity.Id.Value == state?.Actor
+        ? prediction.Position(entity, now) : presentation.Position(entity, now);
     public override void _Process(double delta)
     {
-        bool animating = presentation.IsAnimating(Now);
+        bool animating = presentation.IsAnimating(Now) || prediction.IsAnimating(Now);
         if (animating || wasAnimating) QueueRedraw();
         wasAnimating = animating;
     }

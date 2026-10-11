@@ -17,6 +17,7 @@ public partial class OnlinePanel
         GD.Print("OPEND2_CONNECTION_GUIDANCE_UI_PASS");
         CheckInputReceiptOrdering();
         CheckRoomPresentation();
+        CheckRoomPrediction();
         busy = true;
         try
         {
@@ -107,6 +108,7 @@ public partial class OnlinePanel
             // Bursty/slow delivery may correctly snap every sample; counts are diagnostic,
             // while the deterministic UI probe above verifies the actual display path.
             GD.Print($"OPEND2_ROOM_PRESENTATION_LIVE {role} transitions={arena.PresentationTransitions}");
+            GD.Print($"OPEND2_ROOM_PREDICTION_LIVE {role} starts={arena.PredictionStarts}");
             GD.Print("OPEND2_ONLINE_STREAM_PASS " + role);
             // Observe actual decoded v3 frames, not only the advertised capability.
             for (int attempt = 0; attempt < 100 && client!.RoomDeltaFrames == 0; attempt++) await WaitForRoomUpdate();
