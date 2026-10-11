@@ -41,6 +41,7 @@ public partial class OnlinePanel : VBoxContainer
         serverMode.AddItem("Open — personal profiles (preview)");
         AddChild(serverMode);
         AddChild(address);
+        AddInviteControls();
         AddHostControls();
         var connection = new HFlowContainer(); AddChild(connection);
         AddChild(trust);
@@ -48,7 +49,7 @@ public partial class OnlinePanel : VBoxContainer
         certificate.FileSelected += file => { caFile = file; trust.Text = "Private CA selected: " + Path.GetFileName(file) + ". Check server to compare its SHA-256 with your administrator."; };
         Button(connection, "Check server", async () =>
         {
-            using var probe = new OnlineClient(address.Text, caFile, SelectedMode);
+            using var probe = CreateConnection();
             await probe.CheckServer(lifetime.Token);
             status.Text = "Server reachable; protocol and rules match. " + (probe.TrustedRootSha256 is { } hash ? "Private CA SHA-256: " + hash : "System certificate trust.");
         });
@@ -123,7 +124,7 @@ public partial class OnlinePanel : VBoxContainer
     private Guid SelectedCharacter() => characters.Selected >= 0 && characters.Selected < characterList.Length ? characterList[characters.Selected].Id : throw new InvalidOperationException("Select a character.");
     private async Task Login(bool register)
     {
-        var next = new OnlineClient(address.Text, caFile, SelectedMode); var credentials = new Credentials(username.Text, password.Text); password.Text = "";
+        var next = CreateConnection(); var credentials = new Credentials(username.Text, password.Text); password.Text = "";
         try { await next.Login(credentials, register, lifetime.Token); }
         catch { next.Dispose(); throw; }
         requests.Clear(); StopRoomStream(); client?.Dispose(); client = next; connectedAddress = address.Text; signedIn = true; serverMode.Disabled = true; ClearRoom(); status.Text = "Logged in to " + client.Mode + ". Select a character and room."; await Refresh();
