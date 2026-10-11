@@ -28,6 +28,7 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
     shutil.copyfile(ROOT/'docs/migration/ONLINE_MODES.md', stage/'ONLINE_MODES.md')
     shutil.copyfile(ROOT/'docs/migration/TWO_CLIENT_ACCEPTANCE.md', stage/'TWO_CLIENT_ACCEPTANCE.md')
     shutil.copyfile(ROOT/'docs/migration/NETWORK_ACCEPTANCE.md', stage/'NETWORK_ACCEPTANCE.md')
+    shutil.copyfile(ROOT/'docs/migration/STREAM_CAPACITY.md', stage/'STREAM_CAPACITY.md')
     package = output/f'OpenD2-server-{rid}.zip'
     with zipfile.ZipFile(package, 'w', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(stage.rglob('*')):
@@ -62,6 +63,7 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
     env['OPEND2_TEST_PFX_PASSWORD'] = tls_env['OPEND2_TEST_PFX_PASSWORD']
     subprocess.run(check + ['--tls-fixtures', str(certificates), '--output', 'artifacts/online/tls'], cwd=ROOT, env=env, check=True)
     subprocess.run(check + ['--mode', 'open', '--tls-fixtures', str(certificates), '--output', 'artifacts/online/open'], cwd=ROOT, env=env, check=True)
+    subprocess.run([sys.executable, 'eng/check-capacity.py', '--server-exe', str(executable), '--seconds', '5'], cwd=ROOT, check=True)
     with package.open('rb') as stream: digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     (output/f'server-{rid}.json').write_text(json.dumps({'commit': os.environ.get('GITHUB_SHA', 'local'), 'runtime': rid,
         'file': package.name, 'sha256': digest, 'bytes': package.stat().st_size,
@@ -69,6 +71,7 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
         'open_tls_two_client_gameplay': 'PASS', 'open_profile_ui_binding': 'PASS', 'open_item_file_transfer': 'PASS',
         'realm_invite_to_gameplay': 'PASS', 'open_invite_to_gameplay': 'PASS', 'host_and_guest_reconnect': 'PASS',
         'network_relay_realm': 'PASS', 'network_relay_open': 'PASS', 'packet_loss': 'NOT_RUN',
+        'realm_32_stream_admission': 'PASS', 'open_32_stream_admission': 'PASS', 'maximum_server_capacity': 'NOT_RUN',
         'physical_multi_pc': 'NOT_RUN', 'wan': 'NOT_RUN', 'clipboard_gestures': 'NOT_RUN',
         'room_stream_contracts': 'PASS', 'room_stream_transport': 'WSS',
         'rendered_gameplay': 'PASS' if rendered else 'NOT_RUN', 'gui': 'NOT_RUN'}, indent=2)+'\n')

@@ -2,6 +2,13 @@ using OpenD2.Core;
 using OpenD2.Online;
 using OpenD2.Server;
 
+if (args is ["--capacity-server", var capacityServer, "--fixtures", var capacityFixtures, "--output", var capacityOutput, "--seconds", var capacityDuration])
+{
+    if (!int.TryParse(capacityDuration, out int seconds) || seconds is < 1 or > 3600) throw new ArgumentException("Capacity duration must be 1–3600 seconds.");
+    await TlsContracts.Run(Path.GetFullPath(capacityServer), Path.GetFullPath(capacityFixtures), Path.GetFullPath(capacityOutput),
+        capacityOnly: true, capacitySeconds: seconds);
+    return;
+}
 if (args is ["--tls-server", var server, "--fixtures", var fixtures, "--output", var output])
 {
     await TlsContracts.Run(Path.GetFullPath(server), Path.GetFullPath(fixtures), Path.GetFullPath(output));
