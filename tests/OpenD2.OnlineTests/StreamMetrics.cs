@@ -6,7 +6,7 @@ using OpenD2.Online;
 internal static class StreamMetrics
 {
     // One monotonic clock; reconstructed JSON is not wire traffic.
-    internal static async Task Measure(OnlineClient host, IAsyncEnumerator<RoomView> peer,
+    internal static async Task Measure(OnlineClient host, OnlineClient guest, IAsyncEnumerator<RoomView> peer,
         long sequence, string output, CancellationToken stop)
     {
         int health = peer.Current.Entities.Single(e => e.Id.Value == 1).Health;
@@ -19,6 +19,7 @@ internal static class StreamMetrics
         var applied = new List<double>();
         var samples = new List<object>();
         long bytes = 0, inputBytes = 0, previousTick = peer.Current.Tick;
+        long payloadBefore = guest.RoomPayloadBytes, fullBefore = guest.RoomFullFrames, deltaBefore = guest.RoomDeltaFrames;
         var duration = Stopwatch.StartNew();
         double previous = duration.Elapsed.TotalMilliseconds;
         for (int i = 0; i < 100; i++)
@@ -31,6 +32,10 @@ internal static class StreamMetrics
             bytes += JsonSerializer.SerializeToUtf8Bytes(new RoomUpdate(peer.Current), json).Length;
         }
         double seconds = duration.Elapsed.TotalSeconds;
+        long payloadBytes = guest.RoomPayloadBytes - payloadBefore;
+        long fullFrames = guest.RoomFullFrames - fullBefore, deltaFrames = guest.RoomDeltaFrames - deltaBefore;
+        if (fullFrames + deltaFrames != 100 || deltaFrames == 0 || payloadBytes >= bytes)
+            throw new Exception("Quiet room did not deliver 100 smaller full/delta payloads.");
         for (int i = 0; i < 50; i++)
         {
             int before = peer.Current.Entities.Single(e => e.Id.Value == 1).Position.X;
@@ -83,11 +88,13 @@ internal static class StreamMetrics
             receive_gap_ms = Summary(gaps), receive_seconds = seconds,
             observed_messages_per_second = gaps.Count / seconds,
             reconstructed_json_bytes = bytes, reconstructed_json_bytes_per_second = bytes / seconds,
+            received_json_payload_bytes = payloadBytes, received_full_frames = fullFrames, received_delta_frames = deltaFrames,
             wire_bytes = "NOT_MEASURED", display_latency = "NOT_MEASURED", wan = "NOT_RUN",
             performance_threshold = "NONE: diagnostic samples, not a performance SLA",
             manual_gui = "NOT_RUN", physical_multi_pc = "NOT_RUN"
         }, new JsonSerializerOptions { WriteIndented = true }) + "\n");
         Console.WriteLine("STREAM METRICS PASS " + output);
+        Console.WriteLine($"STREAM DELTA PAYLOAD PASS messages=100 full={fullFrames} delta={deltaFrames} received={payloadBytes}B full-equivalent={bytes}B (application JSON only)");
     }
 
     private static object Summary(List<double> values)

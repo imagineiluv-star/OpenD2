@@ -37,6 +37,7 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     report = {'single_client_per_pc': 'NOT_RUN', 'http': 'NOT_RUN', 'restart': 'NOT_RUN', 'godot_transport': 'NOT_RUN', 'godot_gameplay': 'NOT_RUN', 'rendered': 'NOT_RUN', 'gui': 'NOT_RUN'}
     report.update(input_receipt='NOT_RUN', input_receipt_ui='NOT_RUN')
+    report['room_delta_ui'] = 'NOT_RUN'
     with tempfile.TemporaryDirectory(prefix='opend2-online-') as temporary:
         private = Path(temporary)
         with socket.socket() as listener:
@@ -226,6 +227,7 @@ def main():
                         assert 'OPEND2_PUBLISHED_CATALOG_UI_PASS ' + role in text, 'Published catalog download and selection missing'
                     assert 'OPEND2_ONLINE_TRANSPORT_PASS '+role in text, role
                     assert 'OPEND2_ONLINE_STREAM_PASS '+role in text, role
+                    assert 'OPEND2_ROOM_DELTA_UI_PASS '+role in text, role
                     assert 'OPEND2_ONLINE_GAMEPLAY_PASS '+role in text, role
                     assert 'OPEND2_INPUT_RECEIPT_ORDERING_PASS' in text, role
                     assert 'OPEND2_INPUT_RECEIPT_GAMEPLAY_PASS '+role in text, role
@@ -251,6 +253,7 @@ def main():
                     assert profiles[0] != profiles[1], 'Godot clients must have independent user data directories'
                 report['godot_transport'] = 'PASS'
                 report['input_receipt_ui'] = 'PASS'
+                report['room_delta_ui'] = 'PASS'
                 report['catalog_download_ui'] = 'PASS' if args.tls_fixtures else 'NOT_RUN'
                 report['room_stream'] = 'WSS' if args.tls_fixtures else 'WS_LOOPBACK'
                 report['godot_gameplay'] = 'PASS'

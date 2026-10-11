@@ -66,12 +66,15 @@ internal static class StreamContracts
             Task drain = Drain();
             try
             {
-                await StreamMetrics.Measure(host, second, sequence,
+                await StreamMetrics.Measure(host, guest, second, sequence,
                     Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "stream-metrics.json"), stop);
             }
             finally { drainStop.Cancel(); await drain; }
         }
         Pass("100 compact HTTP input receipts; owned movement is pushed to the peer over WSS");
+        if (!host.SupportsRoomDeltas || !guest.SupportsRoomDeltas || host.RoomFullFrames < 2 || guest.RoomFullFrames < 2 || host.RoomDeltaFrames == 0 || guest.RoomDeltaFrames == 0)
+            throw new Exception("Missing negotiated delta stream or periodic full refresh.");
+        Pass("v2 deltas and periodic full refresh reach both authenticated clients");
         await using (var duplicate = host.WatchRoom(room.Id, stop).GetAsyncEnumerator()) await Rejected(duplicate, 409);
         Pass("duplicate stream for the same session rejected");
         await using (var denied = outsider.WatchRoom(room.Id, stop).GetAsyncEnumerator()) await Rejected(denied, 403);
@@ -89,7 +92,7 @@ internal static class StreamContracts
         Pass("relogin revokes an already connected stream");
         await renewed.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(a.Id, ""), stop);
         await using var replacement = renewed.WatchRoom(room.Id, stop).GetAsyncEnumerator();
-        if (!await replacement.MoveNextAsync() || replacement.Current.Actor != 1) throw new Exception("Reconnect identity lost.");
+        if (!await replacement.MoveNextAsync() || replacement.Current.Actor != 1 || renewed.RoomFullFrames != 1 || renewed.RoomDeltaFrames != 0) throw new Exception("Reconnect identity or full baseline lost.");
         Pass("reconnect starts from a full authoritative state");
         await renewed.Send<object>(HttpMethod.Post, path + "/close", cancellation: stop);
         await Rejected(second, 404); await Rejected(replacement, 404);
@@ -146,17 +149,24 @@ internal static class StreamContracts
             RevocationMode = X509RevocationMode.NoCheck, CustomTrustStore = { root } };
         using var http = new HttpClient(handler);
         var uri = new UriBuilder(new Uri(new Uri(url), path + "/stream")) { Scheme = "wss" }.Uri;
-        foreach (int expected in new[] { 400, 403, 0 })
+        foreach (var (expected, protocol) in new[] { (400, ""), (403, "opend2.room.v1"), (403, RoomFrames.Protocol), (0, "opend2.room.v1") })
         {
             using var socket = new ClientWebSocket();
             socket.Options.CollectHttpResponseDetails = true;
             socket.Options.SetRequestHeader("Authorization", "Bearer " + session.Token);
-            if (expected != 400) socket.Options.AddSubProtocol("opend2.room.v1");
+            if (expected != 400) socket.Options.AddSubProtocol(protocol);
             if (expected == 403) socket.Options.SetRequestHeader("Origin", "https://untrusted.invalid");
             try
             {
                 await socket.ConnectAsync(uri, http, stop);
                 if (expected != 0) throw new Exception("Invalid handshake accepted.");
+                var legacyBytes = new byte[16384]; int length = 0;
+                ValueWebSocketReceiveResult part;
+                do { part = await socket.ReceiveAsync(legacyBytes.AsMemory(length), stop); length += part.Count; } while (!part.EndOfMessage);
+                var legacy = JsonSerializer.Deserialize<RoomUpdate>(legacyBytes.AsSpan(0, length), new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                if (socket.SubProtocol != "opend2.room.v1" || legacy?.State is not { } view || path != $"v1/rooms/{view.Id}" || legacy.Status != 200)
+                    throw new Exception("Legacy v1 stream changed its full-state contract.");
+                Console.WriteLine("STREAM LEGACY PASS v1 full-state response retained");
                 await socket.SendAsync("{}"u8.ToArray().AsMemory(), WebSocketMessageType.Text, true, stop);
                 using var closed = CancellationTokenSource.CreateLinkedTokenSource(stop); closed.CancelAfter(TimeSpan.FromSeconds(5));
                 try
