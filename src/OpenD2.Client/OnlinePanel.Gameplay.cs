@@ -179,6 +179,7 @@ public partial class OnlinePanel
             .Select(i => (i.Definition, i.Location, i.Slot)).OrderBy(i => i.Definition).ThenBy(i => i.Slot).ToArray();
         Check(ownedBefore.SequenceEqual(carriedAfter) && state.Items.All(i => i.Id.Value >> 32 == 2), "Owned inventory survives room closure and fresh room admission");
         await Room<object>("close"); ClearRoom();
+        if (client!.Mode == "open") await CheckEarnedItemFile(role, evidence, character);
         File.WriteAllText(System.IO.Path.Combine(evidence, role + "-result.json"), JsonSerializer.Serialize(new
         {
             role, result = "PASS", checks, user_data = OS.GetUserDataDir(), rendering = DisplayServer.GetName() == "headless" ? "NOT_RUN" : "PASS",

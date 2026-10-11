@@ -9,6 +9,8 @@ internal static class CharacterTransferContracts
         try { action(); throw new Exception("Expected transfer rejection " + status); }
         catch (Rejected error) when (error.Status == status) { }
     }
+    static bool Same(OpenCharacter a, OpenCharacter b) =>
+        System.Text.Json.JsonSerializer.Serialize(OpenCharacterFile.Upgrade(a)) == System.Text.Json.JsonSerializer.Serialize(OpenCharacterFile.Upgrade(b));
     internal static void Run()
     {
         string root = Path.Combine(Path.GetTempPath(), "opend2-transfer-" + Guid.NewGuid().ToString("N"));
@@ -18,17 +20,17 @@ internal static class CharacterTransferContracts
             var profile = new OpenCharacter(1, GameSimulation.RulesVersion, "open", "Traveler", 7);
             string path = Path.Combine(root, "hero.json");
             OpenCharacterFile.Save(path, profile);
-            if (OpenCharacterFile.Load(path) != profile) throw new Exception("Local profile roundtrip failed.");
+            if (!Same(OpenCharacterFile.Load(path), profile)) throw new Exception("Local profile roundtrip failed.");
             string legacyProfile = Path.Combine(root, "old-profile.json");
             File.WriteAllText(legacyProfile, System.Text.Json.JsonSerializer.Serialize(profile with { Rules = 7 }, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
             byte[] legacyBytes = File.ReadAllBytes(legacyProfile);
-            if (OpenCharacterFile.Load(legacyProfile) != profile || !legacyBytes.SequenceEqual(File.ReadAllBytes(legacyProfile))) throw new Exception("Old profile migration changed data/file.");
+            if (!Same(OpenCharacterFile.Load(legacyProfile), profile) || !legacyBytes.SequenceEqual(File.ReadAllBytes(legacyProfile))) throw new Exception("Old profile migration changed data/file.");
             byte[] original = File.ReadAllBytes(path);
             try { OpenCharacterFile.Save(path, profile with { Victories = 8 }); throw new Exception("Existing save overwritten."); }
             catch (IOException) { }
             if (!original.SequenceEqual(File.ReadAllBytes(path))) throw new Exception("Existing save changed.");
             foreach (string invalid in new[] { "null", "{}", "[]", "{", new string(' ', 8193),
-                System.Text.Encoding.UTF8.GetString(original).Replace("\"name\":", "\"inventory\":[],\"name\":"),
+                System.Text.Encoding.UTF8.GetString(original).Replace("\"name\":", "\"unknown\":[],\"name\":"),
                 System.Text.Encoding.UTF8.GetString(original).Replace("\"victories\":7", "\"victories\":null") })
             {
                 File.WriteAllText(path, invalid);
@@ -49,7 +51,7 @@ internal static class CharacterTransferContracts
                 var other = open.Login(new("other-user", "transfer-test-password"), true);
                 Reject(401, () => open.ImportCharacter("invalid", profile));
                 var c = open.ImportCharacter(login.Token, profile); id = c.Id;
-                if (open.ExportCharacter(login.Token, id) != profile) throw new Exception("Imported profile changed.");
+                if (!Same(open.ExportCharacter(login.Token, id), profile)) throw new Exception("Imported profile changed.");
                 Reject(404, () => open.ExportCharacter(other.Token, id));
                 string database = Path.Combine(root, "open", "realm.json");
                 byte[] before = File.ReadAllBytes(database);
@@ -62,20 +64,20 @@ internal static class CharacterTransferContracts
                 var room = open.CreateRoom(login.Token, new(id, "TransferRoom", ""));
                 Reject(409, () => open.ExportCharacter(login.Token, id));
                 open.Close(login.Token, room.Id);
-                if (open.ExportCharacter(login.Token, id) != profile) throw new Exception("Closed room profile changed.");
+                if (!Same(open.ExportCharacter(login.Token, id), profile)) throw new Exception("Closed room profile changed.");
                 for (int i = 0; i < 3; i++) open.ImportCharacter(login.Token, profile with { Name = "Hero" + i });
                 Reject(409, () => open.ImportCharacter(login.Token, profile with { Name = "TooMany" }));
             }
             using (var open = new Realm(Path.Combine(root, "open"), mode: "open"))
             {
                 var login = open.Login(new("open-user", "transfer-test-password"), false);
-                if (open.ExportCharacter(login.Token, id) != profile) throw new Exception("Imported profile lost on restart.");
+                if (!Same(open.ExportCharacter(login.Token, id), profile)) throw new Exception("Imported profile lost on restart.");
             }
             using (var destination = new Realm(Path.Combine(root, "destination"), mode: "open"))
             {
                 var login = destination.Login(new("destination-user", "transfer-test-password"), true);
                 var imported = destination.ImportCharacter(login.Token, profile);
-                if (imported.Id == id || destination.ExportCharacter(login.Token, imported.Id) != profile)
+                if (imported.Id == id || !Same(destination.ExportCharacter(login.Token, imported.Id), profile))
                     throw new Exception("Independent host transfer failed.");
                 var room = destination.CreateRoom(login.Token, new(imported.Id, "NewHostRoom", ""));
                 if (!destination.Start(login.Token, room.Id).Started) throw new Exception("Imported character cannot play.");

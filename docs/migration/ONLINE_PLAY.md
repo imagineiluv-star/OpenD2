@@ -112,7 +112,7 @@ python eng/check-online.py --godot auto            # 독립 Godot 프로세스 2
 python eng/pack-online-server.py                   # 배포 클라이언트 생성 후 서버 publish/압축/해제/실행
 ```
 
-Migration validation은 382개 계약 (기존 380개와 경계 좌표 회귀 2개)/엄격 ERROR 검사/OS 패키지 smoke를 유지한다.
+PR #51 기준 Migration validation은 387개 Core 계약/엄격 ERROR 검사/OS 패키지 smoke를 유지한다.
 추가로 소유권·전투·재접속·저장 실패 계약과 **압축 해제한 서버 + 클라이언트 2개**의 로그인,
 캐릭터, 방 생성/참가, 시작, 이동 전파를 실행한다. `artifacts/online/result.json`과 두 Godot 로그,
 OS별 서버 ZIP/체크섬을 아티팩트로 보존한다. 테스트 계정 DB/비밀번호/토큰은 업로드하지 않는다.
@@ -189,7 +189,7 @@ OPEND2_ONLINE_RENDERED=1 xvfb-run -a -s "-screen 0 2400x1100x24" python eng/pack
 ## 남은 단계
 
 - ONLINE-02: 월드/포털/개인 퀘스트의 다중 사용자 전환과 실제 MPQ 장면 연결.
-- ONLINE-03: 캐릭터 직업/레벨·장비의 방 간 영속화, 부활, 원본 게임 규칙.
+- ONLINE-03: 캐릭터 직업/레벨·퀘스트의 방 간 영속화, 부활, 원본 게임 규칙. 장비·가방·벨트 이월은 PR #51에서 구현했다.
 - ONLINE-04: [네트워크 채택안](ONLINE_NETWORK.md)에 따라 WSS 상태 푸시 이후 입력 전송·암호화 UDP 비교,
   보간/예측/지연 보정, 부분 상태 전송과 WAN 실측. VPN/자동 포트포워딩은 현재 미구현.
 - ONLINE-05: 계정 복구/운영자 도구·DB 백업/마이그레이션·다중 서버·부하/장시간 검증.

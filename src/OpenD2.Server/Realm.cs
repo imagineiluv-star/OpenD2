@@ -120,7 +120,8 @@ public sealed class Realm : IDisposable
             Need(Mode == "open", 403, "Personal characters are only available in Open mode.");
             var c = Owned(account, id);
             Need(!rooms.Values.Any(r => r.Saved.Members.Any(m => m.Character == id)), 409, "Leave or close the room before exporting.");
-            return new(1, GameSimulation.RulesVersion, "open", c.Name, c.Victories);
+            return new(2, GameSimulation.RulesVersion, "open", c.Name, c.Victories,
+                (c.Inventory ?? []).Select(i => new OpenItem(i.Definition, i.Location, i.Slot)).ToArray());
         }
     }
     public CharacterInfo ImportCharacter(string token, OpenCharacter input)
@@ -129,11 +130,12 @@ public sealed class Realm : IDisposable
         {
             var account = Authorize(token);
             Need(Mode == "open", 403, "Personal characters are only available in Open mode.");
-            try { OpenCharacterFile.Validate(input); }
+            try { input = OpenCharacterFile.Upgrade(input); }
             catch (InvalidDataException error) { throw new Rejected(400, error.Message); }
             Need(characters.Count(c => c.Account == account) < 4, 409, "Four characters per account.");
             Need(!characters.Any(c => c.Account == account && c.Name.Equals(input.Name, StringComparison.OrdinalIgnoreCase)), 409, "Character name already exists; import never overwrites.");
-            var character = new Character(Guid.NewGuid(), account, input.Name, input.Victories);
+            var character = new Character(Guid.NewGuid(), account, input.Name, input.Victories,
+                input.Inventory!.Select(i => new CarriedItem(new(1), i.Definition, i.Location, i.Slot)).ToArray());
             characters.Add(character); Save(); return new(character.Id, character.Name, character.Victories);
         }
     }

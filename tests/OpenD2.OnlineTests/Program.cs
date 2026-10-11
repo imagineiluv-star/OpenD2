@@ -10,6 +10,7 @@ if (args is ["--tls-server", var server, "--fixtures", var fixtures, "--output",
 if (args.Length != 0) throw new ArgumentException("Unknown online test arguments.");
 ModeContracts.Run();
 CharacterTransferContracts.Run();
+OpenItemTransferContracts.Run();
 InventoryContracts.Run();
 
 static void Check(bool yes, string message) { if (!yes) throw new Exception(message); Console.WriteLine("PASS " + message); }
