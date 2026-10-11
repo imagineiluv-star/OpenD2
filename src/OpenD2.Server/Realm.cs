@@ -7,10 +7,12 @@ using OpenD2.Online;
 namespace OpenD2.Server;
 
 // One process, one owner lock. Simulation never trusts client actor, tick or outcomes.
-public sealed class Realm : IDisposable
+public sealed partial class Realm : IDisposable
 {
     private sealed class Room(SavedRoom saved, int rules = GameSimulation.RulesVersion)
     {
+        public byte[]? InviteHash;
+        public DateTimeOffset InviteUntil;
         public SavedRoom Saved = saved;
         public GameSimulation? Game = saved.Game?.Restore(rules);
         public readonly Dictionary<Guid, DateTimeOffset> Seen = new();
@@ -166,10 +168,13 @@ public sealed class Realm : IDisposable
             var c = Owned(Authorize(token), request.Character); var room = Find(id);
             if (!room.Saved.Members.Any(m => m.Character == c.Id))
             {
-                Need(room.Saved.PasswordHash.Length == 0 || (request.Password is { Length: >= 12 and <= 128 } && Matches(request.Password, room.Saved.Salt, room.Saved.PasswordHash)), 403, "Room password invalid.");
+                bool invited = request.Invitation is not null;
+                if (invited) ValidateInvitation(room, request.Invitation!);
+                else Need(room.Saved.PasswordHash.Length == 0 || (request.Password is { Length: >= 12 and <= 128 } && Matches(request.Password, room.Saved.Salt, room.Saved.PasswordHash)), 403, "Room password invalid.");
                 Available(c); Need(room.Game is null && room.Saved.Members.Length < 4, 409, "Room is started or full.");
                 uint actor = Enumerable.Range(1, 4).Select(i => (uint)i).First(i => !room.Saved.Members.Any(m => m.Actor == i));
                 room.Saved = room.Saved with { Members = [..room.Saved.Members, new(c.Id, actor)] }; Save();
+                if (invited) room.InviteHash = null;
             }
             return View(room, c);
         }
@@ -195,6 +200,7 @@ public sealed class Realm : IDisposable
         {
             var (r, c) = Access(token, id); Need(r.Saved.Host == c.Id, 403, "Only the host can start."); Need(r.Game is null, 409, "Already started.");
             r.Saved = r.Saved with { Members = r.Saved.Members.Select((m, i) => m with { Actor = (uint)i + 1 }).ToArray() };
+            r.InviteHash = null;
             r.Game = Arena.Create(r.Saved.Members.Length).WithCarriedItems(r.Saved.Members.SelectMany(m =>
                 (characters.Single(x => x.Id == m.Character).Inventory ?? []).Select(item => item with { Owner = new(m.Actor) })).ToArray());
             Save(); return View(r, c);
@@ -248,7 +254,7 @@ public sealed class Realm : IDisposable
             Need(r.Game is null, 409, "Running room retains characters for reconnect. Host must close it.");
             r.Saved = r.Saved with { Members = r.Saved.Members.Where(m => m.Character != c.Id).ToArray() };
             if (r.Saved.Members.Length == 0) rooms.Remove(id);
-            else if (r.Saved.Host == c.Id) r.Saved = r.Saved with { Host = r.Saved.Members[0].Character };
+            else if (r.Saved.Host == c.Id) { r.InviteHash = null; r.Saved = r.Saved with { Host = r.Saved.Members[0].Character }; }
             Save(); return new { ok = true };
         }
     }

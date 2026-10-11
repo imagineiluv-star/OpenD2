@@ -28,7 +28,12 @@ internal static class RoomInviteContracts
         var character = await guest.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest("InviteGuest"), stop);
         await Reject(HttpStatusCode.NotFound, async () => await guest.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(owner.Id, password), stop));
         await Reject(HttpStatusCode.Forbidden, async () => await guest.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(character.Id, ""), stop));
-        var joined = await guest.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(character.Id, password), stop);
+        var revoked = await host.Send<RoomInvitation>(HttpMethod.Post, path + "/invitation", cancellation: stop);
+        await host.Send<object>(HttpMethod.Delete, path + "/invitation", cancellation: stop);
+        await Reject(HttpStatusCode.Forbidden, async () => await guest.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(character.Id, "", revoked.Token), stop));
+        var issued = await host.Send<RoomInvitation>(HttpMethod.Post, path + "/invitation", cancellation: stop);
+        var timed = ConnectionInvite.Parse((invite with { Version = 3, Invitation = issued.Token, ExpiresAt = issued.ExpiresAt }).Encode());
+        var joined = await guest.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(character.Id, "", timed.Invitation), stop);
         if (joined.Id != room.Id || joined.Actor != 2 || joined.Members.Length != 2) throw new Exception("Invite joined the wrong room.");
         var reconnect = await guest.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(character.Id, ""), stop);
         if (reconnect.Actor != joined.Actor || reconnect.Members.Length != 2) throw new Exception("Invite reconnect duplicated membership.");
@@ -44,6 +49,7 @@ internal static class RoomInviteContracts
             if (i < 2) await extra[i].Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(added.Id, password), stop);
             else late = added;
         }
+        await Reject(HttpStatusCode.Forbidden, async () => await outsider.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(late!.Id, "", timed.Invitation), stop));
         await Reject(HttpStatusCode.Conflict, async () => await outsider.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(late!.Id, password), stop));
         await third.Send<object>(HttpMethod.Post, path + "/leave", cancellation: stop);
         await fourth.Send<object>(HttpMethod.Post, path + "/leave", cancellation: stop);
@@ -51,6 +57,6 @@ internal static class RoomInviteContracts
         await Reject(HttpStatusCode.Conflict, async () => await outsider.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(late!.Id, password), stop));
         await host.Send<object>(HttpMethod.Post, path + "/close", cancellation: stop);
         await Reject(HttpStatusCode.NotFound, async () => await guest.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(character.Id, password), stop));
-        Console.WriteLine("ROOM INVITE PASS " + mode + " TLS join/reconnect; anonymous/ownership/password/full/started/closed admission checks retained");
+        Console.WriteLine("ROOM INVITE PASS " + mode + " TLS timed-issue/revoke/consume/replay and join/reconnect; anonymous/ownership/password/full/started/closed admission checks retained");
     }
 }

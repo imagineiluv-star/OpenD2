@@ -87,8 +87,10 @@ public partial class OnlinePanel
             var invitedRoom = await client.Send<RoomView>(System.Net.Http.HttpMethod.Post, "v1/rooms", new RoomRequest(owner.Id, "InviteUI", roomSecret), lifetime.Token);
             Apply(invitedRoom);
             string roomInvite = CurrentRoomInvite();
+            string timedInvite = await CreateTimedRoomInvite();
             Reset(); ApplyInvite(roomInvite); caFile = hostCa.Text;
-            username.Text = "inviteuitest"; password.Text = Guid.NewGuid().ToString("N"); await Login(true);
+            string guestPassword = Guid.NewGuid().ToString("N");
+            username.Text = "inviteuitest"; password.Text = guestPassword; await Login(true);
             var guest = await client!.Send<CharacterInfo>(System.Net.Http.HttpMethod.Post, "v1/characters", new NameRequest("InviteGuest"), lifetime.Token);
             await Refresh(); characters.Select(Array.FindIndex(characterList, c => c.Id == guest.Id));
             try { await JoinInvitedRoom(); throw new Exception("Room invite bypassed password."); }
@@ -96,6 +98,12 @@ public partial class OnlinePanel
             roomPassword.Text = roomSecret; await JoinInvitedRoom();
             if (state?.Id != invitedRoom.Id || state.Actor != 2) throw new InvalidDataException("Room invite UI joined wrong room.");
             GD.Print("OPEND2_ROOM_INVITE_UI_PASS CLIPBOARD_GESTURE_NOT_RUN");
+            await client!.Send<object>(System.Net.Http.HttpMethod.Post, $"v1/rooms/{invitedRoom.Id}/leave", cancellation: lifetime.Token);
+            Reset(); ApplyInvite(timedInvite); caFile = hostCa.Text; password.Text = guestPassword; await Login(false);
+            await JoinInvitedRoom();
+            if (state?.Id != invitedRoom.Id || connectionInvite?.Version != 2 || connectionInvite.Invitation is not null || roomPassword.Text.Length != 0)
+                throw new InvalidDataException("Timed invite UI admission or secret clearing failed.");
+            GD.Print("OPEND2_TIMED_INVITE_UI_PASS CLIPBOARD_GESTURE_NOT_RUN");
             await StopPersonalHost();
             if (signedIn || personalHost.Running) throw new InvalidDataException("LAN host stop failed.");
             GD.Print("OPEND2_LAN_HOST_UI_PASS LOOPBACK_TLS_NOT_PHYSICAL_LAN DIALOG_GESTURES_NOT_RUN");
