@@ -8,7 +8,7 @@ MPQ 원본 장면의 온라인 플레이, 실제 GUI 인수 완료를 뜻하지 
 
 운영자 Realm과 플레이어 Open/TCP-IP형 개인 호스트를 모두 지원하는 것이 확정 목표다.
 아래 절차는 전용 HTTPS 서버 구성이다. 같은 PC에서는 클라이언트의 개인 호스트 시작/종료 UI와
-Open 캐릭터·아이템 파일을 사용할 수 있다. LAN 설정 UI와 인터넷 NAT 처리는 미구현이다. 상세 범위와 인수 기준은 [ONLINE_MODES](ONLINE_MODES.md)를 따른다.
+Open 캐릭터·아이템 파일을 사용할 수 있다. LAN 인증서/IP/포트 설정 UI도 지원하며 인터넷 NAT 처리는 미구현이다. 상세 범위와 인수 기준은 [ONLINE_MODES](ONLINE_MODES.md)를 따른다.
 
 ## 실행
 
@@ -221,4 +221,4 @@ then select **Start personal host**. Open mode and an available loopback port ar
 selected automatically. Register/login, choose a character and create a room as usual.
 **Stop personal host** saves and stops that child; closing the client also stops it.
 The displayed data folder survives restarts. See [managed host scope and tests](ONLINE_MODES.md).
-This starts a same-PC host; other computers still require the HTTPS setup above.
+The default is same-PC only. Enable **LAN hosting (HTTPS)** to choose a local IPv4, port, server PFX and public CA in the client. Guests connect to the displayed address in Open mode. Physical LAN/WAN acceptance remains pending; see ONLINE_MODES for the exact scope.

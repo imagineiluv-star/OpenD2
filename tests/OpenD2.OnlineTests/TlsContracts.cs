@@ -29,13 +29,14 @@ internal static class TlsContracts
             request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(new OidCollection { new("1.3.6.1.5.5.7.3.1") }, true));
             var names = new SubjectAlternativeNameBuilder();
             if (name == "wrong-host") names.AddDnsName("wrong.opend2.invalid");
-            else { names.AddIpAddress(IPAddress.Loopback); names.AddDnsName("localhost"); }
+            else { names.AddIpAddress(IPAddress.Loopback); names.AddDnsName("localhost"); foreach (string ip in LanHostSettings.LocalAddresses()) names.AddIpAddress(IPAddress.Parse(ip)); }
             request.CertificateExtensions.Add(names.Build());
             using var issued = request.Create(root, now.AddDays(-2), name == "expired" ? now.AddDays(-1) : now.AddHours(12), RandomNumberGenerator.GetBytes(16));
             using var leaf = issued.CopyWithPrivateKey(key);
             File.WriteAllBytes(Path.Combine(fixtures, name + ".pfx"), leaf.Export(X509ContentType.Pfx, password));
             if (name == "valid") File.WriteAllText(Path.Combine(fixtures, "leaf.pem"), leaf.ExportCertificatePem());
         }
+        await LanHostContracts.Run(server, fixtures, password);
         var checks = new List<string>();
         void Pass(string name) { checks.Add(name); Console.WriteLine("TLS PASS " + name); }
         string ca = Path.Combine(fixtures, "ca.pem");
