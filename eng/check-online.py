@@ -16,11 +16,14 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from two_client_acceptance import validate_evidence
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
+    if not __debug__:
+        raise RuntimeError('Run without Python -O; integration assertions must be enabled')
     parser = argparse.ArgumentParser()
     parser.add_argument('--dotnet', default='dotnet')
     parser.add_argument('--output', type=Path, default=ROOT / 'artifacts/online')
@@ -37,6 +40,8 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     report = {'single_client_per_pc': 'NOT_RUN', 'http': 'NOT_RUN', 'restart': 'NOT_RUN', 'godot_transport': 'NOT_RUN', 'godot_gameplay': 'NOT_RUN', 'rendered': 'NOT_RUN', 'gui': 'NOT_RUN'}
     report.update(input_receipt='NOT_RUN', input_receipt_ui='NOT_RUN')
+    report.update(result='FAIL', invite_to_gameplay='NOT_RUN', guest_reconnect='NOT_RUN',
+                  physical_multi_pc='NOT_RUN', wan='NOT_RUN', clipboard_gestures='NOT_RUN')
     with tempfile.TemporaryDirectory(prefix='opend2-online-') as temporary:
         private = Path(temporary)
         with socket.socket() as listener:
@@ -202,7 +207,7 @@ def main():
                             client_env[variable] = str(folder)
                     children.append((role, subprocess.Popen(client_command + ['--', '--online-smoke', '--mode='+args.mode, '--server='+url, '--role='+role, '--run='+run, '--evidence='+str(evidence.resolve())] + tls_args, cwd=ROOT,
                         stdout=handle, stderr=subprocess.STDOUT, env=client_env)))
-                deadline = time.monotonic() + 150
+                deadline = time.monotonic() + 180
                 restarted = False
                 while any(child.poll() is None for _, child in children):
                     if time.monotonic() >= deadline:
@@ -246,6 +251,9 @@ def main():
                     assert result['observations'] == 'room-websocket-stream' and result['http_state_polling'] is False, role
                     if args.windowed:
                         assert result['rendering'] == 'PASS' and len(list(evidence.glob(role + '-*.png'))) == 5, role
+                report['acceptance'] = validate_evidence(evidence, args.mode, bool(args.tls_fixtures))
+                report['guest_reconnect'] = 'PASS'
+                report['invite_to_gameplay'] = 'PASS' if args.tls_fixtures else 'NOT_RUN'
                 if platform.system() == 'Linux':
                     profiles = [json.loads((evidence / (role + '-result.json')).read_text())['user_data'] for role in ('host', 'guest')]
                     assert profiles[0] != profiles[1], 'Godot clients must have independent user data directories'
@@ -259,6 +267,7 @@ def main():
                 report['open_item_file_transfer'] = 'PASS' if args.mode == 'open' else 'NOT_RUN'
                 report['open_profile_ui_binding'] = 'PASS' if args.mode == 'open' else 'NOT_RUN'
                 report['rendered'] = 'PASS' if args.windowed else 'NOT_RUN'
+            report['result'] = 'PASS'
             print('ONLINE HTTP / RESTART / GODOT:', json.dumps(report))
         finally:
             for _, child in children:

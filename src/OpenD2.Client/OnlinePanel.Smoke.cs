@@ -23,18 +23,43 @@ public partial class OnlinePanel
             if (!string.IsNullOrEmpty(certificate)) await CheckPublishedCatalog(url, certificate, mode, role, evidence);
             serverMode.Select(mode == "open" ? 1 : 0);
             caFile = certificate ?? "";
+            if (!string.IsNullOrEmpty(certificate)) await CheckInviteConnection(url, certificate, mode, role, evidence);
             address.Text = url; username.Text = role + run; password.Text = Guid.NewGuid().ToString("N");
             string secret = password.Text;
             await Login(true);
+            Acceptance("login");
             if (!client!.SupportsInputReceipts) throw new InvalidDataException("Packaged server did not advertise input receipts.");
             var character = await client!.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest(role + "Hero"), lifetime.Token);
             await Refresh();
             characters.Select(Array.FindIndex(characterList, c => c.Id == character.Id));
             if (SelectedCharacter() != character.Id) throw new InvalidDataException("Character selection binding failed.");
+            Acceptance("character_selected");
             if (!serverMode.Disabled || client.Mode != mode) throw new InvalidDataException("Mode selection binding failed.");
             if (mode == "open") await CheckProfileFiles(character);
             string roomTitle = "test" + run;
-            if (role == "host") Apply(await client.Send<RoomView>(HttpMethod.Post, "v1/rooms", new RoomRequest(character.Id, roomTitle, ""), lifetime.Token));
+            if (role == "host")
+            {
+                Apply(await client.Send<RoomView>(HttpMethod.Post, "v1/rooms", new RoomRequest(character.Id, roomTitle, ""), lifetime.Token));
+                if (!string.IsNullOrEmpty(certificate))
+                {
+                    PublishInvite(evidence, "room-invite.json", CurrentRoomInvite());
+                    Acceptance("room_invite_generated");
+                }
+            }
+            else if (!string.IsNullOrEmpty(certificate))
+            {
+                string text = await ReceiveInvite(evidence, "room-invite.json");
+                var invite = ConnectionInvite.Parse(text);
+                if (new Uri(invite.Address) != new Uri(url) || invite.Mode != mode || invite.Version != 2)
+                    throw new InvalidDataException("Room invite changed the test destination or mode.");
+                Reset(); ApplyInvite(text); caFile = certificate; password.Text = secret;
+                await Login(false);
+                characters.Select(Array.FindIndex(characterList, c => c.Id == character.Id));
+                await JoinInvitedRoom();
+                if (state is null || state.Id != invite.Room || state.Host || state.Actor != 2)
+                    throw new InvalidDataException("Invited guest did not join the host room with its own actor.");
+                Acceptance("invited_room_joined");
+            }
             else
             {
                 RoomInfo? found = null;
@@ -55,6 +80,7 @@ public partial class OnlinePanel
                 await Task.Delay(100, lifetime.Token);
             }
             if (!started || state!.Members.Length != 2 || state.Entities.Length != 4 || details.Text.Length == 0 || arena.State != state) throw new InvalidDataException("Online view/room start failed.");
+            Acceptance("same_room");
             await Refresh();
             rooms.Select(Array.FindIndex(roomList, r => r.Id == state.Id));
             // Host moves away from the monster; guest must see that authoritative movement.

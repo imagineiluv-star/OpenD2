@@ -111,6 +111,7 @@ public partial class OnlinePanel
         await Barrier("kill");
         await Until(() => !Entity(100).IsAlive && state!.Items.Any(i => i.Location == ItemLocation.Ground), "Loot stream was not observed");
         Check(!Entity(100).IsAlive && state!.Items.Any(i => i.Location == ItemLocation.Ground), "Monster death and loot replicated");
+        Acceptance("combat_sync");
         var loot = state!.Items.First(i => i.Location == ItemLocation.Ground);
         await Capture("combat");
         await Barrier("loot-observed");
@@ -125,27 +126,52 @@ public partial class OnlinePanel
         if (role == "guest") await InputCommand(CommandKind.Pickup, item: loot.Id.Value);
         await Barrier("steal"); await Task.Delay(150, lifetime.Token); await Poll();
         Check(state!.Items.Single(i => i.Id == loot.Id).Owner.Value == 1, "Peer cannot steal inventory item");
+        Acceptance("item_sync");
         await Capture("loot");
-        await Barrier("disconnect-ready");
-        if (role == "host")
+        foreach (string disconnected in new[] { "host", "guest" })
         {
-            await InputCommand(CommandKind.SetMove, -1, 0);
-            StopRoomStream(); client!.Dispose(); client = null; Signal("disconnected");
-            await Wait("guest-lease-checked");
-            password.Text = secret; await Login(false);
-            Apply(await client!.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(character, ""), lifetime.Token));
-            Check(state.Actor == 1 && state.Items.Single(i => i.Id == loot.Id).Owner.Value == 1, "Reconnect preserves actor and inventory");
+            uint actor = disconnected == "host" ? 1u : 2u;
+            await Barrier(disconnected + "-disconnect-ready");
+            if (role == disconnected)
+            {
+                var inventory = state!.Items.ToArray();
+                await InputCommand(CommandKind.SetMove, -1, 0);
+                long sequence = nextInputSequence;
+                StopRoomStream(); client!.Dispose(); client = null; Signal(disconnected + "-disconnected");
+                await Wait(peer + "-" + disconnected + "-lease-checked");
+                password.Text = secret; await Login(false);
+                characters.Select(Array.FindIndex(characterList, c => c.Id == character));
+                Apply(await client!.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(SelectedCharacter(), ""), lifetime.Token));
+                Check(state!.Id == room && state.Actor == actor && state.NextSequence == sequence && state.Items.SequenceEqual(inventory),
+                    disconnected + " reconnect preserves room actor sequence and all items");
+                // A successful login alone is not reconnect acceptance: require a new
+                // command and peer observation on the fresh stream.
+                await InputCommand(CommandKind.SetMove, 0, 1);
+                Check(nextInputSequence == sequence + 1, disconnected + " can submit input after reconnect");
+                Signal(disconnected + "-input-sent");
+                await Wait(peer + "-" + disconnected + "-input-observed");
+                await InputCommand(CommandKind.SetMove);
+            }
+            else
+            {
+                await Wait(peer + "-" + disconnected + "-disconnected");
+                await Task.Delay(750, lifetime.Token); await Poll();
+                var stopped = Entity(actor).Position;
+                await Task.Delay(350, lifetime.Token); await Poll();
+                Check(Entity(actor).Position == stopped && Entity(actor).MoveX == 0 && Entity(actor).MoveY == 0,
+                    disconnected + " stops after disconnected input lease");
+                Signal(disconnected + "-lease-checked");
+                await Wait(peer + "-" + disconnected + "-input-sent");
+                await Until(() => Entity(actor).MoveY == 1, disconnected + " resumed input was not streamed");
+                Signal(disconnected + "-input-observed");
+            }
+            Acceptance(disconnected + "_disconnect");
+            await Barrier(disconnected + "-reconnected"); await Poll();
+            Check(state!.Id == room && state.Members.Length == 2 && state.Members.Select(m => m.Actor).Distinct().Count() == 2 &&
+                state.Items.Single(i => i.Id == loot.Id).Owner.Value == 1, "Both clients retain room membership and loot after " + disconnected + " reconnect");
+            Acceptance(disconnected + "_reconnect");
+            Acceptance(disconnected + "_resumed_input");
         }
-        else
-        {
-            await Wait("host-disconnected"); await Task.Delay(750, lifetime.Token); await Poll();
-            var stopped = Entity(1).Position;
-            await Task.Delay(350, lifetime.Token); await Poll();
-            Check(Entity(1).Position == stopped, "Disconnected peer stops after input lease");
-            Signal("lease-checked");
-        }
-        await Barrier("reconnected"); await Poll();
-        Check(state!.Members.Length == 2 && state.Items.Single(i => i.Id == loot.Id).Owner.Value == 1, "Both clients retain same room after reconnect");
         await Capture("reconnect");
         await InputCommand(CommandKind.SetMove);
         await Barrier("stopped"); await Task.Delay(150, lifetime.Token); await Poll();
@@ -158,6 +184,7 @@ public partial class OnlinePanel
         password.Text = secret; await Login(false);
         Apply(await client!.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(character, ""), lifetime.Token));
         Check(state!.Entities.All(e => before[e.Id] == (e.Position, e.Health)) && state.Items.SequenceEqual(beforeItems), "Hard server restart restores positions health and inventory");
+        Acceptance("server_restart");
         await Capture("restored"); await Barrier("restored");
         if (role == "host") await Room<object>("close");
         await Barrier("closed");
@@ -182,8 +209,9 @@ public partial class OnlinePanel
         if (client!.Mode == "open") await CheckEarnedItemFile(role, evidence, character);
         File.WriteAllText(System.IO.Path.Combine(evidence, role + "-result.json"), JsonSerializer.Serialize(new
         {
-            role, result = "PASS", checks, user_data = OS.GetUserDataDir(), rendering = DisplayServer.GetName() == "headless" ? "NOT_RUN" : "PASS",
-            manual_gui = "NOT_RUN", multi_pc = "NOT_RUN", observations = "room-websocket-stream", http_state_polling = false
+            role, mode = client!.Mode, result = "PASS", checks, acceptance = acceptanceChecks.Order().ToArray(), room, character,
+            user_data = OS.GetUserDataDir(), rendering = DisplayServer.GetName() == "headless" ? "NOT_RUN" : "PASS",
+            manual_gui = "NOT_RUN", multi_pc = "NOT_RUN", wan = "NOT_RUN", observations = "room-websocket-stream", http_state_polling = false
         }, new JsonSerializerOptions { WriteIndented = true }));
         GD.Print("OPEND2_ONLINE_GAMEPLAY_PASS " + role + " MANUAL_GUI_NOT_RUN");
     }

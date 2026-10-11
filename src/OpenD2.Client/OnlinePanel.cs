@@ -49,12 +49,7 @@ public partial class OnlinePanel : VBoxContainer
         AddChild(trust);
         var certificate = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.pem,*.crt ; Public root CA certificate"] }; AddChild(certificate);
         certificate.FileSelected += file => { caFile = file; trust.Text = "Private CA selected: " + Path.GetFileName(file) + ". Check server to compare its SHA-256 with your administrator."; };
-        Button(connection, "Check server", async () =>
-        {
-            using var probe = CreateConnection();
-            await probe.CheckServer(lifetime.Token);
-            status.Text = "Server reachable; protocol and rules match. " + (probe.TrustedRootSha256 is { } hash ? "Private CA SHA-256: " + hash : "System certificate trust.");
-        });
+        Button(connection, "Check server", CheckServer);
         Button(connection, "Choose private CA", () => { certificate.PopupCenteredRatio(0.7f); return Task.CompletedTask; });
         Button(connection, "Use system trust", () => { caFile = ""; trust.Text = "Trust: system certificates"; return Task.CompletedTask; });
         AddChild(username); AddChild(password);
@@ -123,6 +118,12 @@ public partial class OnlinePanel : VBoxContainer
         finally { busy = false; }
     }
     private void RequireLogin() { if (!signedIn || client is null) throw new InvalidOperationException("Login first."); }
+    private async Task CheckServer()
+    {
+        using var probe = CreateConnection();
+        await probe.CheckServer(lifetime.Token);
+        status.Text = "Server reachable; protocol and rules match. " + (probe.TrustedRootSha256 is { } hash ? "Private CA SHA-256: " + hash : "System certificate trust.");
+    }
     private Guid SelectedCharacter() => characters.Selected >= 0 && characters.Selected < characterList.Length ? characterList[characters.Selected].Id : throw new InvalidOperationException("Select a character.");
     private async Task Login(bool register)
     {
