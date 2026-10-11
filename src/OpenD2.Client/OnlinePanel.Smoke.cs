@@ -11,6 +11,10 @@ public partial class OnlinePanel
     // This tests networking in Godot, not visible input/rendering acceptance.
     internal async Task CheckOnline(string url, string role, string run, string evidence, string? certificate = null, string mode = "realm")
     {
+        await Run(() => throw new HttpRequestException(HttpRequestError.SecureConnectionError, "private transport detail"));
+        if (!status.Text.Contains("certificate SAN", StringComparison.Ordinal) || status.Text.Contains("private transport detail", StringComparison.Ordinal))
+            throw new InvalidDataException("Connection guidance UI binding failed.");
+        GD.Print("OPEND2_CONNECTION_GUIDANCE_UI_PASS");
         busy = true;
         try
         {

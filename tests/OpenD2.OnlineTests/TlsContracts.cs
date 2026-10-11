@@ -132,7 +132,12 @@ internal static class TlsContracts
     {
         using var client = new OnlineClient(url, ca);
         try { await client.CheckServer(); }
-        catch (HttpRequestException e) when (e.HttpRequestError == HttpRequestError.SecureConnectionError) { return; }
+        catch (HttpRequestException e) when (e.HttpRequestError == HttpRequestError.SecureConnectionError)
+        {
+            if (!ConnectionFailure.Describe(e).Contains("certificate SAN", StringComparison.Ordinal))
+                throw new Exception("TLS rejection did not provide certificate guidance.");
+            return;
+        }
         throw new Exception("Expected certificate validation failure.");
     }
 }

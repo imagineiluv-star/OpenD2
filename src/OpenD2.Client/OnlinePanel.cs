@@ -112,7 +112,7 @@ public partial class OnlinePanel : VBoxContainer
             {
                 try { await action(); }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
-                catch (Exception e) { if (!lifetime.IsCancellationRequested) { status.Text = e.Message; if (e is HttpRequestException { StatusCode: System.Net.HttpStatusCode.Unauthorized }) Reset(); else if (e is HttpRequestException { StatusCode: System.Net.HttpStatusCode.NotFound }) ClearRoom(); } }
+                catch (Exception e) { if (!lifetime.IsCancellationRequested) { status.Text = ConnectionFailure.Describe(e); if (e is HttpRequestException { StatusCode: System.Net.HttpStatusCode.Unauthorized }) Reset(); else if (e is HttpRequestException { StatusCode: System.Net.HttpStatusCode.NotFound }) ClearRoom(); } }
                 if (lifetime.IsCancellationRequested || !requests.TryDequeue(out var next)) break;
                 action = next;
             }
@@ -207,7 +207,7 @@ public partial class OnlinePanel : VBoxContainer
         {
             ClearRoom();
             if (error is HttpRequestException { StatusCode: System.Net.HttpStatusCode.Unauthorized }) Reset();
-            status.Text = "Room stream ended: " + error.Message + " Join/reconnect, or log in again after a server restart.";
+            status.Text = "Room stream ended: " + ConnectionFailure.Describe(error) + " Join/reconnect, or log in again after a server restart.";
             return;
         }
         poll += delta; if (poll < 0.1) return; poll = 0;
