@@ -24,8 +24,8 @@ internal static class RoomPredictionContracts
         Check(prediction.Position(entity, 1.08).X == 832, "same-tick acceptance does not rebase time");
         var applied = queued with { Tick = 1, Entities = [entity with { Position = new(800, 768), MoveX = 1 }] };
         prediction.Push(applied, 1.08);
-        Check(prediction.Position(applied.Entities[0], 1.08) == Exact(applied.Entities[0]), "authoritative correction on arrival");
-        Check(prediction.Position(applied.Entities[0], 1.10).X == 816, "continue authoritative movement between frames");
+        Check(prediction.Position(applied.Entities[0], 1.08).X == 832, "small correction preserves displayed position on arrival");
+        Check(Math.Abs(prediction.Position(applied.Entities[0], 1.10).X - 840) < 0.000001, "continue movement while correction decays");
         prediction.Move(2, 0, 0, 1.10);
         Check(prediction.Position(applied.Entities[0], 1.12) == Exact(applied.Entities[0]), "stop does not extrapolate old direction");
         prediction.Cancel();
@@ -92,6 +92,87 @@ internal static class RoomPredictionContracts
         {
             try { prediction.Position(entity, time); throw new Exception("Invalid clock accepted."); } catch (ArgumentOutOfRangeException) { }
         }
+        Corrections(first);
         Console.WriteLine($"ROOM PREDICTION PASS movement-parity={comparisons} pending/receipt/WSS-order/stop/cancel/silence/reset/collision/immutability");
     }
+    private static void Corrections(RoomView first)
+    {
+        var grid = Arena.Grid(); var display = new RoomPrediction(grid);
+        var me = first.Entities[0];
+        var moving = first with { Tick = 1, NextSequence = 2, Entities = [me with { Position = new(784, 768), MoveX = 1 }] };
+        bool Near(double a, double b) => Math.Abs(a - b) < 0.000001;
+        void Start()
+        {
+            display.Reset(); display.Push(first, 1); display.Move(1, 1, 0, 1); display.Accept(new(first.Id, 1, 2, 0));
+        }
+        Start(); display.Push(moving, 1.04);
+        Check(Near(display.Position(moving.Entities[0], 1.04).X, 800), "correction begins at previous display");
+        Check(Near(display.Position(moving.Entities[0], 1.08).X, 824), "correction halves after 40ms");
+        Check(Near(display.Position(moving.Entities[0], 1.12).X, 848), "correction ends after 80ms");
+        display.Push(moving, 1.06);
+        Check(Near(display.Position(moving.Entities[0], 1.12).X, 848), "duplicate tick cannot restart correction");
+        Start(); display.Push(moving, 1.04);
+        double before = display.Position(moving.Entities[0], 1.05).X;
+        display.Move(2, 1, 0, 1.05);
+        Check(Near(display.Position(moving.Entities[0], 1.05).X, before), "same-direction refresh preserves display");
+        display.Move(3, 0, 0, 1.06);
+        Check(display.Position(moving.Entities[0], 1.06).X == 784, "stop clears correction immediately");
+        Start(); display.Push(moving, 1.04); display.Cancel();
+        Check(display.Position(moving.Entities[0], 1.06).X == 784, "uncertain command clears correction");
+        Start(); display.Push(moving, 1.04);
+        var next = moving with { Tick = 2, Entities = [moving.Entities[0] with { Position = new(800, 768) }] };
+        before = display.Position(moving.Entities[0], 1.06).X;
+        display.Push(next, 1.06);
+        Check(Near(display.Position(next.Entities[0], 1.06).X, before), "new tick starts from current corrected display");
+        foreach (var changed in new[] { me with { Position = new(1000, 768), MoveX = 1 }, // Error exceeds cap.
+            me with { Position = new(784, 768), MoveX = -1 }, // Direction reversal.
+            me with { Position = new(784, 768), MoveX = 1, Health = 99 },
+            me with { Position = new(784, 768), MoveX = 1, HitStun = 1 },
+            me with { Position = new(784, 768), MoveX = 1, AttackCooldown = 1 } })
+        {
+            Start(); display.Push(moving with { Entities = [changed] }, 1.04);
+            Check(display.Position(changed, 1.04).X == changed.Position.X, "discontinuity uses authoritative position immediately");
+        }
+        // A newly observed body blocks the old visual position even though the server position is valid.
+        Start();
+        var blocked = moving with { Entities = [moving.Entities[0], new(new(2), new(1), new(944, 768))] };
+        display.Push(blocked, 1.08);
+        Check(display.Position(blocked.Entities[0], 1.08).X == 784, "new body prevents correction overlap");
+        // Correction must be rechecked as prediction approaches the body between updates.
+        Start(); display.Push(blocked, 1.04);
+        Check(display.Position(blocked.Entities[0], 1.08).X == 816, "blocked correction falls back to safe predicted coordinate");
+        // A diagonal correction crossing the wall's corner cannot use two walkable endpoints.
+        var corner = first with { Entities = [me with { Position = new(3008, 1472) }] };
+        display.Reset(); display.Push(corner, 1); display.Move(1, 1, 0, 1);
+        var around = corner with { Tick = 1, NextSequence = 2,
+            Entities = [me with { Position = new(3008, 1536), MoveX = 1 }] };
+        display.Push(around, 1.08);
+        Check(display.Position(around.Entities[0], 1.08) == new DisplayPosition(3008, 1536), "swept rectangle prevents corner cutting");
+        Start(); display.Push(moving, 1.04); display.Push(moving, 1.19);
+        Check(display.Position(moving.Entities[0], 1.21).X == 784 && !display.IsAnimating(1.21), "silence cannot retain visual correction");
+        Start(); display.Push(moving, 1.04); display.Reset(); display.Push(moving, 2);
+        Check(display.Position(moving.Entities[0], 2.02).X == 784, "reconnect clears visual error");
+        // Jittered updates never mutate authority; residual error stays capped and expires.
+        display.Reset(); var state = first; double arrival = 3; int x = 768;
+        display.Push(state, arrival);
+        for (int i = 0; i < 600; i++)
+        {
+            arrival += i % 3 == 0 ? 0.02 : i % 3 == 1 ? 0.04 : 0.06;
+            int direction = i % 40 < 20 ? 1 : -1; x += 32 * direction;
+            state = state with { Tick = i + 1, Entities = [me with { Position = new(x, 768), MoveX = direction }] };
+            string untouched = JsonSerializer.Serialize(state); display.Push(state, arrival);
+            for (int sample = 0; sample <= 4; sample++)
+            {
+                double time = arrival + sample * 0.02;
+                var p = display.Position(state.Entities[0], time);
+                double baseline = x + direction * sample * 16;
+                Check(Math.Abs(p.X - baseline) <= RoomPrediction.MaxCorrection + 0.000001, "jitter correction bounded");
+                Check(grid.CanOccupy(new((int)Math.Floor(p.X), (int)Math.Floor(p.Y))), "jitter display remains walkable");
+                if (sample == 4) Check(Near(p.X, baseline), "jitter correction fully expires");
+            }
+            Check(JsonSerializer.Serialize(state) == untouched, "corrected display cannot mutate authority");
+        }
+        Console.WriteLine("ROOM CORRECTION PASS jitter=600 continuity/80ms-decay/64-unit-cap/duplicates/refresh/stop/reset/bodies/corners/immutability");
+    }
+
 }
