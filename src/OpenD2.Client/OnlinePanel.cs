@@ -41,6 +41,7 @@ public partial class OnlinePanel : VBoxContainer
         serverMode.AddItem("Open — personal profiles (preview)");
         AddChild(serverMode);
         AddChild(address);
+        AddCatalogControls();
         AddInviteControls();
         AddHostControls();
         var connection = new HFlowContainer(); AddChild(connection);

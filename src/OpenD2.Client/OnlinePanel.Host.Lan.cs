@@ -64,7 +64,7 @@ public partial class OnlinePanel
             if (SelectedMode != "open" || !address.Text.StartsWith("https://127.0.0.1:", StringComparison.Ordinal) || caFile != hostCa.Text || hostPfxPassword.Text.Length != 0 || personalHost.TrustedRootSha256 is null)
                 throw new InvalidDataException("LAN host TLS connection binding failed.");
             string inviteText = PersonalHostInvite();
-            ApplyInvite(inviteText);
+            CheckCatalogControls(folder, inviteText);
             if (connectionInvite?.Mode != "open" || caFile.Length != 0 || connectionInvite.RootCaSha256 != personalHost.TrustedRootSha256)
                 throw new InvalidDataException("Invite UI binding failed.");
             try { using var missingCa = CreateConnection(); throw new Exception("Invite accepted missing CA."); }
@@ -79,6 +79,7 @@ public partial class OnlinePanel
             serverMode.Select(1); caFile = hostCa.Text;
             using (var invited = CreateConnection()) await invited.CheckServer(lifetime.Token);
             username.Text = "lanuitest"; password.Text = Guid.NewGuid().ToString("N"); await Login(true);
+            CheckSignedInCatalogControls();
             try { ApplyInvite(inviteText); throw new Exception("Signed-in invite change accepted."); }
             catch (InvalidOperationException) { }
             GD.Print("OPEND2_CONNECTION_INVITE_UI_PASS CLIPBOARD_GESTURE_NOT_RUN");
