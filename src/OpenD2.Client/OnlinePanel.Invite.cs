@@ -12,6 +12,8 @@ public partial class OnlinePanel
         var input = new LineEdit { PlaceholderText = "Paste connection invite", MaxLength = ConnectionInvite.MaxCharacters,
             SizeFlagsHorizontal = SizeFlags.ExpandFill }; row.AddChild(input);
         Button(row, "Apply invite", () => { ApplyInvite(input.Text); input.Text = ""; return Task.CompletedTask; });
+        Button(row, "Copy room invite", () => { DisplayServer.ClipboardSet(CurrentRoomInvite()); status.Text = "Room invite copied. Send any room password separately. Guests must log in and choose their own character."; return Task.CompletedTask; });
+        Button(row, "Join invited room", JoinInvitedRoom);
         Button(row, "Clear invite", () =>
         {
             if (signedIn) throw new InvalidOperationException("Log out before changing connection settings.");
@@ -26,7 +28,7 @@ public partial class OnlinePanel
         connectionInvite = invite; address.Text = invite.Address; serverMode.Select(invite.Mode == "open" ? 1 : 0);
         caFile = ""; password.Text = ""; roomPassword.Text = "";
         trust.Text = invite.RootCaSha256 is { } hash ? "Invite CA SHA-256: " + hash + ". Choose the matching public root CA and verify with the host separately." : "Invite trust: system certificates";
-        status.Text = "Invite applied: " + invite.Address + " | " + invite.Mode + ". Review the destination, then Check server. No connection has been made. A LAN address still requires access to that network.";
+        status.Text = "Invite applied: " + invite.Address + " | " + invite.Mode + (invite.Room is { } room ? " | Room " + room : "") + ". Review the destination, then Check server. No connection has been made. A LAN address still requires access to that network.";
     }
     private OnlineClient CreateConnection()
     {
@@ -34,6 +36,24 @@ public partial class OnlinePanel
         if (!Uri.TryCreate(address.Text, UriKind.Absolute, out var current) || current != new Uri(invite.Address) || SelectedMode != invite.Mode)
             throw new InvalidOperationException("Address or mode differs from the invite. Restore them or clear the invite before connecting.");
         return invite.CreateClient(caFile);
+    }
+    private string CurrentRoomInvite()
+    {
+        RequireLogin();
+        if (state is null || connectedAddress is null) throw new InvalidOperationException("Join a room first.");
+        return new ConnectionInvite { Version = 2, Address = connectedAddress, Mode = client!.Mode,
+            RootCaSha256 = client.TrustedRootSha256, Room = state.Id }.Encode();
+    }
+    private async Task JoinInvitedRoom()
+    {
+        RequireLogin();
+        if (connectionInvite is not { Room: { } room } invite) throw new InvalidOperationException("Apply a room invite before logging in.");
+        if (!ConnectedTo(invite.Address) || client!.Mode != invite.Mode ||
+            !string.Equals(client.TrustedRootSha256, invite.RootCaSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("This session does not match the room invite. Log out and apply it again.");
+        Apply(await client!.Send<RoomView>(System.Net.Http.HttpMethod.Post, $"v1/rooms/{room}/join",
+            new JoinRequest(SelectedCharacter(), roomPassword.Text), lifetime.Token));
+        status.Text = "Joined invited room. Server membership and password checks passed.";
     }
     private string PersonalHostInvite()
     {

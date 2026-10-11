@@ -11,13 +11,16 @@ public sealed record ConnectionInvite
     public required string Address { get; init; }
     public required string Mode { get; init; }
     public string? RootCaSha256 { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public Guid? Room { get; init; }
     public const int MaxCharacters = 4096;
     private static readonly JsonSerializerOptions Json = new()
     { UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, AllowDuplicateProperties = false, MaxDepth = 4 };
 
     public void Validate()
     {
-        if (Version != 1 || Mode is not ("open" or "realm")) throw new InvalidDataException("Unsupported connection invite version or mode.");
+        if (Version is not (1 or 2) || Mode is not ("open" or "realm")) throw new InvalidDataException("Unsupported connection invite version or mode.");
+        if ((Version == 1 && Room is not null) || (Version == 2 && (Room is null || Room == Guid.Empty)))
+            throw new InvalidDataException("Room invites require version 2 and a nonempty room ID.");
         if (Address is null || Address.Length > 2048 || !Uri.TryCreate(Address, UriKind.Absolute, out var uri) ||
             uri.Scheme != "https" || uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0 ||
             uri.AbsolutePath != "/" || uri.Port <= 0 || string.IsNullOrEmpty(uri.Host) ||
