@@ -18,6 +18,12 @@ public sealed partial class OnlineClient : IDisposable
     private string? token;
     public string Mode { get; }
     public bool SupportsInputReceipts { get; private set; }
+    public bool SupportsRoomDeltas { get; private set; }
+    private long roomPayloadBytes, roomFullFrames, roomDeltaFrames;
+    // Cumulative successfully decoded application payloads for this client; excludes transport headers.
+    public long RoomPayloadBytes => Interlocked.Read(ref roomPayloadBytes);
+    public long RoomFullFrames => Interlocked.Read(ref roomFullFrames);
+    public long RoomDeltaFrames => Interlocked.Read(ref roomDeltaFrames);
     public string? TrustedRootSha256 { get; }
     public string RoomTransport => http.BaseAddress!.Scheme == "https" ? "WSS" : "WS (loopback)";
     public OnlineClient(string address, string? caFile = null, string mode = "realm")
@@ -83,6 +89,7 @@ public sealed partial class OnlineClient : IDisposable
             throw new InvalidDataException("Open character file support does not match. Use the same client/server build.");
         if (health.Mode != Mode) throw new InvalidDataException("Server mode does not match the selected character mode.");
         SupportsInputReceipts = health.InputReceipt == 1;
+        SupportsRoomDeltas = health.RoomDelta == 1;
     }
     public async Task<InputReceipt> SendInput(Guid room, InputRequest input, CancellationToken cancellation = default)
     {
@@ -117,7 +124,9 @@ public sealed partial class OnlineClient : IDisposable
         cancellation = session.Token;
         if (token is null) throw new InvalidOperationException("Login first.");
         using var socket = new ClientWebSocket();
-        socket.Options.AddSubProtocol("opend2.room.v1");
+        bool delta = SupportsRoomDeltas;
+        string protocol = delta ? RoomFrames.Protocol : "opend2.room.v1";
+        socket.Options.AddSubProtocol(protocol);
         socket.Options.CollectHttpResponseDetails = true;
         socket.Options.SetRequestHeader("Authorization", "Bearer " + token);
         socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(5);
@@ -132,8 +141,15 @@ public sealed partial class OnlineClient : IDisposable
             catch (WebSocketException error) when ((int)socket.HttpStatusCode >= 400)
             { throw new HttpRequestException("Room stream handshake rejected.", error, socket.HttpStatusCode); }
         }
+        if (socket.SubProtocol != protocol) throw new InvalidDataException("Room stream protocol negotiation failed.");
         var buffer = new byte[1024 * 1024];
         var json = new JsonSerializerOptions(JsonSerializerDefaults.Web) { MaxDepth = 16 };
+        if (delta)
+        {
+            json.UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow;
+            json.AllowDuplicateProperties = false; json.RespectRequiredConstructorParameters = true;
+        }
+        RoomView? previous = null; long sequence = 0;
         while (true)
         {
             int length = 0;
@@ -147,9 +163,22 @@ public sealed partial class OnlineClient : IDisposable
                 if (part.EndOfMessage) break;
                 if (length == buffer.Length) throw new InvalidDataException("Room update exceeds 1 MiB.");
             }
-            var update = JsonSerializer.Deserialize<RoomUpdate>(buffer.AsSpan(0, length), json) ?? throw new InvalidDataException("Empty room update.");
-            if (update.Status != 200) throw new HttpRequestException(update.Error ?? "Room access ended.", null, (System.Net.HttpStatusCode)update.Status);
-            if (update.State is not { } state || state.Id != room) throw new InvalidDataException("Wrong room update.");
+            RoomView state; bool patched = false;
+            if (delta)
+            {
+                var frame = JsonSerializer.Deserialize<RoomFrame>(buffer.AsSpan(0, length), json) ?? throw new InvalidDataException("Empty room frame.");
+                state = RoomFrames.Apply(frame, previous, sequence, room);
+                sequence = frame.Sequence; previous = state; patched = frame.Delta is not null;
+            }
+            else
+            {
+                var update = JsonSerializer.Deserialize<RoomUpdate>(buffer.AsSpan(0, length), json) ?? throw new InvalidDataException("Empty room update.");
+                if (update.Status != 200) throw new HttpRequestException(update.Error ?? "Room access ended.", null, (System.Net.HttpStatusCode)update.Status);
+                state = update.State ?? throw new InvalidDataException("Missing room state.");
+                if (state.Id != room) throw new InvalidDataException("Wrong room update.");
+            }
+            Interlocked.Add(ref roomPayloadBytes, length);
+            if (patched) Interlocked.Increment(ref roomDeltaFrames); else Interlocked.Increment(ref roomFullFrames);
             yield return state;
         }
     }

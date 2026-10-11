@@ -100,6 +100,11 @@ public partial class OnlinePanel
             }
             if (!observed) throw new InvalidDataException("Peer movement was not replicated.");
             GD.Print("OPEND2_ONLINE_STREAM_PASS " + role);
+            // Observe actual decoded v2 frames, not only the advertised capability.
+            for (int attempt = 0; attempt < 100 && client!.RoomDeltaFrames == 0; attempt++) await WaitForRoomUpdate();
+            if (!client!.SupportsRoomDeltas || client.RoomFullFrames == 0 || client.RoomDeltaFrames == 0)
+                throw new InvalidDataException("Packaged client did not reconstruct a delta stream.");
+            GD.Print("OPEND2_ROOM_DELTA_UI_PASS " + role);
             bool handled = false;
             UserAction(() => { handled = true; return Task.CompletedTask; });
             if (handled || requests.Count != 1) throw new InvalidDataException("Busy user action was not queued.");
