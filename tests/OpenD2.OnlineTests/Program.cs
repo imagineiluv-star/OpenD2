@@ -7,6 +7,11 @@ if (args is ["--tls-server", var server, "--fixtures", var fixtures, "--output",
     await TlsContracts.Run(Path.GetFullPath(server), Path.GetFullPath(fixtures), Path.GetFullPath(output));
     return;
 }
+if (args is ["--host-server", var hostServer])
+{
+    await PersonalHostContracts.Run(Path.GetFullPath(hostServer));
+    return;
+}
 if (args.Length != 0) throw new ArgumentException("Unknown online test arguments.");
 ModeContracts.Run();
 CharacterTransferContracts.Run();

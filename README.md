@@ -122,3 +122,7 @@ The [NPC-01 Camp Guide preview](docs/migration/NPC_01_RESULTS.md) adds three scr
 [NPC-02a](docs/migration/NPC_02_RESULTS.md) adds an optional, source-built llama.cpp CPU runtime, verified/resumable Qwen model downloads, and Korean intent evaluation. Basic play stays model-free. This experimental adapter classifies intent; host-authored dialogue and explicit quest confirmation remain in control. Target-PC/GPU acceptance, freeform speech and persistent NPC memory remain open. See [BUILDING](BUILDING.md) for install/run/remove controls.
 
 Online Realm and Open characters now retain owned bag/equipment/belt items across room closure and new room admission. Ground and consumed items are not carried. Back up existing saves/server data before the rules-8 upgrade. Open version-2 character files also transfer owned bag/equipment/belt items to a new character copy on an Open server. Version-1 name/victory files remain readable; Realm import and automatic synchronization are not supported. See [online modes](docs/migration/ONLINE_MODES.md).
+
+The Online UI can now start and stop a same-PC Open host from an extracted server
+package, retain its local data and reconnect after restart. LAN/Internet hosting still
+uses separately configured HTTPS; automatic NAT setup is not implemented.

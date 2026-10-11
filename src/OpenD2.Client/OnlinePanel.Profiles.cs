@@ -16,7 +16,7 @@ public partial class OnlinePanel
         var row = new HFlowContainer(); AddChild(row);
         Button(row, "Import Open profile", () => { ChooseProfile(false); return Task.CompletedTask; });
         Button(row, "Export Open profile", () => { ChooseProfile(true); return Task.CompletedTask; });
-        AddChild(new Label { Text = "Open files include name, victories, bag, equipment and belt. Import creates a copy, not a sync. Quests/levels are not supported. Start the host server separately.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+        AddChild(new Label { Text = "Open files include name, victories, bag, equipment and belt. Import creates a copy, not a sync. Quests/levels are not supported. Use Start personal host for this PC, or connect to an HTTPS Open server.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
     }
     private void ChooseProfile(bool export)
     {

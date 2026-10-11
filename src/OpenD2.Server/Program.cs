@@ -7,6 +7,18 @@ using OpenD2.Server;
 
 var builder = WebApplication.CreateBuilder(args);
 string mode = builder.Configuration["mode"] ?? "realm";
+bool managedHost = builder.Configuration["managed-host"] == "true";
+if (managedHost)
+{
+    if (mode != "open" || !Console.IsInputRedirected) throw new ArgumentException("Managed host requires Open mode and a private stdin pipe.");
+    // Ignore configured network endpoints for the client-owned local host.
+    builder.WebHost.ConfigureKestrel(options =>
+    {
+        options.Configure(new ConfigurationBuilder().Build());
+        options.Listen(IPAddress.Loopback, 0);
+    });
+    builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(5));
+}
 if (mode is not ("realm" or "open")) throw new ArgumentException("Mode must be realm or open.");
 if (string.IsNullOrEmpty(builder.Configuration["urls"])) builder.WebHost.UseUrls("http://127.0.0.1:5080");
 builder.WebHost.ConfigureKestrel(o => { o.Limits.MaxRequestBodySize = 8192; o.Limits.MaxConcurrentConnections = 64; });
@@ -60,6 +72,24 @@ api.MapPost("/rooms/{id:guid}/input", (HttpContext c, Realm r, Guid id, InputReq
 api.MapPost("/rooms/{id:guid}/save", (HttpContext c, Realm r, Guid id) => r.Checkpoint(Token(c), id));
 api.MapPost("/rooms/{id:guid}/leave", (HttpContext c, Realm r, Guid id) => r.Leave(Token(c), id));
 api.MapPost("/rooms/{id:guid}/close", (HttpContext c, Realm r, Guid id) => r.Close(Token(c), id));
+if (managedHost)
+{
+    app.Lifetime.ApplicationStarted.Register(() =>
+    {
+        string address = app.Urls.Single();
+        Console.WriteLine("OPEND2_HOST_READY " + address);
+    });
+    _ = Task.Run(async () =>
+    {
+        // Closing the parent pipe, or an explicit stop, requests normal checkpointed shutdown.
+        try
+        {
+            while (await Console.In.ReadLineAsync() is { } line)
+                if (line == "stop") break;
+        }
+        finally { app.Lifetime.StopApplication(); }
+    });
+}
 app.Run();
 
 internal sealed class RealmLoop(Realm realm) : BackgroundService
