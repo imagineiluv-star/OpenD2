@@ -28,6 +28,10 @@ if (managedHost)
     builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(5));
 }
 if (mode is not ("realm" or "open")) throw new ArgumentException("Mode must be realm or open.");
+// Operator opt-in only. Client-owned hosts ignore inherited publication settings.
+// Validate before opening the realm store or listening; requests never read files.
+byte[]? catalog = !managedHost && builder.Configuration["server-catalog"] is { } catalogFile
+    ? ServerCatalog.Load(catalogFile).Encode() : null;
 if (string.IsNullOrEmpty(builder.Configuration["urls"])) builder.WebHost.UseUrls("http://127.0.0.1:5080");
 builder.WebHost.ConfigureKestrel(o => { o.Limits.MaxRequestBodySize = 8192; o.Limits.MaxConcurrentConnections = 64; });
 builder.Services.ConfigureHttpJsonOptions(o => { o.SerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow; o.SerializerOptions.MaxDepth = 16; o.SerializerOptions.RespectRequiredConstructorParameters = true; o.SerializerOptions.AllowDuplicateProperties = false; });
@@ -40,6 +44,7 @@ builder.Services.AddRateLimiter(o =>
             : RateLimitPartition.GetConcurrencyLimiter("realm", _ => new() { PermitLimit = 8, QueueLimit = 0 }));
     o.AddFixedWindowLimiter("password", x => { x.PermitLimit = 60; x.Window = TimeSpan.FromMinutes(1); x.QueueLimit = 0; });
     o.AddFixedWindowLimiter("game", x => { x.PermitLimit = 1000; x.Window = TimeSpan.FromSeconds(1); x.QueueLimit = 0; });
+    o.AddFixedWindowLimiter("catalog", x => { x.PermitLimit = 60; x.Window = TimeSpan.FromMinutes(1); x.QueueLimit = 0; });
 });
 builder.Services.AddSingleton(new Realm(builder.Configuration["data"] ?? Path.Combine(AppContext.BaseDirectory, mode + "-data"), mode: mode));
 builder.Services.AddHostedService<RealmLoop>();
@@ -61,6 +66,9 @@ string Token(HttpContext c)
     return header.StartsWith("Bearer ", StringComparison.Ordinal) && header.Length == 71 ? header[7..] : "";
 }
 app.MapGet("/health", () => new { protocol = 1, rules = OpenD2.Core.GameSimulation.RulesVersion, roomStream = 1, mode, characterFileVersion = 2 });
+if (catalog is not null)
+    app.MapGet("/v1/server-catalog", (HttpContext context) => context.Request.IsHttps
+        ? Results.Bytes(catalog, "application/json") : (IResult)Results.StatusCode(400)).RequireRateLimiting("catalog");
 app.MapPost("/v1/register", (Credentials input, Realm realm) => realm.Login(input, true)).RequireRateLimiting("password");
 app.MapPost("/v1/login", (Credentials input, Realm realm) => realm.Login(input, false)).RequireRateLimiting("password");
 var api = app.MapGroup("/v1").RequireRateLimiting("game");
