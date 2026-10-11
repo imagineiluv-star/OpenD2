@@ -327,7 +327,8 @@ MPQ에서의 스트리밍은 구분하며 실제 GUI/청취는 자동 테스트�
 
 - [ ] Realm: 공개 운영 서버 목록/지역 선택, 로그인·서버 캐릭터·방·영속화의 제품 흐름 완성
 - [x] Open: 같은 PC 개인 호스트 시작/종료 UI, 소유 서버 프로세스·로컬 데이터·재시작 복구
-- [ ] Open: LAN 호스트 인증서/바인딩 UI와 다른 PC 직접 참가 인수
+- [x] Open: LAN 호스트 IPv4/포트/PFX/공개 CA UI·stdin 암호 전달·HTTPS/WSS 자동 검사
+- [ ] Open: 실제 다른 PC 직접 참가·공유기/방화벽·WAN·수동 GUI 인수
 - [x] Realm/Open 서버 저장 모드 분리, 기존 Realm 형식 이관, 모드 불일치 시작/로그인 거부
 - [x] Open 프로필(이름·승리 횟수) 파일 저장/반입, Realm 거부·소유권·중복·파일 보호 검사
 - [x] Godot Realm/Open 선택과 개인 프로필 파일 UI, Open TLS 두 클라이언트 패키지 검사
@@ -349,3 +350,7 @@ Open 모드 제품 지원이나 NAT 자동 연결이 완료된 것으로 판단�
 개인 호스트 UI 검증은 패키지 `personal_host_lifecycle` 및 온라인
 `personal_host_ui_binding` 결과로 추적한다. 자동 루프백 검사를 실제 LAN/WAN
 완료로 해석하지 않는다. 테스트용 호스트 데이터는 검사 종료 시 삭제한다.
+
+LAN 자동 검사는 `lan_host_tls_lifecycle`, `lan_host_ui_binding`, `LAN HOST CONTRACTS`
+로그로 추적한다. NIC 주소 바인딩 결과와 실제 두 PC 결과는 별개다. 로컬 인터페이스 조회가
+제한된 실행 환경에서는 목록이 비어도 기본 루프백 호스트는 계속 사용할 수 있다.

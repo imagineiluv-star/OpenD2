@@ -8,6 +8,13 @@ using OpenD2.Server;
 var builder = WebApplication.CreateBuilder(args);
 string mode = builder.Configuration["mode"] ?? "realm";
 bool managedHost = builder.Configuration["managed-host"] == "true";
+LanHostSettings? lan = null;
+if (managedHost && builder.Configuration["managed-lan"] == "stdin")
+{
+    if (!Console.IsInputRedirected || mode != "open") throw new ArgumentException("LAN host requires Open mode and a private stdin pipe.");
+    lan = LanHostSettings.ReadLaunch(Console.In);
+}
+using var managedCertificate = lan?.LoadCertificate();
 if (managedHost)
 {
     if (mode != "open" || !Console.IsInputRedirected) throw new ArgumentException("Managed host requires Open mode and a private stdin pipe.");
@@ -15,7 +22,8 @@ if (managedHost)
     builder.WebHost.ConfigureKestrel(options =>
     {
         options.Configure(new ConfigurationBuilder().Build());
-        options.Listen(IPAddress.Loopback, 0);
+        if (lan is null) options.Listen(IPAddress.Loopback, 0);
+        else options.Listen(lan.Validate(), lan.Port, endpoint => endpoint.UseHttps(managedCertificate!));
     });
     builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(5));
 }

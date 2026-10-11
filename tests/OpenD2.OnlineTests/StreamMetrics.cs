@@ -9,6 +9,8 @@ internal static class StreamMetrics
     internal static async Task Measure(OnlineClient host, IAsyncEnumerator<RoomView> peer,
         string path, long sequence, string output, CancellationToken stop)
     {
+        int health = peer.Current.Entities.Single(e => e.Id.Value == 1).Health;
+        if (health <= 0) throw new Exception("Metrics require a living actor.");
         var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
         var gaps = new List<double>();
         var latencies = new List<double>();
@@ -65,13 +67,15 @@ internal static class StreamMetrics
             } while (peer.Current.Tick < stopped.Tick ||
                 peer.Current.Entities.Single(e => e.Id.Value == 1).MoveX != 0);
         }
+        if (peer.Current.Entities.Single(e => e.Id.Value == 1).Health != health)
+            throw new Exception("Combat contaminated transport metrics.");
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
         File.WriteAllText(output, JsonSerializer.Serialize(new
         {
             result = "PASS", scope = "loopback-https-input-wss-peer-observation",
             timing = "single-client-monotonic-clock", input_to_peer_ms = Summary(latencies),
             http_response_ms = Summary(http), direction_observed_ms = Summary(applied), samples,
-            observation_note = "Direction and movement observations follow HTTP response completion; buffered frames and game hit-stun are included. Not transport RTT.",
+            observation_note = "Direction and movement observations follow HTTP response completion; buffered frames are included. Nearby attacker defeated before sampling; actor health unchanged. Not transport RTT.",
             receive_gap_ms = Summary(gaps), receive_seconds = seconds,
             observed_messages_per_second = gaps.Count / seconds,
             reconstructed_json_bytes = bytes, reconstructed_json_bytes_per_second = bytes / seconds,

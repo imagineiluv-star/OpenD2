@@ -10,21 +10,25 @@ public sealed class PersonalHost : IDisposable
     private int disposed;
     private readonly SemaphoreSlim gate = new(1);
     public string? Address { get; private set; }
+    public string? TrustedRootSha256 { get; private set; }
     public bool Running => process is { HasExited: false };
-    public async Task Start(string executable, string data, CancellationToken cancellation = default)
+    public Task Start(string executable, string data, CancellationToken cancellation = default) => Start(executable, data, null, cancellation);
+    public async Task Start(string executable, string data, LanHostSettings? lan, CancellationToken cancellation = default)
     {
         await gate.WaitAsync(cancellation).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(disposed != 0, this);
             if (Running) throw new InvalidOperationException("Personal host is already running.");
-            process?.Dispose(); process = null; Address = null;
+            process?.Dispose(); process = null; Address = null; TrustedRootSha256 = null;
             executable = Path.GetFullPath(executable); data = Path.GetFullPath(data);
             if (!File.Exists(executable)) throw new FileNotFoundException("Select the extracted OpenD2.Server executable.", executable);
+            if (lan is not null) { using var certificate = lan.LoadCertificate(); }
             var start = new ProcessStartInfo(executable) { UseShellExecute = false, CreateNoWindow = true,
                 RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
                 WorkingDirectory = Path.GetDirectoryName(executable)! };
             foreach (var arg in new[] { "--managed-host", "true", "--mode", "open", "--data", data }) start.ArgumentList.Add(arg);
+            if (lan is not null) { start.ArgumentList.Add("--managed-lan"); start.ArgumentList.Add("stdin"); }
             var ready = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
             var child = new Process { StartInfo = start, EnableRaisingEvents = true };
             child.OutputDataReceived += (_, e) =>
@@ -41,13 +45,21 @@ public sealed class PersonalHost : IDisposable
                 child.Start(); child.BeginOutputReadLine(); child.BeginErrorReadLine();
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
                 timeout.CancelAfter(TimeSpan.FromSeconds(20));
+                if (lan is not null)
+                {
+                    await child.StandardInput.WriteLineAsync(lan.LaunchJson().AsMemory(), timeout.Token).ConfigureAwait(false);
+                    await child.StandardInput.FlushAsync(timeout.Token).ConfigureAwait(false);
+                }
                 string address = await ready.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
-                if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || uri.Scheme != "http" || uri.Host != "127.0.0.1" || uri.Port <= 0 || uri.AbsolutePath != "/")
+                if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || uri.Scheme != (lan is null ? "http" : "https") ||
+                    uri.Host != (lan?.Validate().ToString() ?? "127.0.0.1") || uri.Port <= 0 || uri.AbsolutePath != "/" ||
+                    uri.Query.Length != 0 || uri.Fragment.Length != 0 || uri.UserInfo.Length != 0 ||
+                    (lan is { Port: > 0 } && uri.Port != lan.Port))
                     throw new InvalidDataException("Invalid personal host address.");
-                using var probe = new OnlineClient(address, mode: "open");
+                using var probe = new OnlineClient(address, lan?.RootCaFile, mode: "open");
                 await probe.CheckServer(timeout.Token).ConfigureAwait(false);
                 if (child.HasExited) throw new IOException("Personal host exited during startup.");
-                Address = address;
+                Address = address; TrustedRootSha256 = probe.TrustedRootSha256;
             }
             catch { await StopChild().ConfigureAwait(false); throw; }
         }
@@ -62,7 +74,7 @@ public sealed class PersonalHost : IDisposable
     }
     private async Task<bool> StopChild()
     {
-        var child = process; process = null; Address = null;
+        var child = process; process = null; Address = null; TrustedRootSha256 = null;
         if (child is null) return true;
         bool clean = true;
         try

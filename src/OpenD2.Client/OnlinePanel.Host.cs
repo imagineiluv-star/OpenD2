@@ -18,16 +18,19 @@ public partial class OnlinePanel
         Button(row, "Choose server", () => { picker.PopupCenteredRatio(0.7f); return Task.CompletedTask; });
         Button(row, "Start personal host", StartPersonalHost);
         Confirm(row, "Stop personal host", "Save and stop your personal host? Its connected sessions will end. Saved rooms remain available after restart.", StopPersonalHost);
+        AddLanHostControls();
         AddChild(hostStatus);
-        hostStatus.Text = "Personal host: stopped. This PC only; LAN/Internet play uses a separately configured HTTPS server.";
+        hostStatus.Text = "Personal host: stopped. Default: this PC only. Enable LAN hosting for a selected local IPv4 address.";
     }
     private Task StartPersonalHost() => StartPersonalHostAt(ProjectSettings.GlobalizePath("user://personal-host/open-data"));
     private async Task StartPersonalHostAt(string data)
     {
         if (signedIn) throw new InvalidOperationException("Log out before starting your personal host.");
+        var lan = ReadLanHostSettings();
         status.Text = "Starting personal host…";
-        await personalHost.Start(hostExecutable.Text, data, lifetime.Token);
-        serverMode.Select(1); address.Text = personalHost.Address!; caFile = ""; trust.Text = "Trust: local personal host (loopback)";
+        await personalHost.Start(hostExecutable.Text, data, lan, lifetime.Token);
+        serverMode.Select(1); address.Text = personalHost.Address!; caFile = lan?.RootCaFile ?? "";
+        trust.Text = personalHost.TrustedRootSha256 is { } hash ? "Private CA SHA-256: " + hash : lan is null ? "Trust: local personal host (loopback)" : "Trust: system certificates";
         hostWasRunning = true;
         hostStatus.Text = "Personal host running — " + personalHost.Address + " | Data: " + data;
         status.Text = "Host ready. Register or log in, then choose a character and room. Closing this client stops the host.";
@@ -43,6 +46,7 @@ public partial class OnlinePanel
     }
     private async Task CheckPersonalHostControls(string executable, string folder)
     {
+        hostLan.ButtonPressed = false;
         hostExecutable.Text = executable;
         string secret = Guid.NewGuid().ToString("N");
         try

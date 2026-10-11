@@ -80,6 +80,8 @@ public partial class OnlinePanel
             {
                 Reset();
                 await CheckPersonalHostControls(hostExe, Path.Combine(Path.GetTempPath(), "opend2-host-ui-" + run));
+                if (System.Environment.GetEnvironmentVariable("OPEND2_TEST_HOST_TLS_FIXTURES") is { Length: > 0 } fixtures)
+                    await CheckLanHostControls(hostExe, Path.Combine(Path.GetTempPath(), "opend2-lan-ui-" + run), fixtures);
             }
         }
         finally { busy = false; }

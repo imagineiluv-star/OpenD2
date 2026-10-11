@@ -29,7 +29,22 @@ internal static class StreamContracts
         await guest.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(b.Id, ""), stop);
         await RawContracts(url, ca, path, password, stop);
         Pass("origin and subprotocol rejected; application messages disconnect the stream");
-        await host.Send<RoomView>(HttpMethod.Post, path + "/start", cancellation: stop);
+        var started = await host.Send<RoomView>(HttpMethod.Post, path + "/start", cancellation: stop);
+        // Remove the nearby attacker through normal gameplay before timing movement.
+        // Slow CI runners must not turn transport sampling into a passive survival test.
+        while (started.Entities.Single(e => e.Id.Value == 100).IsAlive)
+        {
+            var actor = started.Entities.Single(e => e.Id.Value == 1);
+            if (!actor.IsAlive) throw new Exception("Stream combat setup lost its actor.");
+            if (actor.AttackCooldown == 0 && actor.HitStun == 0)
+                await host.Send<RoomView>(HttpMethod.Post, path + "/input",
+                    new InputRequest(started.NextSequence,
+                        actor.SkillCooldown == 0 && actor.Mana >= GameSimulation.PowerStrikeManaCost
+                            ? CommandKind.CastSkill : CommandKind.Attack, Target: 100), stop);
+            await Task.Delay(100, stop);
+            started = await host.Send<RoomView>(HttpMethod.Get, path, cancellation: stop);
+        }
+        Pass("nearby attacker defeated through normal commands before transport sampling");
         await using var first = host.WatchRoom(room.Id, stop).GetAsyncEnumerator();
         await using var second = guest.WatchRoom(room.Id, stop).GetAsyncEnumerator();
         if (!await first.MoveNextAsync() || !await second.MoveNextAsync() || first.Current.Actor != 1 || second.Current.Actor != 2)
@@ -106,7 +121,7 @@ internal static class StreamContracts
         finally { foreach (var feed in feeds) await feed.DisposeAsync(); foreach (var client in clients) client.Dispose(); }
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
         File.WriteAllText(output, JsonSerializer.Serialize(new { result = "PASS", checks, transport = "WSS",
-            http_state_polling = false, manual_gui = "NOT_RUN", physical_multi_pc = "NOT_RUN" }, new JsonSerializerOptions { WriteIndented = true }) + "\n");
+            measurement_http_state_polling = false, setup_http_state_polling = true, manual_gui = "NOT_RUN", physical_multi_pc = "NOT_RUN" }, new JsonSerializerOptions { WriteIndented = true }) + "\n");
     }
 
     private static async Task Rejected(IAsyncEnumerator<RoomView> feed, int status)

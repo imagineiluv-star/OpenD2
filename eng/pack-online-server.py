@@ -56,13 +56,14 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
         '--tls-server', str(executable), '--fixtures', str(certificates), '--output', 'artifacts/online/tls-contracts.json'],
         cwd=ROOT, env=tls_env, check=True)
     env['OPEND2_TEST_HOST_EXE'] = str(executable)
+    env['OPEND2_TEST_HOST_TLS_FIXTURES'] = str(certificates)
     env['OPEND2_TEST_PFX_PASSWORD'] = tls_env['OPEND2_TEST_PFX_PASSWORD']
     subprocess.run(check + ['--tls-fixtures', str(certificates), '--output', 'artifacts/online/tls'], cwd=ROOT, env=env, check=True)
     subprocess.run(check + ['--mode', 'open', '--tls-fixtures', str(certificates), '--output', 'artifacts/online/open'], cwd=ROOT, env=env, check=True)
     with package.open('rb') as stream: digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     (output/f'server-{rid}.json').write_text(json.dumps({'commit': os.environ.get('GITHUB_SHA', 'local'), 'runtime': rid,
         'file': package.name, 'sha256': digest, 'bytes': package.stat().st_size,
-        'personal_host_lifecycle': 'PASS', 'extracted_server_and_two_clients': 'PASS', 'two_client_gameplay': 'PASS', 'tls_certificates': 'PASS', 'tls_two_client_gameplay': 'PASS',
+        'lan_host_tls_lifecycle': 'PASS', 'personal_host_lifecycle': 'PASS', 'extracted_server_and_two_clients': 'PASS', 'two_client_gameplay': 'PASS', 'tls_certificates': 'PASS', 'tls_two_client_gameplay': 'PASS',
         'open_tls_two_client_gameplay': 'PASS', 'open_profile_ui_binding': 'PASS', 'open_item_file_transfer': 'PASS',
         'room_stream_contracts': 'PASS', 'room_stream_transport': 'WSS',
         'rendered_gameplay': 'PASS' if rendered else 'NOT_RUN', 'gui': 'NOT_RUN'}, indent=2)+'\n')
