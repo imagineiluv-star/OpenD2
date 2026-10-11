@@ -8,8 +8,9 @@ using OpenD2.Online;
 
 internal static class TlsContracts
 {
-    internal static async Task Run(string server, string fixtures, string output)
+    internal static async Task Run(string server, string fixtures, string output, int networkSeconds = 5)
     {
+        if (networkSeconds is < 1 or > 3600) throw new ArgumentOutOfRangeException(nameof(networkSeconds));
         Directory.CreateDirectory(fixtures);
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(fixtures, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         string password = Environment.GetEnvironmentVariable("OPEND2_TEST_PFX_PASSWORD") ?? throw new InvalidOperationException("Test certificate password is required.");
@@ -132,6 +133,13 @@ internal static class TlsContracts
                     Pass("Open server mode, pre-login mismatch rejection, WSS identity and personal profile file transfer");
                 }
                 else { await RejectTls(url, ca); Pass(name + " certificate rejected"); }
+                if (name is "valid" or "open")
+                {
+                    string mode = name == "open" ? "open" : "realm";
+                    await NetworkResilienceContracts.Run(url, ca, mode,
+                        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "network-" + mode + ".json"), process, networkSeconds);
+                    Pass(mode + " encrypted byte-relay impairment, uncertain response and reconnect");
+                }
             }
             finally
             {

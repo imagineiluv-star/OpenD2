@@ -7,6 +7,12 @@ if (args is ["--tls-server", var server, "--fixtures", var fixtures, "--output",
     await TlsContracts.Run(Path.GetFullPath(server), Path.GetFullPath(fixtures), Path.GetFullPath(output));
     return;
 }
+if (args is ["--tls-server", var networkServer, "--fixtures", var networkFixtures, "--output", var networkOutput, "--network-seconds", var duration])
+{
+    if (!int.TryParse(duration, out int seconds) || seconds is < 1 or > 3600) throw new ArgumentException("Network duration must be 1–3600 seconds.");
+    await TlsContracts.Run(Path.GetFullPath(networkServer), Path.GetFullPath(networkFixtures), Path.GetFullPath(networkOutput), seconds);
+    return;
+}
 if (args is ["--host-server", var hostServer])
 {
     await PersonalHostContracts.Run(Path.GetFullPath(hostServer));
