@@ -188,6 +188,10 @@ OPEND2_ONLINE_RENDERED=1 xvfb-run -a -s "-screen 0 2400x1100x24" python eng/pack
 
 ## 남은 단계
 
+Realm/Open 초대부터 게스트 재접속까지의 한 명령 자동 검사와 실제 두 PC 인수 절차는
+[TWO_CLIENT_ACCEPTANCE.md](TWO_CLIENT_ACCEPTANCE.md)를 따른다. 자동 루프백 결과와
+물리 LAN/WAN·수동 GUI 결과는 별도 항목이다.
+
 - ONLINE-02: 월드/포털/개인 퀘스트의 다중 사용자 전환과 실제 MPQ 장면 연결.
 - ONLINE-03: 캐릭터 직업/레벨·퀘스트의 방 간 영속화, 부활, 원본 게임 규칙. 장비·가방·벨트 이월은 PR #51에서 구현했다.
 - ONLINE-04: [네트워크 채택안](ONLINE_NETWORK.md)에 따라 WSS 상태 푸시 이후 입력 전송·암호화 UDP 비교,
