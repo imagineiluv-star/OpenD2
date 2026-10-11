@@ -27,6 +27,7 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
     shutil.copyfile(ROOT/'docs/migration/ONLINE_NETWORK.md', stage/'ONLINE_NETWORK.md')
     shutil.copyfile(ROOT/'docs/migration/ONLINE_MODES.md', stage/'ONLINE_MODES.md')
     shutil.copyfile(ROOT/'docs/migration/TWO_CLIENT_ACCEPTANCE.md', stage/'TWO_CLIENT_ACCEPTANCE.md')
+    shutil.copyfile(ROOT/'docs/migration/NETWORK_ACCEPTANCE.md', stage/'NETWORK_ACCEPTANCE.md')
     package = output/f'OpenD2-server-{rid}.zip'
     with zipfile.ZipFile(package, 'w', zipfile.ZIP_DEFLATED) as archive:
         for path in sorted(stage.rglob('*')):
@@ -67,6 +68,7 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
         'lan_host_tls_lifecycle': 'PASS', 'personal_host_lifecycle': 'PASS', 'extracted_server_and_two_clients': 'PASS', 'two_client_gameplay': 'PASS', 'tls_certificates': 'PASS', 'tls_two_client_gameplay': 'PASS',
         'open_tls_two_client_gameplay': 'PASS', 'open_profile_ui_binding': 'PASS', 'open_item_file_transfer': 'PASS',
         'realm_invite_to_gameplay': 'PASS', 'open_invite_to_gameplay': 'PASS', 'host_and_guest_reconnect': 'PASS',
+        'network_relay_realm': 'PASS', 'network_relay_open': 'PASS', 'packet_loss': 'NOT_RUN',
         'physical_multi_pc': 'NOT_RUN', 'wan': 'NOT_RUN', 'clipboard_gestures': 'NOT_RUN',
         'room_stream_contracts': 'PASS', 'room_stream_transport': 'WSS',
         'rendered_gameplay': 'PASS' if rendered else 'NOT_RUN', 'gui': 'NOT_RUN'}, indent=2)+'\n')
