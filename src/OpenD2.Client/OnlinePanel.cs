@@ -30,6 +30,7 @@ public partial class OnlinePanel : VBoxContainer
     private CancellationTokenSource? roomStream;
     private Exception? streamError;
     private long streamFrames;
+    private long nextInputSequence;
     private readonly Queue<Func<Task>> requests = new();
     private bool busy, signedIn;
     private double poll;
@@ -150,6 +151,7 @@ public partial class OnlinePanel : VBoxContainer
         // HTTP command replies and pushed states use independent connections.
         // Never roll an input cursor or a running simulation back to an older view.
         if (!changedRoom && state is { } previous && (next.Tick < previous.Tick || next.NextSequence < previous.NextSequence || (previous.Started && !next.Started))) return;
+        nextInputSequence = changedRoom ? next.NextSequence : Math.Max(nextInputSequence, next.NextSequence);
         state = next; arena.State = next; arena.QueueRedraw();
         details.Text = $"{next.Name} | {(next.Started ? "Playing" : "Lobby")} | tick {next.Tick} | actor {next.Actor} | {client?.RoomTransport}\n" + string.Join(" / ", next.Members.Select(m => m.Name));
         if (next.Started) { var me = next.Entities.First(e => e.Id.Value == next.Actor); details.Text += $" | HP {me.Health}/{me.MaxHealth} | Mana {me.Mana}/{me.MaxMana}"; }
@@ -199,7 +201,7 @@ public partial class OnlinePanel : VBoxContainer
         }
         throw new TimeoutException("Room stream did not deliver a fresh state.");
     }
-    private void ClearRoom() { StopRoomStream(); state = null; arena.State = null; arena.QueueRedraw(); details.Text = ""; moveX = moveY = 0; }
+    private void ClearRoom() { StopRoomStream(); state = null; nextInputSequence = 0; arena.State = null; arena.QueueRedraw(); details.Text = ""; moveX = moveY = 0; }
     private void Reset() { requests.Clear(); signedIn = false; connectedAddress = null; serverMode.Disabled = false; client?.Dispose(); client = null; ClearRoom(); characters.Clear(); rooms.Clear(); }
     public override void _Process(double delta)
     {
@@ -225,7 +227,16 @@ public partial class OnlinePanel : VBoxContainer
     private async Task InputCommand(CommandKind kind, int x = 0, int y = 0, uint target = 0, ulong item = 0)
     {
         if (state is null) return;
-        Apply(await client!.Send<RoomView>(HttpMethod.Post, $"v1/rooms/{state.Id}/input", new InputRequest(state.NextSequence, kind, x, y, target, item), lifetime.Token));
+        var owner = client!;
+        var receipt = await owner.SendInput(state.Id, new InputRequest(nextInputSequence, kind, x, y, target, item), lifetime.Token);
+        if (client == owner) ApplyInputReceipt(receipt);
+    }
+    private void ApplyInputReceipt(InputReceipt receipt)
+    {
+        // HTTP replies can overtake WSS frames. Advance only the input cursor;
+        // keep rendering fresh pushed states even before their sequence catches up.
+        if (state?.Id == receipt.Room && state.Actor == receipt.Actor)
+            nextInputSequence = Math.Max(nextInputSequence, receipt.NextSequence);
     }
     public override void _UnhandledKeyInput(InputEvent @event)
     {

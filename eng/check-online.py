@@ -36,6 +36,7 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     report = {'single_client_per_pc': 'NOT_RUN', 'http': 'NOT_RUN', 'restart': 'NOT_RUN', 'godot_transport': 'NOT_RUN', 'godot_gameplay': 'NOT_RUN', 'rendered': 'NOT_RUN', 'gui': 'NOT_RUN'}
+    report.update(input_receipt='NOT_RUN', input_receipt_ui='NOT_RUN')
     with tempfile.TemporaryDirectory(prefix='opend2-online-') as temporary:
         private = Path(temporary)
         with socket.socket() as listener:
@@ -147,7 +148,18 @@ def main():
             request('POST', path+'/input', {'sequence': 1, 'kind': 0, 'x': -1}, a)
             request('POST', path+'/input', {'sequence': 1, 'kind': 0, 'x': -1}, a, 409)
             time.sleep(0.2)
-            request('POST', path+'/input', {'sequence': 2, 'kind': 0}, a)
+            # Same ownership/sequence checks, with a compact acceptance response.
+            receipt_path = path + '/input/ack'
+            request('POST', receipt_path, {'sequence': 2, 'kind': 0, 'actor': 2}, a, 400)
+            request('POST', receipt_path, {'sequence': 2, 'kind': 0}, expected=401)
+            request('POST', receipt_path, {'sequence': 2, 'kind': 0}, eve, 403)
+            request('POST', receipt_path, {'sequence': 2, 'kind': 0, 'x': 999}, a, 400)
+            receipt = request('POST', receipt_path, {'sequence': 2, 'kind': 0}, a)
+            assert set(receipt) == {'room', 'actor', 'nextSequence', 'tick'}
+            assert receipt['room'] == room['id'] and receipt['actor'] == 1 and receipt['nextSequence'] == 3
+            request('POST', receipt_path, {'sequence': 2, 'kind': 0}, a, 409)
+            request('POST', path+'/input', {'sequence': 2, 'kind': 0}, a, 409)
+            report['input_receipt'] = 'PASS'
             time.sleep(0.1)
             peer = request('GET', path, token=b)
             assert next(e for e in peer['entities'] if e['id']['value'] == 1)['position']['x'] < 768
@@ -215,6 +227,8 @@ def main():
                     assert 'OPEND2_ONLINE_TRANSPORT_PASS '+role in text, role
                     assert 'OPEND2_ONLINE_STREAM_PASS '+role in text, role
                     assert 'OPEND2_ONLINE_GAMEPLAY_PASS '+role in text, role
+                    assert 'OPEND2_INPUT_RECEIPT_ORDERING_PASS' in text, role
+                    assert 'OPEND2_INPUT_RECEIPT_GAMEPLAY_PASS '+role in text, role
                     if args.mode == 'open':
                         assert 'OPEND2_OPEN_PROFILE_UI_PASS DIALOG_GESTURES_NOT_RUN' in text, role
                         assert f'OPEND2_OPEN_ITEM_FILE_PASS {role}' in text, 'Open earned-item file transfer missing'
@@ -236,6 +250,7 @@ def main():
                     profiles = [json.loads((evidence / (role + '-result.json')).read_text())['user_data'] for role in ('host', 'guest')]
                     assert profiles[0] != profiles[1], 'Godot clients must have independent user data directories'
                 report['godot_transport'] = 'PASS'
+                report['input_receipt_ui'] = 'PASS'
                 report['catalog_download_ui'] = 'PASS' if args.tls_fixtures else 'NOT_RUN'
                 report['room_stream'] = 'WSS' if args.tls_fixtures else 'WS_LOOPBACK'
                 report['godot_gameplay'] = 'PASS'

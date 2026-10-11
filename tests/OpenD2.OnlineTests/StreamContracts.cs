@@ -66,12 +66,12 @@ internal static class StreamContracts
             Task drain = Drain();
             try
             {
-                await StreamMetrics.Measure(host, second, path, sequence,
+                await StreamMetrics.Measure(host, second, sequence,
                     Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "stream-metrics.json"), stop);
             }
             finally { drainStop.Cancel(); await drain; }
         }
-        Pass("HTTP-owned movement is pushed to the peer over WSS");
+        Pass("100 compact HTTP input receipts; owned movement is pushed to the peer over WSS");
         await using (var duplicate = host.WatchRoom(room.Id, stop).GetAsyncEnumerator()) await Rejected(duplicate, 409);
         Pass("duplicate stream for the same session rejected");
         await using (var denied = outsider.WatchRoom(room.Id, stop).GetAsyncEnumerator()) await Rejected(denied, 403);

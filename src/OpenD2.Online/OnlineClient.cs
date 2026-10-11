@@ -17,6 +17,7 @@ public sealed partial class OnlineClient : IDisposable
     private readonly X509Certificate2? trustedRoot;
     private string? token;
     public string Mode { get; }
+    public bool SupportsInputReceipts { get; private set; }
     public string? TrustedRootSha256 { get; }
     public string RoomTransport => http.BaseAddress!.Scheme == "https" ? "WSS" : "WS (loopback)";
     public OnlineClient(string address, string? caFile = null, string mode = "realm")
@@ -81,6 +82,23 @@ public sealed partial class OnlineClient : IDisposable
         if (Mode == "open" && health.CharacterFileVersion != 2)
             throw new InvalidDataException("Open character file support does not match. Use the same client/server build.");
         if (health.Mode != Mode) throw new InvalidDataException("Server mode does not match the selected character mode.");
+        SupportsInputReceipts = health.InputReceipt == 1;
+    }
+    public async Task<InputReceipt> SendInput(Guid room, InputRequest input, CancellationToken cancellation = default)
+    {
+        if (input.Sequence <= 0 || input.Sequence >= long.MaxValue) throw new ArgumentOutOfRangeException(nameof(input));
+        InputReceipt receipt;
+        if (SupportsInputReceipts)
+            receipt = await Send<InputReceipt>(HttpMethod.Post, $"v1/rooms/{room}/input/ack", input, cancellation);
+        else
+        {
+            // Capability is negotiated before sending. Never retry a possibly accepted command.
+            var view = await Send<RoomView>(HttpMethod.Post, $"v1/rooms/{room}/input", input, cancellation);
+            receipt = new(view.Id, view.Actor, view.NextSequence, view.Tick);
+        }
+        if (receipt.Room != room || receipt.Actor == 0 || receipt.NextSequence != input.Sequence + 1 || receipt.Tick < 0)
+            throw new InvalidDataException("Invalid input receipt. Reconnect to recover the input sequence.");
+        return receipt;
     }
     public async Task ExportCharacter(Guid id, string path, CancellationToken cancellation = default)
     {
