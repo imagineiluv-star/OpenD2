@@ -49,3 +49,12 @@ HTTP 상태 조회는 준비 과정에만 사용하고 지속 관측에서는 WS
 `--seconds` 값을 늘리는 것만으로 이런 항목을 PASS로 바꾸지 않는다.
 
 관련: [2클라이언트 게임플레이](TWO_CLIENT_ACCEPTANCE.md), [TLS 장애/복구](NETWORK_ACCEPTANCE.md).
+
+## 통합 중 발견한 화면 상태 수신 순서
+
+macOS Open 패키지 검사에서 HTTP 방 시작 응답을 받은 뒤 대기 중이던 이전 로비 WSS가
+도착하면, 화면에서 거부된 상태도 새 수신으로 계산되어 HTTP 전체 상태를 v3 표시 상태로
+오인할 수 있었다. 현재는 화면에 실제 적용된 WSS만 새 관측으로 계산한다.
+`OPEND2_ACCEPTED_STREAM_ORDERING_PASS`는 늦은 로비·낮은 tick·낮은 입력 순번이 관측 완료를
+깨우지 않고, 같은 tick의 정상 v3 상태가 HTTP 전체 상태를 교체하는 순서를 결정적으로 검사한다.
+두 Godot 클라이언트 모두 이 검사를 통과해야 `accepted_stream_ordering_ui: PASS`를 기록한다.

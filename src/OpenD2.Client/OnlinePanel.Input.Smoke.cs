@@ -40,6 +40,24 @@ public partial class OnlinePanel
         ApplyInputReceipt(new(state.Id, 2, 99, 2));
         Apply(state with { Tick = 1, NextSequence = 2 });
         if (state != newest || nextInputSequence != 4) throw new Exception("Late/foreign receipt or stale stream corrupted input ordering.");
+        // HTTP start/join can overtake an already queued lobby or older WSS frame.
+        // A rejected frame must not satisfy WaitForRoomUpdate while HTTP's full view remains.
+        var started = newest with { Started = true, StateHash = new string('a', 64),
+            Members = [new(Guid.NewGuid(), "Host", 1), new(Guid.NewGuid(), "Guest", 2)],
+            Entities = Arena.Create(2).Entities.ToArray() };
+        Apply(started);
+        long before = streamFrames;
+        ApplyStream(newest);
+        ApplyStream(started with { Tick = 1 });
+        ApplyStream(started with { NextSequence = 3 });
+        if (streamFrames != before || !ReferenceEquals(state, started))
+            throw new Exception("Rejected lobby/old tick/old cursor incorrectly satisfied fresh WSS observation.");
+        var projected = RoomInterest.Project(started);
+        ApplyStream(projected);
+        if (projected.Entities.Length >= started.Entities.Length || streamFrames != before + 1 ||
+            !ReferenceEquals(state, projected) || !ReferenceEquals(arena.State, projected))
+            throw new Exception("Fresh same-tick WSS projection did not replace the HTTP view.");
+        Godot.GD.Print("OPEND2_ACCEPTED_STREAM_ORDERING_PASS");
         ClearRoom();
         if (nextInputSequence != 0) throw new Exception("Leaving a room retained its input cursor.");
         Godot.GD.Print("OPEND2_INPUT_RECEIPT_ORDERING_PASS");
