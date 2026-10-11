@@ -19,6 +19,7 @@ public partial class OnlinePanel
         try
         {
             if (mode is not ("realm" or "open")) throw new InvalidDataException("Unknown smoke mode.");
+            if (!string.IsNullOrEmpty(certificate)) await CheckPublishedCatalog(url, certificate, mode, role, evidence);
             serverMode.Select(mode == "open" ? 1 : 0);
             caFile = certificate ?? "";
             address.Text = url; username.Text = role + run; password.Text = Guid.NewGuid().ToString("N");

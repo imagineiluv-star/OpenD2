@@ -37,6 +37,7 @@ internal static class TlsContracts
             if (name == "valid") File.WriteAllText(Path.Combine(fixtures, "leaf.pem"), leaf.ExportCertificatePem());
         }
         await CatalogDownloadContracts.Run(fixtures, password);
+        await CatalogPublishContracts.InvalidStartup(server, fixtures);
         await LanHostContracts.Run(server, fixtures, password);
         var checks = new List<string>();
         void Pass(string name) { checks.Add(name); Console.WriteLine("TLS PASS " + name); }
@@ -44,11 +45,22 @@ internal static class TlsContracts
         foreach (string name in new[] { "valid", "open", "wrong-host", "expired" })
         {
             using var reservation = new TcpListener(IPAddress.Loopback, 0);
-            reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port; reservation.Stop();
+            reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port;
             string url = "https://127.0.0.1:" + port;
+            using var plainReservation = new TcpListener(IPAddress.Loopback, 0);
+            plainReservation.Start(); int plainPort = ((IPEndPoint)plainReservation.LocalEndpoint).Port; plainReservation.Stop();
+            reservation.Stop();
+            string plainUrl = "http://127.0.0.1:" + plainPort;
             var start = new ProcessStartInfo(server) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
-            foreach (string arg in new[] { "--urls", url, "--data", Path.Combine(fixtures, "data-" + name) }) start.ArgumentList.Add(arg);
+            foreach (string arg in new[] { "--urls", name is "valid" or "open" ? url + ";" + plainUrl : url, "--data", Path.Combine(fixtures, "data-" + name) }) start.ArgumentList.Add(arg);
             start.ArgumentList.Add("--mode"); start.ArgumentList.Add(name == "open" ? "open" : "realm");
+            var catalog = new ServerCatalog(1, [new("Published server", "Test", url, name == "open" ? "open" : "realm", root.GetCertHashString(HashAlgorithmName.SHA256)),
+                new("Other mode", "Other", "https://other.example.invalid", name == "open" ? "realm" : "open")]);
+            string catalogPath = Path.Combine(fixtures, "published-" + name + ".json");
+            if (name is "valid" or "open")
+            {
+                catalog.Save(catalogPath); start.ArgumentList.Add("--server-catalog"); start.ArgumentList.Add(catalogPath);
+            }
             start.Environment["Kestrel__Certificates__Default__Path"] = Path.Combine(fixtures, (name == "open" ? "valid" : name) + ".pfx");
             start.Environment["Kestrel__Certificates__Default__Password"] = password;
             // Validate the self-contained executable without any SDK/runtime search paths.
@@ -72,6 +84,13 @@ internal static class TlsContracts
                 }
                 if (name == "valid")
                 {
+                    using (var plain = new HttpClient { Timeout = TimeSpan.FromSeconds(10) })
+                    {
+                        using var response = await plain.GetAsync(plainUrl + "/v1/server-catalog");
+                        if (response.StatusCode != HttpStatusCode.BadRequest)
+                            throw new Exception("Catalog published over plaintext HTTP.");
+                    }
+                    await CatalogPublishContracts.Verify(url, ca, catalogPath, catalog, "realm");
                     using var client = new OnlineClient(url, ca);
                     await client.CheckServer();
                     await ConnectionInviteContracts.VerifyTls(url, ca, Path.Combine(fixtures, "other-ca.pem"), root.GetCertHashString(HashAlgorithmName.SHA256));
@@ -107,6 +126,7 @@ internal static class TlsContracts
                 }
                 else if (name == "open")
                 {
+                    await CatalogPublishContracts.Verify(url, ca, catalogPath, catalog, "open");
                     await ModeContracts.VerifyOpenServer(url, ca);
                     await RoomInviteContracts.Run(url, ca, "open");
                     Pass("Open server mode, pre-login mismatch rejection, WSS identity and personal profile file transfer");

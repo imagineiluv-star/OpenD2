@@ -5,6 +5,24 @@ namespace OpenD2.Client;
 
 public partial class OnlinePanel
 {
+    private async Task CheckPublishedCatalog(string url, string certificate, string mode, string role, string evidence)
+    {
+        string oldAddress = address.Text, oldCa = caFile;
+        var oldInvite = connectionInvite;
+        catalogUrl.Text = url + "/v1/server-catalog"; catalogCaFile = certificate;
+        string saved = Path.Combine(evidence, role + "-catalog.json");
+        await DownloadCatalog(saved);
+        if (address.Text != oldAddress || caFile != oldCa || connectionInvite != oldInvite || signedIn)
+            throw new InvalidDataException("Catalog download changed game connection.");
+        var entry = ServerCatalog.Load(saved).Servers.Single();
+        if (entry.Address != url || entry.Mode != mode) throw new InvalidDataException("Published catalog changed server identity.");
+        ApplyCatalogSelection();
+        if (address.Text != url || SelectedMode != mode || caFile.Length != 0 || connectionInvite?.RootCaSha256 != entry.RootCaSha256)
+            throw new InvalidDataException("Published catalog selection failed.");
+        caFile = certificate;
+        using var probe = CreateConnection(); await probe.CheckServer(lifetime.Token);
+        GD.Print("OPEND2_PUBLISHED_CATALOG_UI_PASS " + role + " DIALOG_GESTURES_NOT_RUN");
+    }
     private void CheckCatalogControls(string folder, string inviteText)
     {
         var host = ConnectionInvite.Parse(inviteText);

@@ -61,11 +61,16 @@ public sealed record ServerCatalog(int Version, ServerEntry[] Servers)
         using var client = new OnlineClient(origin, caFile);
         return await client.ReadCatalog(uri.AbsoluteUri, cancellation);
     }
-    public void Save(string path)
+    public byte[] Encode()
     {
         Validate();
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(this, Json);
         if (bytes.Length > MaxBytes) throw new InvalidDataException("Server catalog is too large.");
+        return bytes;
+    }
+    public void Save(string path)
+    {
+        byte[] bytes = Encode();
         path = Path.GetFullPath(path);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";

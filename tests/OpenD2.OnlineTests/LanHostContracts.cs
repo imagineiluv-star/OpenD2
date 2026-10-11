@@ -20,14 +20,20 @@ internal static class LanHostContracts
                 unrelated.Start();
                 const string inherited = "Kestrel__Endpoints__Unexpected__Url";
                 string? previous = Environment.GetEnvironmentVariable(inherited);
+                const string catalogSetting = "server-catalog";
+                string? previousCatalog = Environment.GetEnvironmentVariable(catalogSetting);
+                Environment.SetEnvironmentVariable(catalogSetting, Path.Combine(fixtures, "missing-inherited-catalog.json"));
                 Environment.SetEnvironmentVariable(inherited, "http://127.0.0.1:" + ((IPEndPoint)unrelated.LocalEndpoint).Port);
                 try { await host.Start(executable, data, settings); }
-                finally { Environment.SetEnvironmentVariable(inherited, previous); }
+                finally { Environment.SetEnvironmentVariable(inherited, previous); Environment.SetEnvironmentVariable(catalogSetting, previousCatalog); }
                 Check(host.Running, "inherited HTTP endpoint cannot override managed TLS binding");
             }
             Check(host.Running && new Uri(host.Address!).Scheme == "https" && new Uri(host.Address!).Host == ip && host.TrustedRootSha256 is not null, "HTTPS endpoint and verified CA identity");
             using var owner = new OnlineClient(host.Address!, settings.RootCaFile, "open");
             using var guest = new OnlineClient(host.Address!, settings.RootCaFile, "open");
+            try { await ServerCatalog.Download(host.Address + "/v1/server-catalog", settings.RootCaFile); throw new Exception("Managed host inherited catalog publication."); }
+            catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.NotFound) { }
+            Check(true, "managed host ignores inherited catalog and does not publish it");
             string suffix = Guid.NewGuid().ToString("N")[..8];
             var credentials = new Credentials("owner" + suffix, Guid.NewGuid().ToString("N"));
             await owner.Login(credentials, true);

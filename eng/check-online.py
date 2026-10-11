@@ -54,6 +54,13 @@ def main():
         report['transport'] = 'HTTPS' if context else 'HTTP_LOOPBACK'
         server = args.server or ROOT / 'src/OpenD2.Server/bin/Release/net10.0/OpenD2.Server.dll'
         command = ([str(args.server_exe.resolve())] if args.server_exe else [args.dotnet, str(server)]) + ['--urls', url, '--data', str(private/'data'), '--mode', args.mode]
+        if args.tls_fixtures:
+            fingerprint = hashlib.sha256(ssl.PEM_cert_to_DER_cert((certificates / 'ca.pem').read_text())).hexdigest().upper()
+            catalog = {'Version': 1, 'Servers': [{'Name': 'Packaged test server', 'Region': 'Test',
+                'Address': url, 'Mode': args.mode, 'RootCaSha256': fingerprint}]}
+            catalog_file = private / 'server-catalog.json'
+            catalog_file.write_text(json.dumps(catalog), encoding='utf-8')
+            command += ['--server-catalog', str(catalog_file)]
         client_command = None
         if args.godot:
             godot = (ROOT/'.local-tools/godot-path.txt').read_text().strip() if args.godot == 'auto' else args.godot
@@ -114,6 +121,12 @@ def main():
                 check_single_instance(client_command, output / 'single-instance', ROOT)
                 report['single_client_per_pc'] = 'PASS'
             start(1)
+            if args.tls_fixtures:
+                assert request('GET', '/v1/server-catalog') == catalog
+                report['server_catalog'] = 'PASS'
+            else:
+                request('GET', '/v1/server-catalog', expected=404)
+                report['server_catalog'] = 'NOT_RUN'
             passwords = [secrets.token_hex(16) for _ in range(3)]
             users = ['alice', 'bob', 'eve']
             tokens = [request('POST', '/v1/register', {'username': u, 'password': p})['token'] for u, p in zip(users, passwords)]
@@ -197,6 +210,8 @@ def main():
                     text = (evidence/f'godot-{role}.log').read_text(encoding='utf-8')
                     assert 'ERROR:' not in text and 'SCRIPT ERROR:' not in text, role
                     assert 'OPEND2_CONNECTION_GUIDANCE_UI_PASS' in text, role
+                    if args.tls_fixtures:
+                        assert 'OPEND2_PUBLISHED_CATALOG_UI_PASS ' + role in text, 'Published catalog download and selection missing'
                     assert 'OPEND2_ONLINE_TRANSPORT_PASS '+role in text, role
                     assert 'OPEND2_ONLINE_STREAM_PASS '+role in text, role
                     assert 'OPEND2_ONLINE_GAMEPLAY_PASS '+role in text, role
@@ -221,6 +236,7 @@ def main():
                     profiles = [json.loads((evidence / (role + '-result.json')).read_text())['user_data'] for role in ('host', 'guest')]
                     assert profiles[0] != profiles[1], 'Godot clients must have independent user data directories'
                 report['godot_transport'] = 'PASS'
+                report['catalog_download_ui'] = 'PASS' if args.tls_fixtures else 'NOT_RUN'
                 report['room_stream'] = 'WSS' if args.tls_fixtures else 'WS_LOOPBACK'
                 report['godot_gameplay'] = 'PASS'
                 report['lan_host_ui_binding'] = 'PASS' if args.mode == 'open' and os.environ.get('OPEND2_TEST_HOST_TLS_FIXTURES') and os.environ.get('OPEND2_TEST_HOST_EXE') else 'NOT_RUN'
