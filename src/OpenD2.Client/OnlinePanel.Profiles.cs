@@ -16,7 +16,7 @@ public partial class OnlinePanel
         var row = new HFlowContainer(); AddChild(row);
         Button(row, "Import Open profile", () => { ChooseProfile(false); return Task.CompletedTask; });
         Button(row, "Export Open profile", () => { ChooseProfile(true); return Task.CompletedTask; });
-        AddChild(new Label { Text = "Open preview: profile files contain name and victories only, not items or quests. Host server must be started separately.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+        AddChild(new Label { Text = "Open files include name, victories, bag, equipment and belt. Import creates a copy, not a sync. Quests/levels are not supported. Start the host server separately.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
     }
     private void ChooseProfile(bool export)
     {
@@ -27,7 +27,7 @@ public partial class OnlinePanel
         {
             FileMode = export ? FileDialog.FileModeEnum.SaveFile : FileDialog.FileModeEnum.OpenFile,
             Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.json ; OpenD2 personal profile"],
-            Title = export ? "Export profile to a NEW file (name and victories only)" : "Import Open profile (name and victories only)"
+            Title = export ? "Export profile to a NEW file (name, victories and owned items)" : "Import Open profile (name, victories and owned items)"
         };
         AddChild(dialog);
         dialog.Canceled += () => dialog.QueueFree();
@@ -47,7 +47,7 @@ public partial class OnlinePanel
     {
         RequireOpenProfile();
         await client!.ExportCharacter(SelectedCharacter(), path, lifetime.Token);
-        status.Text = "Profile exported: " + Path.GetFileName(path) + ". Name and victories only; existing files are never replaced.";
+        status.Text = "Profile exported: " + Path.GetFileName(path) + ". Owned items included; existing files are never replaced.";
     }
     private async Task ImportProfile(string path)
     {
@@ -55,7 +55,30 @@ public partial class OnlinePanel
         var imported = await client!.ImportCharacter(path, lifetime.Token);
         await Refresh();
         characters.Select(Array.FindIndex(characterList, c => c.Id == imported.Id));
-        status.Text = "Imported " + imported.Name + ". Name and victories only; existing characters were not replaced.";
+        status.Text = "Imported " + imported.Name + ". New copy with owned items; existing characters were not replaced.";
+    }
+    // Called after real gameplay/room closure; imports the earned items through the UI's file path.
+    private async Task CheckEarnedItemFile(string role, string folder, Guid original)
+    {
+        string path = Path.Combine(folder, role + "-character.json");
+        await ExportProfile(path);
+        var expected = OpenCharacterFile.Load(path);
+        if (role == "host" && expected.Inventory is not { Length: > 0 })
+            throw new InvalidDataException("Earned item export is empty.");
+        string copied = Path.Combine(folder, role + "-copy.json");
+        OpenCharacterFile.Save(copied, expected with { Name = role + "ItemCopy" });
+        await ImportProfile(copied);
+        if (SelectedCharacter() == original) throw new InvalidDataException("Import replaced the source character.");
+        Apply(await client!.Send<RoomView>(System.Net.Http.HttpMethod.Post, "v1/rooms",
+            new RoomRequest(SelectedCharacter(), "file" + role, ""), lifetime.Token));
+        Apply(await Room<RoomView>("start"));
+        var actual = state!.Items.Where(i => i.Owner.Value == state.Actor)
+            .Select(i => new OpenItem(i.Definition, i.Location, i.Slot)).ToArray();
+        if (!expected.Inventory!.SequenceEqual(actual)) throw new InvalidDataException("File import lost item placement.");
+        await Room<object>("close"); ClearRoom();
+        characters.Select(Array.FindIndex(characterList, c => c.Id == original));
+        File.Delete(path); File.Delete(copied);
+        GD.Print("OPEND2_OPEN_ITEM_FILE_PASS " + role + " DIALOG_GESTURES_NOT_RUN");
     }
     // Exercises the same selection and file operations used by the controls.
     // File-dialog gestures and physical GUI interaction remain manual acceptance.

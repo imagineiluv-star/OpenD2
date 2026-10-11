@@ -107,9 +107,39 @@ internal static class ModeContracts
             if (imported.Id == character.Id || imported.Name != character.Name || imported.Victories != character.Victories)
                 throw new Exception("TLS profile transfer did not assign a new owned identity.");
             var transferred = await peer.Send<OpenCharacter>(HttpMethod.Get, $"v1/characters/{imported.Id}/export");
-            if (transferred != OpenCharacterFile.Load(file)) throw new Exception("TLS imported profile mismatch.");
+            OpenItemTransferContracts.Same(OpenCharacterFile.Load(file), transferred);
             try { await peer.ImportCharacter(file); throw new Exception("Duplicate TLS import accepted."); }
             catch (HttpRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.Conflict) { }
+            string fullFile = file + ".full.json";
+            try
+            {
+                var full = OpenItemTransferContracts.FullCharacter();
+                OpenCharacterFile.Save(fullFile, full);
+                var packed = await peer.ImportCharacter(fullFile);
+                OpenItemTransferContracts.Same(full, await peer.Send<OpenCharacter>(HttpMethod.Get, $"v1/characters/{packed.Id}/export"));
+                var packedRoom = await peer.Send<RoomView>(HttpMethod.Post, "v1/rooms", new RoomRequest(packed.Id, "PackedRoom", ""));
+                var playing = await peer.Send<RoomView>(HttpMethod.Post, $"v1/rooms/{packedRoom.Id}/start");
+                if (playing.Items.Length != 46) throw new Exception("TLS request lost full inventory.");
+                await peer.Send<object>(HttpMethod.Post, $"v1/rooms/{packedRoom.Id}/close");
+                // Direct HTTP requests must enforce required item fields, not just the file loader.
+                try
+                {
+                    await peer.Send<CharacterInfo>(HttpMethod.Post, "v1/characters/import", new { version = 2,
+                        rules = OpenD2.Core.GameSimulation.RulesVersion, mode = "open", name = "MissingSlot", victories = 0,
+                        inventory = new[] { new { definition = 0, location = 1 } } });
+                    throw new Exception("HTTP import accepted missing item slot.");
+                }
+                catch (HttpRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.BadRequest) { }
+                try
+                {
+                    await peer.Send<CharacterInfo>(HttpMethod.Post, "v1/characters/import", full with { Name = "BadPlacement",
+                        Inventory = [new(OpenD2.Core.ItemDefinition.HealthPotion, OpenD2.Core.ItemLocation.Equipped, 0)] });
+                    throw new Exception("HTTP import accepted invalid equipment.");
+                }
+                catch (HttpRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.BadRequest) { }
+                Console.WriteLine("TLS OPEN ITEMS PASS full 46-item request, room admission and invalid HTTP rejection");
+            }
+            finally { if (File.Exists(fullFile)) File.Delete(fullFile); }
         }
         finally { if (File.Exists(file)) File.Delete(file); }
 
