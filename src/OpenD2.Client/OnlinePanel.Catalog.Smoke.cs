@@ -37,11 +37,28 @@ public partial class OnlinePanel
         catch (IOException) { } catch (UnauthorizedAccessException) { }
         if (connectionInvite != selected || visibleServers.Single().Region != "Local") throw new InvalidDataException("Failed storage changed UI.");
     }
-    private void CheckSignedInCatalogControls()
+    private async Task CheckCatalogDownloadControls(string folder, string fixtures)
+    {
+        var original = serverCatalog; var invite = connectionInvite;
+        string gameCa = caFile, current = address.Text;
+        string saved = Path.Combine(folder, "catalog-saved.json"), content = File.ReadAllText(saved);
+        catalogUrl.Text = personalHost.Address + "/health";
+        catalogCaFile = Path.Combine(fixtures, "other-ca.pem");
+        try { await DownloadCatalog(saved); throw new Exception("Wrong download CA accepted."); }
+        catch (System.Net.Http.HttpRequestException) { }
+        catalogCaFile = Path.Combine(fixtures, "ca.pem");
+        try { await DownloadCatalog(saved); throw new Exception("Health response accepted as server list."); }
+        catch (InvalidDataException) { }
+        if (serverCatalog != original || connectionInvite != invite || caFile != gameCa || address.Text != current || File.ReadAllText(saved) != content)
+            throw new InvalidDataException("Failed download changed stored list, selection or game trust.");
+        GD.Print("OPEND2_CATALOG_DOWNLOAD_UI_PASS TLS_FAILURE_PRESERVATION DIALOG_GESTURES_NOT_RUN");
+    }
+    private async Task CheckSignedInCatalogControls()
     {
         string current = address.Text;
         try { ApplyCatalogSelection(); throw new Exception("Signed-in catalog selection allowed."); } catch (InvalidOperationException) { }
         try { ImportCatalog("unused", "unused"); throw new Exception("Signed-in catalog import allowed."); } catch (InvalidOperationException) { }
+        try { await DownloadCatalog("unused"); throw new Exception("Signed-in catalog download allowed."); } catch (InvalidOperationException) { }
         if (!signedIn || address.Text != current) throw new InvalidDataException("Catalog changed the active session.");
         GD.Print("OPEND2_SERVER_CATALOG_UI_PASS FILE_DIALOG_GESTURE_NOT_RUN");
     }

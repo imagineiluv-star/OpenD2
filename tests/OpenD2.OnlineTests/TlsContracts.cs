@@ -36,6 +36,7 @@ internal static class TlsContracts
             File.WriteAllBytes(Path.Combine(fixtures, name + ".pfx"), leaf.Export(X509ContentType.Pfx, password));
             if (name == "valid") File.WriteAllText(Path.Combine(fixtures, "leaf.pem"), leaf.ExportCertificatePem());
         }
+        await CatalogDownloadContracts.Run(fixtures, password);
         await LanHostContracts.Run(server, fixtures, password);
         var checks = new List<string>();
         void Pass(string name) { checks.Add(name); Console.WriteLine("TLS PASS " + name); }

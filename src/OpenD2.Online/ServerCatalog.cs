@@ -38,13 +38,28 @@ public sealed record ServerCatalog(int Version, ServerEntry[] Servers)
         using var file = File.OpenRead(path);
         byte[] bytes = new byte[MaxBytes + 1];
         int count = file.ReadAtLeast(bytes, bytes.Length, throwOnEndOfStream: false);
-        if (count > MaxBytes) throw new InvalidDataException("Server catalog is too large.");
+        return Parse(bytes.AsSpan(0, count));
+    }
+    internal static ServerCatalog Parse(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length > MaxBytes) throw new InvalidDataException("Server catalog is too large.");
         try
         {
-            var catalog = JsonSerializer.Deserialize<ServerCatalog>(bytes.AsSpan(0, count), Json) ?? throw new InvalidDataException("Missing server catalog.");
+            var catalog = JsonSerializer.Deserialize<ServerCatalog>(bytes, Json) ?? throw new InvalidDataException("Missing server catalog.");
             catalog.Validate(); return catalog;
         }
         catch (JsonException) { throw new InvalidDataException("Invalid server catalog format."); }
+    }
+    public static async Task<ServerCatalog> Download(string address, string? caFile = null, CancellationToken cancellation = default)
+    {
+        if (address is null || address.Length > 2048 || !Uri.TryCreate(address, UriKind.Absolute, out var uri) ||
+            uri.Scheme != "https" || uri.UserInfo.Length != 0 || uri.Query.Length != 0 || uri.Fragment.Length != 0)
+            throw new InvalidDataException("Catalog URL must be HTTPS without credentials, query or fragment.");
+        // Reuse the established TLS policy in an isolated, never-authenticated connection.
+        string origin = uri.GetLeftPart(UriPartial.Authority);
+        new ConnectionInvite { Version = 1, Address = origin, Mode = "realm" }.Validate();
+        using var client = new OnlineClient(origin, caFile);
+        return await client.ReadCatalog(uri.AbsoluteUri, cancellation);
     }
     public void Save(string path)
     {
