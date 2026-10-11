@@ -37,6 +37,8 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
             for entry in archive.infolist():
                 if not entry.is_dir(): (extracted/entry.filename).chmod((entry.external_attr >> 16) & 0o777)
     executable = extracted/('OpenD2.Server.exe' if preset == 'Windows' else 'OpenD2.Server')
+    subprocess.run(['dotnet', 'run', '--project', 'tests/OpenD2.OnlineTests', '-c', 'Release', '--no-build', '--',
+                    '--host-server', str(executable)], cwd=ROOT, check=True)
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith('DOTNET_ROOT') and k.upper() != 'DOTNET_HOST_PATH'}
     env['PATH'] = os.pathsep.join([str(Path(os.environ['SystemRoot'])/'System32'), os.environ['SystemRoot']]) if preset == 'Windows' else '/usr/bin:/bin:/usr/sbin:/sbin'
     check = [sys.executable, 'eng/check-online.py', '--server-exe', str(executable),
@@ -53,13 +55,14 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
     subprocess.run(['dotnet', 'run', '--project', 'tests/OpenD2.OnlineTests', '-c', 'Release', '--no-build', '--',
         '--tls-server', str(executable), '--fixtures', str(certificates), '--output', 'artifacts/online/tls-contracts.json'],
         cwd=ROOT, env=tls_env, check=True)
+    env['OPEND2_TEST_HOST_EXE'] = str(executable)
     env['OPEND2_TEST_PFX_PASSWORD'] = tls_env['OPEND2_TEST_PFX_PASSWORD']
     subprocess.run(check + ['--tls-fixtures', str(certificates), '--output', 'artifacts/online/tls'], cwd=ROOT, env=env, check=True)
     subprocess.run(check + ['--mode', 'open', '--tls-fixtures', str(certificates), '--output', 'artifacts/online/open'], cwd=ROOT, env=env, check=True)
     with package.open('rb') as stream: digest = hashlib.file_digest(stream, 'sha256').hexdigest()
     (output/f'server-{rid}.json').write_text(json.dumps({'commit': os.environ.get('GITHUB_SHA', 'local'), 'runtime': rid,
         'file': package.name, 'sha256': digest, 'bytes': package.stat().st_size,
-        'extracted_server_and_two_clients': 'PASS', 'two_client_gameplay': 'PASS', 'tls_certificates': 'PASS', 'tls_two_client_gameplay': 'PASS',
+        'personal_host_lifecycle': 'PASS', 'extracted_server_and_two_clients': 'PASS', 'two_client_gameplay': 'PASS', 'tls_certificates': 'PASS', 'tls_two_client_gameplay': 'PASS',
         'open_tls_two_client_gameplay': 'PASS', 'open_profile_ui_binding': 'PASS', 'open_item_file_transfer': 'PASS',
         'room_stream_contracts': 'PASS', 'room_stream_transport': 'WSS',
         'rendered_gameplay': 'PASS' if rendered else 'NOT_RUN', 'gui': 'NOT_RUN'}, indent=2)+'\n')

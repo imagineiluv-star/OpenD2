@@ -8,7 +8,9 @@ namespace OpenD2.Client;
 public partial class OnlinePanel : VBoxContainer
 {
     private OnlineClient? client;
+    private string? connectedAddress;
     private string caFile = "";
+    private readonly Label trust = new() { Text = "Trust: system certificates", AutowrapMode = TextServer.AutowrapMode.WordSmart };
     private readonly CancellationTokenSource lifetime = new();
     private readonly LineEdit address = new() { Text = "http://127.0.0.1:5080", PlaceholderText = "Server HTTPS address" };
     private readonly LineEdit username = new() { PlaceholderText = "Account (3–24 letters/digits)" };
@@ -39,8 +41,9 @@ public partial class OnlinePanel : VBoxContainer
         serverMode.AddItem("Open — personal profiles (preview)");
         AddChild(serverMode);
         AddChild(address);
+        AddHostControls();
         var connection = new HFlowContainer(); AddChild(connection);
-        var trust = new Label { Text = "Trust: system certificates", AutowrapMode = TextServer.AutowrapMode.WordSmart }; AddChild(trust);
+        AddChild(trust);
         var certificate = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.pem,*.crt ; Public root CA certificate"] }; AddChild(certificate);
         certificate.FileSelected += file => { caFile = file; trust.Text = "Private CA selected: " + Path.GetFileName(file) + ". Check server to compare its SHA-256 with your administrator."; };
         Button(connection, "Check server", async () =>
@@ -123,7 +126,7 @@ public partial class OnlinePanel : VBoxContainer
         var next = new OnlineClient(address.Text, caFile, SelectedMode); var credentials = new Credentials(username.Text, password.Text); password.Text = "";
         try { await next.Login(credentials, register, lifetime.Token); }
         catch { next.Dispose(); throw; }
-        requests.Clear(); StopRoomStream(); client?.Dispose(); client = next; signedIn = true; serverMode.Disabled = true; ClearRoom(); status.Text = "Logged in to " + client.Mode + ". Select a character and room."; await Refresh();
+        requests.Clear(); StopRoomStream(); client?.Dispose(); client = next; connectedAddress = address.Text; signedIn = true; serverMode.Disabled = true; ClearRoom(); status.Text = "Logged in to " + client.Mode + ". Select a character and room."; await Refresh();
     }
     private async Task Refresh()
     {
@@ -195,9 +198,10 @@ public partial class OnlinePanel : VBoxContainer
         throw new TimeoutException("Room stream did not deliver a fresh state.");
     }
     private void ClearRoom() { StopRoomStream(); state = null; arena.State = null; arena.QueueRedraw(); details.Text = ""; moveX = moveY = 0; }
-    private void Reset() { requests.Clear(); signedIn = false; serverMode.Disabled = false; client?.Dispose(); client = null; ClearRoom(); characters.Clear(); rooms.Clear(); }
+    private void Reset() { requests.Clear(); signedIn = false; connectedAddress = null; serverMode.Disabled = false; client?.Dispose(); client = null; ClearRoom(); characters.Clear(); rooms.Clear(); }
     public override void _Process(double delta)
     {
+        UpdateHostStatus();
         if (state is null || client is null || busy) return;
         if (streamError is { } error)
         {
@@ -239,7 +243,7 @@ public partial class OnlinePanel : VBoxContainer
         else return;
         GetViewport().SetInputAsHandled();
     }
-    public override void _ExitTree() { StopRoomStream(); lifetime.Cancel(); client?.Dispose(); lifetime.Dispose(); }
+    public override void _ExitTree() { StopRoomStream(); lifetime.Cancel(); client?.Dispose(); personalHost.Dispose(); lifetime.Dispose(); }
 }
 
 public partial class OnlineArena : Control

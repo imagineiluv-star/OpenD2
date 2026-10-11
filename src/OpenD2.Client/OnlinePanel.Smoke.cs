@@ -76,6 +76,11 @@ public partial class OnlinePanel
             busy = true;
             GD.Print("OPEND2_ONLINE_TRANSPORT_PASS " + role + " GUI_NOT_RUN");
             await CheckGameplay(role, secret, character.Id, evidence);
+            if (mode == "open" && role == "host" && System.Environment.GetEnvironmentVariable("OPEND2_TEST_HOST_EXE") is { Length: > 0 } hostExe)
+            {
+                Reset();
+                await CheckPersonalHostControls(hostExe, Path.Combine(Path.GetTempPath(), "opend2-host-ui-" + run));
+            }
         }
         finally { busy = false; }
     }

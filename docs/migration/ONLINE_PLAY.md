@@ -212,3 +212,13 @@ OPEND2_ONLINE_RENDERED=1 xvfb-run -a -s "-screen 0 2400x1100x24" python eng/pack
 
 참고: https://learn.microsoft.com/en-us/aspnet/core/performance/rate-limit?view=aspnetcore-10.0
 https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.rfc2898derivebytes.pbkdf2?view=net-10.0
+
+
+### Start an Open host from the client
+
+In Online, log out, choose the extracted same-platform `OpenD2.Server` executable,
+then select **Start personal host**. Open mode and an available loopback port are
+selected automatically. Register/login, choose a character and create a room as usual.
+**Stop personal host** saves and stops that child; closing the client also stops it.
+The displayed data folder survives restarts. See [managed host scope and tests](ONLINE_MODES.md).
+This starts a same-PC host; other computers still require the HTTPS setup above.

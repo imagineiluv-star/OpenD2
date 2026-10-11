@@ -202,6 +202,8 @@ def main():
                     if args.mode == 'open':
                         assert 'OPEND2_OPEN_PROFILE_UI_PASS DIALOG_GESTURES_NOT_RUN' in text, role
                         assert f'OPEND2_OPEN_ITEM_FILE_PASS {role}' in text, 'Open earned-item file transfer missing'
+                        if role == 'host' and os.environ.get('OPEND2_TEST_HOST_EXE'):
+                            assert 'OPEND2_PERSONAL_HOST_UI_PASS' in text, 'Personal host UI binding missing'
                     result = json.loads((evidence / (role + '-result.json')).read_text())
                     assert result['result'] == 'PASS' and len(result['checks']) >= 11, role
                     assert result['observations'] == 'room-websocket-stream' and result['http_state_polling'] is False, role
@@ -213,6 +215,7 @@ def main():
                 report['godot_transport'] = 'PASS'
                 report['room_stream'] = 'WSS' if args.tls_fixtures else 'WS_LOOPBACK'
                 report['godot_gameplay'] = 'PASS'
+                report['personal_host_ui_binding'] = 'PASS' if args.mode == 'open' and os.environ.get('OPEND2_TEST_HOST_EXE') else 'NOT_RUN'
                 report['open_item_file_transfer'] = 'PASS' if args.mode == 'open' else 'NOT_RUN'
                 report['open_profile_ui_binding'] = 'PASS' if args.mode == 'open' else 'NOT_RUN'
                 report['rendered'] = 'PASS' if args.windowed else 'NOT_RUN'
