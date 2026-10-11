@@ -289,7 +289,26 @@ public partial class OnlinePanel : VBoxContainer
 
 public partial class OnlineArena : Control
 {
-    public RoomView? State { get; set; }
+    private static readonly CollisionGrid grid = Arena.Grid();
+    private readonly RoomPresentation presentation = new();
+    private RoomView? state;
+    private bool wasAnimating;
+    private static double Now => Time.GetTicksUsec() / 1_000_000.0;
+    public RoomView? State { get => state; set => SetState(value, Now); }
+    internal long PresentationTransitions => presentation.Transitions;
+    internal void SetState(RoomView? value, double now)
+    {
+        if (value is null) { presentation.Reset(); state = null; wasAnimating = false; }
+        else if (presentation.Push(value, now)) state = value;
+        QueueRedraw();
+    }
+    internal DisplayPosition Display(EntityState entity, double now) => presentation.Position(entity, now);
+    public override void _Process(double delta)
+    {
+        bool animating = presentation.IsAnimating(Now);
+        if (animating || wasAnimating) QueueRedraw();
+        wasAnimating = animating;
+    }
     public override void _GuiInput(InputEvent @event)
     {
         if (@event is InputEventMouseButton { Pressed: true }) GrabFocus();
@@ -297,13 +316,15 @@ public partial class OnlineArena : Control
     }
     public override void _Draw()
     {
-        float scale = Math.Min(Size.X / Arena.Width, Size.Y / Arena.Height); var grid = Arena.Grid();
+        float scale = Math.Min(Size.X / Arena.Width, Size.Y / Arena.Height);
         for (int y = 0; y < Arena.Height; y++) for (int x = 0; x < Arena.Width; x++) DrawRect(new(x * scale, y * scale, scale - 1, scale - 1), grid.At(x, y) == CollisionCell.Open ? new Color(0.12f, 0.19f, 0.14f) : new Color(0.28f, 0.28f, 0.3f));
         if (State is not { } state) return;
+        double now = Now;
         foreach (var item in state.Items.Where(i => i.Location == ItemLocation.Ground)) DrawCircle(new Vector2(item.Position.X, item.Position.Y) / 256 * scale, scale * 0.13f, Colors.Gold);
         foreach (var e in state.Entities)
         {
-            var p = new Vector2(e.Position.X, e.Position.Y) / 256 * scale;
+            var display = Display(e, now);
+            var p = new Vector2((float)display.X, (float)display.Y) / 256 * scale;
             DrawCircle(p, scale * 0.28f, !e.IsAlive ? Colors.Gray : e.Kind == EntityKind.Monster ? Colors.IndianRed : e.Id.Value == state.Actor ? Colors.Cyan : Colors.CornflowerBlue);
             DrawString(ThemeDB.FallbackFont, p + new Vector2(-10, -12), $"{e.Id.Value}:{e.Health}", fontSize: 13);
         }

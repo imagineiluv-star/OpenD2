@@ -16,6 +16,7 @@ public partial class OnlinePanel
             throw new InvalidDataException("Connection guidance UI binding failed.");
         GD.Print("OPEND2_CONNECTION_GUIDANCE_UI_PASS");
         CheckInputReceiptOrdering();
+        CheckRoomPresentation();
         busy = true;
         try
         {
@@ -99,6 +100,9 @@ public partial class OnlinePanel
                 await Task.Delay(100, lifetime.Token);
             }
             if (!observed) throw new InvalidDataException("Peer movement was not replicated.");
+            // Bursty/slow delivery may correctly snap every sample; counts are diagnostic,
+            // while the deterministic UI probe above verifies the actual display path.
+            GD.Print($"OPEND2_ROOM_PRESENTATION_LIVE {role} transitions={arena.PresentationTransitions}");
             GD.Print("OPEND2_ONLINE_STREAM_PASS " + role);
             // Observe actual decoded v2 frames, not only the advertised capability.
             for (int attempt = 0; attempt < 100 && client!.RoomDeltaFrames == 0; attempt++) await WaitForRoomUpdate();
