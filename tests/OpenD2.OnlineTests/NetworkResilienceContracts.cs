@@ -23,6 +23,7 @@ internal static class NetworkResilienceContracts
         double? serverCpuMs = null;
         long? peakWorkingSet = null;
         bool metricsAvailable = false;
+        SilentStreamContracts.Evidence? silentStream = null;
         var responseTimes = new List<double>();
         void Pass(string name) { checks.Add(name); Console.WriteLine("NETWORK PASS " + mode + " " + name); }
         try
@@ -159,6 +160,17 @@ internal static class NetworkResilienceContracts
             if (matchedStates == 0 || recovered.RoomDeltaFrames == 0) throw new Exception("Duration probe lacks authoritative matches.");
             Pass("bounded impaired-stream run matches peer hashes at identical ticks");
             proxy.Impaired = false;
+            // Retire the previous observer before the deliberate non-reading peer.
+            // This single login establishes the token reused throughout that probe.
+            var session = await recovered.Send<LoginResult>(HttpMethod.Post, "v1/login", credentials, stop);
+            await Wait(() => recoveredFeed.Finished, stop);
+            silentStream = await SilentStreamContracts.Run(url, ca, session, room.Id, restored.Actor, b.Id, sequence,
+                async () =>
+                {
+                    long tick = hostFeed.Latest!.Tick;
+                    await hostFeed.Until(v => v.Tick >= tick + 10, stop);
+                    await host.Send<CharacterInfo[]>(HttpMethod.Get, "v1/characters", cancellation: stop);
+                }, Pass, stop);
             await host.Send<object>(HttpMethod.Post, path + "/close", cancellation: stop);
             result = "PASS";
         }
@@ -170,13 +182,14 @@ internal static class NetworkResilienceContracts
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
                 File.WriteAllText(output, JsonSerializer.Serialize(new { result, mode, checks,
-                    scope = "loopback-two-production-dotnet-clients-through-encrypted-byte-relay",
-                    impairment = "5/10/15ms-per-chunk-max1024bytes-downstream-hold-and-TCP-cut",
+                    scope = "loopback-two-production-clients-byte-relay-and-raw-silent-WSS-peer",
+                    impairment = "5/10/15ms-per-chunk-max1024bytes-downstream-hold-TCP-cut-and-nonreading-WSS",
                     requested_seconds = seconds, sampled_seconds = sampledSeconds, elapsed_seconds = watch.Elapsed.TotalSeconds,
                     host_frames = hostFrames, guest_frames = guestFrames, inputs, matched_states = matchedStates, recovery_ms = recoveryMs,
                     server_process_metrics = metricsAvailable ? "PASS" : "UNAVAILABLE", server_cpu_ms = serverCpuMs, server_peak_sampled_working_set_bytes = peakWorkingSet,
                     http_response_ms = new { count = responseTimes.Count, p50 = Percentile(responseTimes, 0.50), p95 = Percentile(responseTimes, 0.95), max = Percentile(responseTimes, 1) },
                     gc_and_tick_execution_time = "NOT_RUN",
+                    silent_stream = silentStream,
                     proxy.DelayedWrites, proxy.BlockedPumps, proxy.CutConnections, proxy.ForwardedBytes, proxy.Writes,
                     setup_http_state_polling = true, measurement_http_state_polling = false,
                     physical_multi_pc = "NOT_RUN", wan = "NOT_RUN", packet_loss = "NOT_RUN", manual_gui = "NOT_RUN",
