@@ -31,12 +31,13 @@ internal static class RoomInterestContracts
         Check(RoomInterest.Project(original with { Started = false }).Entities == entities, "lobby unchanged");
         var peer = RoomInterest.Project(original with { Actor = 2, Host = false });
         Check(peer.Entities.Select(e => e.Id.Value).SequenceEqual(new uint[] { 1, 2 }) && peer.Items.Length == 2, "recipient-specific view and overflow-safe distance");
+        Boundary(original);
         RoomView? previous = null, decoded = null; long sent = 0, fullBytes = 0;
         for (int i = 1; i <= 600; i++)
         {
             var current = original with { Tick = i, NextSequence = i,
                 Entities = entities.Select(e => e.Id.Value == 1 ? e with { Position = new(i % 4 == 0 ? 0 : 2, 0), Region = new(i % 30 == 0 ? 2u : 1u) } : e).ToArray() };
-            var visible = RoomInterest.Project(current);
+            var visible = RoomInterest.Project(current, previous);
             var frame = RoomFrames.Create(visible, previous, i);
             bool membershipChanged = previous is not null && (!visible.Entities.Select(e => e.Id).SequenceEqual(previous.Entities.Select(e => e.Id)) ||
                 !visible.Items.Select(e => e.Id).SequenceEqual(previous.Items.Select(e => e.Id)));
@@ -56,4 +57,51 @@ internal static class RoomInterestContracts
         Check(JsonSerializer.Serialize(original) == untouched, "projection arrays independent");
         Console.WriteLine($"ROOM INTEREST PASS states=600 filtered-json={sent}B full-json={fullBytes}B boundary/region/party/items/overflow/entry-exit/reconnect/immutability");
     }
+    private static void Boundary(RoomView source)
+    {
+        int enter = RoomInterest.Radius, exit = RoomInterest.ExitRadius;
+        RoomView At(int distance, long tick = 1) => source with { Tick = tick,
+            Entities = source.Entities.Where(e => e.Id.Value is 1 or 100).Select(e => e.Id.Value == 100
+                ? e with { Position = new(distance, -distance) } : e).ToArray(),
+            Items = [source.Items[2] with { Position = new(distance, -distance) }] };
+        void Visible(RoomView view, bool expected, string reason) => Check(
+            view.Entities.Any(e => e.Id.Value == 100) == expected && (view.Items.Length == 1) == expected, reason);
+        var hidden = RoomInterest.Project(At(enter + 1));
+        Visible(hidden, false, "fresh connection uses entry radius");
+        var seen = RoomInterest.Project(At(enter), hidden);
+        Visible(seen, true, "inclusive entry boundary");
+        string baseline = JsonSerializer.Serialize(seen);
+        RoomView previous = seen; int transitions = 0;
+        for (int i = 0; i < 100; i++)
+        {
+            var view = RoomInterest.Project(At(enter + (i % 2), i + 2), previous);
+            if (view.Entities.Length != previous.Entities.Length) transitions++;
+            Visible(view, true, "boundary jitter retains actors and ground items");
+            previous = view;
+        }
+        Check(transitions == 0, "100 boundary crossings without visibility churn");
+        Visible(RoomInterest.Project(At(exit, 102), previous), true, "inclusive exit boundary");
+        var gone = RoomInterest.Project(At(exit + 1, 103), previous);
+        Visible(gone, false, "outside exit boundary");
+        Visible(RoomInterest.Project(At(enter + 1, 104), gone), false, "re-entry requires entry radius");
+        var band = At(enter + 1, 104);
+        Visible(RoomInterest.Project(band), false, "reconnect has no retained history");
+        Visible(RoomInterest.Project(band, seen), true, "connections have independent histories");
+        Visible(RoomInterest.Project(band with { Id = Guid.NewGuid() }, seen), false, "new room resets history");
+        Visible(RoomInterest.Project(band, seen with { Actor = 2 }), false, "new actor resets history");
+        Visible(RoomInterest.Project(band, seen with { Started = false }), false, "lobby resets history");
+        Visible(RoomInterest.Project(band with { Tick = 0 }, seen), false, "tick rewind resets history");
+        Visible(RoomInterest.Project(band with {
+            Entities = band.Entities.Select(e => e with { Region = new(2) }).ToArray(),
+            Items = band.Items.Select(i => i with { Region = new(2) }).ToArray() }, seen), false, "region transition resets history");
+        var removed = RoomInterest.Project(band with { Entities = [band.Entities[0]], Items = [] }, seen);
+        Visible(removed, false, "deleted records cannot survive in history");
+        var inventory = seen with { Items = [seen.Items[0] with { Location = ItemLocation.Inventory, Owner = new(1) }] };
+        Check(RoomInterest.Project(band, inventory).Items.Length == 0, "newly dropped item uses entry radius");
+        var picked = RoomInterest.Project(band with { Items = inventory.Items }, gone);
+        Check(picked.Items.SequenceEqual(inventory.Items), "party inventory remains visible outside ground radius");
+        Check(JsonSerializer.Serialize(seen) == baseline, "history remains immutable");
+        Console.WriteLine("ROOM INTEREST HYSTERESIS PASS jitter=100 entry/exit/reconnect/isolation/region/rewind/items/deletion");
+    }
+
 }
