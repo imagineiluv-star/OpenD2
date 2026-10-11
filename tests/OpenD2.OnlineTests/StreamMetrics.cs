@@ -7,17 +7,18 @@ internal static class StreamMetrics
 {
     // One monotonic clock; reconstructed JSON is not wire traffic.
     internal static async Task Measure(OnlineClient host, IAsyncEnumerator<RoomView> peer,
-        string path, long sequence, string output, CancellationToken stop)
+        long sequence, string output, CancellationToken stop)
     {
         int health = peer.Current.Entities.Single(e => e.Id.Value == 1).Health;
         if (health <= 0) throw new Exception("Metrics require a living actor.");
+        if (!host.SupportsInputReceipts) throw new Exception("Metrics require negotiated input receipts.");
         var json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
         var gaps = new List<double>();
         var latencies = new List<double>();
         var http = new List<double>();
         var applied = new List<double>();
         var samples = new List<object>();
-        long bytes = 0, previousTick = peer.Current.Tick;
+        long bytes = 0, inputBytes = 0, previousTick = peer.Current.Tick;
         var duration = Stopwatch.StartNew();
         double previous = duration.Elapsed.TotalMilliseconds;
         for (int i = 0; i < 100; i++)
@@ -35,13 +36,14 @@ internal static class StreamMetrics
             int before = peer.Current.Entities.Single(e => e.Id.Value == 1).Position.X;
             int direction = i % 2 == 0 ? -1 : 1;
             var elapsed = Stopwatch.StartNew();
-            var reply = await host.Send<RoomView>(HttpMethod.Post, path + "/input",
+            var reply = await host.SendInput(peer.Current.Id,
                 new InputRequest(sequence, CommandKind.SetMove, direction, 0), stop);
             double httpMs = elapsed.Elapsed.TotalMilliseconds;
             double? appliedMs = null;
-            int maxHitStun = reply.Entities.Single(e => e.Id.Value == 1).HitStun;
+            int maxHitStun = 0;
             int observedFrames = 0;
             sequence = reply.NextSequence;
+            inputBytes += JsonSerializer.SerializeToUtf8Bytes(reply, json).Length;
             do
             {
                 if (!await peer.MoveNextAsync()) throw new Exception("Missing measured movement.");
@@ -58,9 +60,10 @@ internal static class StreamMetrics
             samples.Add(new { index = i, http_response_ms = httpMs, direction_observed_ms = appliedMs.Value,
                 movement_observed_ms = movementMs, max_hit_stun = maxHitStun, observed_frames = observedFrames,
                 accepted_tick = reply.Tick, movement_tick = peer.Current.Tick });
-            var stopped = await host.Send<RoomView>(HttpMethod.Post, path + "/input",
+            var stopped = await host.SendInput(peer.Current.Id,
                 new InputRequest(sequence, CommandKind.SetMove, 0, 0), stop);
             sequence = stopped.NextSequence;
+            inputBytes += JsonSerializer.SerializeToUtf8Bytes(stopped, json).Length;
             do
             {
                 if (!await peer.MoveNextAsync()) throw new Exception("Missing measured stop.");
@@ -73,6 +76,7 @@ internal static class StreamMetrics
         File.WriteAllText(output, JsonSerializer.Serialize(new
         {
             result = "PASS", scope = "loopback-https-input-wss-peer-observation",
+            input_response = "receipt-v1", input_responses = 100, reconstructed_input_json_bytes = inputBytes,
             timing = "single-client-monotonic-clock", input_to_peer_ms = Summary(latencies),
             http_response_ms = Summary(http), direction_observed_ms = Summary(applied), samples,
             observation_note = "Direction and movement observations follow HTTP response completion; buffered frames are included. Nearby attacker defeated before sampling; actor health unchanged. Not transport RTT.",

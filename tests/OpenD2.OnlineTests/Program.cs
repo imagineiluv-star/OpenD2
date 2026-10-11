@@ -13,6 +13,7 @@ if (args is ["--host-server", var hostServer])
     return;
 }
 if (args.Length != 0) throw new ArgumentException("Unknown online test arguments.");
+await InputReceiptContracts.Run();
 ServerCatalogContracts.Run();
 TimedInviteContracts.Run();
 ConnectionInviteContracts.Run();

@@ -210,16 +210,32 @@ public sealed partial class Realm : IDisposable
     {
         lock (gate)
         {
-            var (r, c) = Access(token, id); Need(r.Game is not null, 409, "Start the room first.");
-            var m = r.Saved.Members.Single(m => m.Character == c.Id);
-            Need(input.Sequence > m.ClientSequence && input.Sequence < long.MaxValue, 409, "Stale input sequence.");
-            var e = r.Game!.GetEntity(new(m.Actor)); var cursor = r.Game.CaptureSnapshot().Inputs.Single(i => i.Actor == e.Id);
-            var result = r.Game.Submit(new(r.Game.Tick + 1, cursor.Sequence + 1, e.Id, e.Region, input.Kind, input.X, input.Y, new(input.Target), new(input.Item)));
-            Need(result == CommandResult.Accepted, 400, "Command rejected: " + result);
-            r.Saved = r.Saved with { Members = r.Saved.Members.Select(x => x == m ? x with { ClientSequence = input.Sequence } : x).ToArray() };
-            if (input.Kind == CommandKind.SetMove) r.Moved[c.Id] = clock.GetUtcNow();
+            var (r, c, _) = QueueInput(token, id, input);
             return View(r, c);
         }
+    }
+    public InputReceipt AcknowledgeInput(string token, Guid id, InputRequest input)
+    {
+        lock (gate)
+        {
+            var (r, _, actor) = QueueInput(token, id, input);
+            return new(id, actor, input.Sequence + 1, r.Game!.Tick);
+        }
+    }
+    // Both response formats share authorization, ownership, sequence and lease handling.
+    // Caller holds gate, including construction of the response.
+    private (Room Room, Character Character, uint Actor) QueueInput(string token, Guid id, InputRequest input)
+    {
+        var (r, c) = Access(token, id); Need(r.Game is not null, 409, "Start the room first.");
+        var m = r.Saved.Members.Single(m => m.Character == c.Id);
+        Need(input.Sequence > m.ClientSequence && input.Sequence < long.MaxValue, 409, "Stale input sequence.");
+        var e = r.Game!.GetEntity(new(m.Actor)); var cursor = r.Game.CaptureSnapshot().Inputs.Single(i => i.Actor == e.Id);
+        var result = r.Game.Submit(new(r.Game.Tick + 1, cursor.Sequence + 1, e.Id, e.Region, input.Kind, input.X, input.Y, new(input.Target), new(input.Item)));
+        Need(result == CommandResult.Accepted, 400, "Command rejected: " + result);
+        r.Saved = r.Saved with { Members = r.Saved.Members.Select(x => x == m ? x with { ClientSequence = input.Sequence } : x).ToArray() };
+        r.Seen[c.Id] = clock.GetUtcNow();
+        if (input.Kind == CommandKind.SetMove) r.Moved[c.Id] = clock.GetUtcNow();
+        return (r, c, m.Actor);
     }
     private static void Stop(Room r, Member m)
     {

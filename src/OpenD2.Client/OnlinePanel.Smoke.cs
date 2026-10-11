@@ -15,6 +15,7 @@ public partial class OnlinePanel
         if (!status.Text.Contains("certificate SAN", StringComparison.Ordinal) || status.Text.Contains("private transport detail", StringComparison.Ordinal))
             throw new InvalidDataException("Connection guidance UI binding failed.");
         GD.Print("OPEND2_CONNECTION_GUIDANCE_UI_PASS");
+        CheckInputReceiptOrdering();
         busy = true;
         try
         {
@@ -25,6 +26,7 @@ public partial class OnlinePanel
             address.Text = url; username.Text = role + run; password.Text = Guid.NewGuid().ToString("N");
             string secret = password.Text;
             await Login(true);
+            if (!client!.SupportsInputReceipts) throw new InvalidDataException("Packaged server did not advertise input receipts.");
             var character = await client!.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest(role + "Hero"), lifetime.Token);
             await Refresh();
             characters.Select(Array.FindIndex(characterList, c => c.Id == character.Id));
@@ -81,6 +83,7 @@ public partial class OnlinePanel
             busy = true;
             GD.Print("OPEND2_ONLINE_TRANSPORT_PASS " + role + " GUI_NOT_RUN");
             await CheckGameplay(role, secret, character.Id, evidence);
+            GD.Print("OPEND2_INPUT_RECEIPT_GAMEPLAY_PASS " + role);
             if (mode == "open" && role == "host" && System.Environment.GetEnvironmentVariable("OPEND2_TEST_HOST_EXE") is { Length: > 0 } hostExe)
             {
                 Reset();
