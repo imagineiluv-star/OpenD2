@@ -196,6 +196,7 @@ def main():
                     assert child.returncode == 0, role
                     text = (evidence/f'godot-{role}.log').read_text(encoding='utf-8')
                     assert 'ERROR:' not in text and 'SCRIPT ERROR:' not in text, role
+                    assert 'OPEND2_CONNECTION_GUIDANCE_UI_PASS' in text, role
                     assert 'OPEND2_ONLINE_TRANSPORT_PASS '+role in text, role
                     assert 'OPEND2_ONLINE_STREAM_PASS '+role in text, role
                     assert 'OPEND2_ONLINE_GAMEPLAY_PASS '+role in text, role
