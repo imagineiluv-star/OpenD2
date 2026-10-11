@@ -162,7 +162,8 @@ internal static class StreamContracts
         await member.Login(credentials, true, stop);
         var character = await member.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest("RawMember"), stop);
         await member.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(character.Id, ""), stop);
-        // This fresh token is used only by the raw protocol-boundary probes below.
+        // Denied handshakes reuse one token; successful streams use distinct sessions.
+        var session = await member.Send<LoginResult>(HttpMethod.Post, "v1/login", credentials, stop);
         using var root = X509Certificate2.CreateFromPem(File.ReadAllText(ca));
         using var handler = new SocketsHttpHandler { AllowAutoRedirect = false };
         handler.SslOptions.CertificateChainPolicy = new() { TrustMode = X509ChainTrustMode.CustomRootTrust,
@@ -171,7 +172,8 @@ internal static class StreamContracts
         var uri = new UriBuilder(new Uri(new Uri(url), path + "/stream")) { Scheme = "wss" }.Uri;
         foreach (var (expected, protocol) in new[] { (400, ""), (403, "opend2.room.v1"), (403, RoomFrames.Protocol), (403, RoomInterest.Protocol), (0, "opend2.room.v1"), (0, RoomFrames.Protocol), (0, RoomInterest.Protocol) })
         {
-            var session = await member.Send<LoginResult>(HttpMethod.Post, "v1/login", credentials, stop);
+            if (expected == 0 && protocol != "opend2.room.v1")
+                session = await member.Send<LoginResult>(HttpMethod.Post, "v1/login", credentials, stop);
             using var socket = new ClientWebSocket();
             socket.Options.CollectHttpResponseDetails = true;
             socket.Options.SetRequestHeader("Authorization", "Bearer " + session.Token);
