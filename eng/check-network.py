@@ -41,7 +41,10 @@ def main():
         for mode in ('realm', 'open'):
             evidence = json.loads((destination / ('network-' + mode + '.json')).read_text())
             if (evidence.get('result') != 'PASS' or evidence.get('mode') != mode
-                    or len(evidence.get('checks', [])) != 6 or evidence.get('matched_states', 0) < 1
+                    or len(evidence.get('checks', [])) != 8 or evidence.get('matched_states', 0) < 1
+                    or evidence.get('silent_stream', {}).get('Result') != 'PASS'
+                    or evidence.get('silent_stream', {}).get('ConflictResponses', 0) < 1
+                    or not 0 < evidence.get('silent_stream', {}).get('EvictionMs', 0) < 20000
                     or evidence.get('sampled_seconds', 0) < args.seconds
                     or any(evidence.get(key) != 'NOT_RUN' for key in ('physical_multi_pc', 'wan', 'packet_loss', 'manual_gui', 'capacity', 'long_duration'))):
                 raise ValueError('Incomplete network evidence: ' + mode)
