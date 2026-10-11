@@ -23,6 +23,27 @@ public partial class OnlinePanel
         arena.State = null;
         Godot.GD.Print("OPEND2_ROOM_PRESENTATION_UI_PASS");
     }
+    private void CheckRoomPrediction()
+    {
+        var me = new EntityState(new(1), new(1), new(768, 768));
+        var view = new RoomView(Guid.NewGuid(), "Prediction", true, true, 1, 1, 0, "authoritative", [], [me], []);
+        arena.SetState(view, 1); arena.PredictMove(1, 1, 0, 1);
+        if (arena.Display(me, 1.02).X != 784 || !ReferenceEquals(arena.State, view) || view.Entities[0] != me)
+            throw new Exception("Local prediction did not use render-only coordinates.");
+        arena.AcceptInput(new(view.Id, 1, 2, 0));
+        if (arena.Display(me, 1.04).X != 800) throw new Exception("Receipt incorrectly completed predicted movement.");
+        var applied = view with { Tick = 1, NextSequence = 2 };
+        arena.SetState(applied, 1.08); // Server can reject movement through collision.
+        if (arena.Display(me, 1.10).X != 768 || !ReferenceEquals(arena.State, applied))
+            throw new Exception("Authoritative position did not correct local prediction.");
+        arena.PredictMove(2, -1, 0, 1.10); arena.CancelPrediction();
+        if (arena.Display(me, 1.12).X != 768) throw new Exception("Cancelled input retained prediction.");
+        arena.State = null; arena.SetState(view, 2);
+        if (arena.Display(me, 2.02).X != 768 || arena.PredictionStarts != 0)
+            throw new Exception("Reconnect retained local prediction.");
+        arena.State = null;
+        Godot.GD.Print("OPEND2_ROOM_PREDICTION_UI_PASS");
+    }
     private void CheckInputReceiptOrdering()
     {
         // Deterministic ordering probe before login, with no network connection.
