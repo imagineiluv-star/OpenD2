@@ -143,6 +143,7 @@ public partial class OnlinePanel
                 password.Text = secret; await Login(false);
                 characters.Select(Array.FindIndex(characterList, c => c.Id == character));
                 Apply(await client!.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(SelectedCharacter(), ""), lifetime.Token));
+                await Poll(); // Compare the same negotiated projection on both sides of reconnect.
                 Check(state!.Id == room && state.Actor == actor && state.NextSequence == sequence && state.Items.SequenceEqual(inventory),
                     disconnected + " reconnect preserves room actor sequence and all items");
                 // A successful login alone is not reconnect acceptance: require a new
@@ -184,7 +185,9 @@ public partial class OnlinePanel
         await Wait("server-restarted");
         password.Text = secret; await Login(false);
         Apply(await client!.Send<RoomView>(HttpMethod.Post, path + "/join", new JoinRequest(character, ""), lifetime.Token));
-        Check(state!.Entities.All(e => before[e.Id] == (e.Position, e.Health)) && state.Items.SequenceEqual(beforeItems), "Hard server restart restores positions health and inventory");
+        await Poll(); // Join is a full HTTP response; restart acceptance compares WSS projections.
+        Check(state!.Entities.Length == before.Count && state.Entities.All(e => before.TryGetValue(e.Id, out var value) && value == (e.Position, e.Health)) &&
+            state.Items.SequenceEqual(beforeItems), "Hard server restart restores visible positions health and inventory");
         Acceptance("server_restart");
         await Capture("restored"); await Barrier("restored");
         if (role == "host") await Room<object>("close");

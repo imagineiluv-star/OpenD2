@@ -61,6 +61,7 @@ internal static class StreamCapacityContracts
                 else
                     await Admit(() => client.Send<RoomView>(HttpMethod.Post, $"v1/rooms/{rooms[^1]}/join", new JoinRequest(character.Id, ""), stop));
             }
+            if (clients.Any(c => !c.SupportsRoomInterest)) throw new Exception("Capacity server must negotiate the current v3 interest protocol.");
             // Exercise ordinary gameplay to remove the nearby attacker before transport sampling.
             // Starting each room only when ready avoids a passive survival race during setup.
             for (int group = 0; group < 8; group++)
@@ -110,11 +111,20 @@ internal static class StreamCapacityContracts
                         {
                             feeds[i].Check();
                             return feeds[i].History.Where(v => v.Tick > after && v.NextSequence == sequence[i])
-                                .GroupBy(v => v.Tick).ToDictionary(g => g.Key, g => g.Last().StateHash);
+                                .GroupBy(v => v.Tick).ToDictionary(g => g.Key, g => g.Last());
                         }).ToArray();
                         var ticks = histories[0].Keys.Where(t => histories.All(h => h.ContainsKey(t))).ToArray();
                         foreach (long tick in ticks)
-                            if (histories.Any(h => h[tick] != histories[0][tick])) throw new Exception("Room peers disagree at the same post-input tick.");
+                        {
+                            var baseline = histories[0][tick];
+                            var party = baseline.Members.Select(m => m.Actor).ToHashSet();
+                            var actors = baseline.Entities.Where(e => party.Contains(e.Id.Value)).ToArray();
+                            var items = baseline.Items.Where(i => party.Contains(i.Owner.Value)).ToArray();
+                            if (actors.Length != 4 || histories.Any(h => h[tick].StateHash != baseline.StateHash ||
+                                !h[tick].Entities.Where(e => party.Contains(e.Id.Value)).SequenceEqual(actors) ||
+                                !h[tick].Items.Where(i => party.Contains(i.Owner.Value)).SequenceEqual(items)))
+                                throw new Exception("Room peers disagree on the global hash or party state at the same post-input tick.");
+                        }
                         return ticks.Length > 0;
                     }, stop);
                     matches++;
@@ -194,6 +204,7 @@ internal static class StreamCapacityContracts
                 File.WriteAllText(output, JsonSerializer.Serialize(new { result, mode, checks,
                     scope = "loopback-32-production-dotnet-clients-eight-four-player-rooms-plus-admission-probe",
                     active_rooms = 8, simultaneous_streams = 32, admission_probe_clients = 1,
+                    room_interest = clients.Count == 33 && clients.All(c => c.SupportsRoomInterest) ? "v3" : "NOT_VERIFIED",
                     requested_seconds = seconds, sampled_seconds = sampled, elapsed_seconds = elapsed.Elapsed.TotalSeconds,
                     rounds, inputs, matched_room_rounds = matches, frames, slot_recovery_ms = recovery, setup_throttle_waits = throttles,
                     http_response_ms = new { measured = inputs, retained = sorted.Length, window = "last-4096-requests", p50 = Percentile(.5), p95 = Percentile(.95), max = Percentile(1) },

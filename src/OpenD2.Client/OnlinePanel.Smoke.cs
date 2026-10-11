@@ -76,11 +76,15 @@ public partial class OnlinePanel
             for (int attempt = 0; attempt < 100; attempt++)
             {
                 await WaitForRoomUpdate();
-                if (role == "host" && state!.Members.Length == 2 && !state.Started) Apply(await Room<RoomView>("start"));
+                if (role == "host" && state!.Members.Length == 2 && !state.Started)
+                {
+                    Apply(await Room<RoomView>("start"));
+                    continue; // The HTTP response is full; validate the next negotiated WSS view.
+                }
                 if (state!.Started) { started = true; break; }
                 await Task.Delay(100, lifetime.Token);
             }
-            if (!started || state!.Members.Length != 2 || state.Entities.Length != 4 || details.Text.Length == 0 || arena.State != state) throw new InvalidDataException("Online view/room start failed.");
+            if (!started || state!.Members.Length != 2 || !state.Entities.Select(e => e.Id.Value).Order().SequenceEqual(new uint[] { 1, 2, 100 }) || details.Text.Length == 0 || arena.State != state) throw new InvalidDataException("Online view/room start failed.");
             Acceptance("same_room");
             await Refresh();
             rooms.Select(Array.FindIndex(roomList, r => r.Id == state.Id));
@@ -104,11 +108,13 @@ public partial class OnlinePanel
             // while the deterministic UI probe above verifies the actual display path.
             GD.Print($"OPEND2_ROOM_PRESENTATION_LIVE {role} transitions={arena.PresentationTransitions}");
             GD.Print("OPEND2_ONLINE_STREAM_PASS " + role);
-            // Observe actual decoded v2 frames, not only the advertised capability.
+            // Observe actual decoded v3 frames, not only the advertised capability.
             for (int attempt = 0; attempt < 100 && client!.RoomDeltaFrames == 0; attempt++) await WaitForRoomUpdate();
             if (!client!.SupportsRoomDeltas || client.RoomFullFrames == 0 || client.RoomDeltaFrames == 0)
                 throw new InvalidDataException("Packaged client did not reconstruct a delta stream.");
             GD.Print("OPEND2_ROOM_DELTA_UI_PASS " + role);
+            if (!client.SupportsRoomInterest) throw new InvalidDataException("Packaged client did not negotiate interest filtering.");
+            GD.Print("OPEND2_ROOM_INTEREST_UI_PASS " + role);
             bool handled = false;
             UserAction(() => { handled = true; return Task.CompletedTask; });
             if (handled || requests.Count != 1) throw new InvalidDataException("Busy user action was not queued.");
