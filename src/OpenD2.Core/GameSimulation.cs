@@ -96,6 +96,31 @@ public sealed partial class GameSimulation
 	public EntityState GetEntity(EntityId id) => entities[indices.TryGetValue(id, out int index) ? index : throw new ArgumentException("Unknown entity.", nameof(id))];
 	public CommandResult Submit(GameCommand command)
 	{
+		var result = ValidateCommand(command);
+		if (result == CommandResult.Accepted) QueueCommand(command);
+		return result;
+	}
+	public const int MaxCommandBatch = 8;
+	// One actor and one execution tick. Validate the entire bounded group before
+	// changing queues/cursors; the single owner must not Step during submission.
+	public CommandResult SubmitBatch(ReadOnlySpan<GameCommand> batch)
+	{
+		if (batch.Length is < 1 or > MaxCommandBatch) return CommandResult.InvalidCommand;
+		for (int i = 0; i < batch.Length; i++)
+		{
+			var command = batch[i];
+			if (command.Actor != batch[0].Actor || command.Tick != batch[0].Tick) return CommandResult.InvalidCommand;
+			var result = ValidateCommand(command);
+			if (result != CommandResult.Accepted) return result;
+			if (i > 0 && command.Sequence <= batch[i - 1].Sequence) return CommandResult.StaleSequence;
+		}
+		if (batch.Length > MaxPendingCommands - commands.Count) return CommandResult.QueueFull;
+		if (batch.Length > MaxCommandsPerTick - counts.GetValueOrDefault(batch[0].Tick)) return CommandResult.TickFull;
+		foreach (var command in batch) QueueCommand(command);
+		return CommandResult.Accepted;
+	}
+	private CommandResult ValidateCommand(GameCommand command)
+	{
 		if (command.Sequence == 0 || !Enum.IsDefined(command.Kind) ||
 			!ValidCommandCoordinates(command) ||
 			(command.Kind is not (CommandKind.Attack or CommandKind.CastSkill or CommandKind.Interact) && command.Target != default) ||
@@ -114,8 +139,13 @@ public sealed partial class GameSimulation
 		if (commands.Count >= MaxPendingCommands) return CommandResult.QueueFull;
 		int count = counts.GetValueOrDefault(command.Tick);
 		if (count >= MaxCommandsPerTick) return CommandResult.TickFull;
-		commands.Enqueue(command, (command.Tick, command.Actor.Value, command.Sequence)); counts[command.Tick] = count + 1;
-		inputs[index] = new(command.Actor, command.Sequence, command.Tick); return CommandResult.Accepted;
+		return CommandResult.Accepted;
+	}
+	private void QueueCommand(GameCommand command)
+	{
+		commands.Enqueue(command, (command.Tick, command.Actor.Value, command.Sequence));
+		counts[command.Tick] = counts.GetValueOrDefault(command.Tick) + 1;
+		inputs[indices[command.Actor]] = new(command.Actor, command.Sequence, command.Tick);
 	}
 	public void Step()
 	{

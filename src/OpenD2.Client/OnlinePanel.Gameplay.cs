@@ -72,8 +72,7 @@ public partial class OnlinePanel
                 await MoveToward(target);
             else
             {
-                await InputCommand(CommandKind.SetMove);
-                await InputCommand(kind, target: 100);
+                await InputWithMovement(kind, target: 100);
             }
         }
         async Task Capture(string stage)
@@ -112,6 +111,8 @@ public partial class OnlinePanel
         await Until(() => !Entity(100).IsAlive && state!.Items.Any(i => i.Location == ItemLocation.Ground), "Loot stream was not observed");
         Check(!Entity(100).IsAlive && state!.Items.Any(i => i.Location == ItemLocation.Ground), "Monster death and loot replicated");
         Acceptance("combat_sync");
+        Check(client!.SupportsInputBatches && client.InputBatchRequests > 0, "Combat used accepted movement/action batches");
+        GD.Print("OPEND2_INPUT_BATCH_UI_PASS " + role);
         var loot = state!.Items.First(i => i.Location == ItemLocation.Ground);
         await Capture("combat");
         await Barrier("loot-observed");

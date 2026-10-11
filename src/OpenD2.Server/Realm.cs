@@ -222,6 +222,35 @@ public sealed partial class Realm : IDisposable
             return new(id, actor, input.Sequence + 1, r.Game!.Tick);
         }
     }
+    public InputReceipt BatchInput(string token, Guid id, InputBatchRequest batch)
+    {
+        lock (gate)
+        {
+            var (r, c) = Access(token, id); Need(r.Game is not null, 409, "Start the room first.");
+            Need(batch?.Inputs is { Length: >= 1 and <= GameSimulation.MaxCommandBatch }, 400, "Expected 1..8 inputs.");
+            var inputs = batch!.Inputs;
+            var m = r.Saved.Members.Single(m => m.Character == c.Id);
+            var game = r.Game!; var e = game.GetEntity(new(m.Actor));
+            var cursor = game.CaptureSnapshot().Inputs.Single(i => i.Actor == e.Id);
+            Need(cursor.Sequence <= ulong.MaxValue - (ulong)inputs.Length, 409, "Input sequence exhausted.");
+            Span<GameCommand> commands = stackalloc GameCommand[inputs.Length];
+            for (int i = 0; i < inputs.Length; i++)
+            {
+                var input = inputs[i];
+                Need(input is not null, 400, "Missing input.");
+                Need(input!.Sequence > m.ClientSequence && input.Sequence < long.MaxValue &&
+                    (i == 0 || input.Sequence == inputs[i - 1].Sequence + 1), 409, "Stale or non-contiguous input sequence.");
+                commands[i] = new(game.Tick + 1, cursor.Sequence + (ulong)i + 1, e.Id, e.Region,
+                    input.Kind, input.X, input.Y, new(input.Target), new(input.Item));
+            }
+            var result = game.SubmitBatch(commands);
+            Need(result == CommandResult.Accepted, 400, "Command batch rejected: " + result);
+            r.Saved = r.Saved with { Members = r.Saved.Members.Select(x => x == m ? x with { ClientSequence = inputs[^1].Sequence } : x).ToArray() };
+            var now = clock.GetUtcNow(); r.Seen[c.Id] = now;
+            if (inputs.Any(input => input.Kind == CommandKind.SetMove)) r.Moved[c.Id] = now;
+            return new(id, m.Actor, inputs[^1].Sequence + 1, game.Tick);
+        }
+    }
     // Both response formats share authorization, ownership, sequence and lease handling.
     // Caller holds gate, including construction of the response.
     private (Room Room, Character Character, uint Actor) QueueInput(string token, Guid id, InputRequest input)

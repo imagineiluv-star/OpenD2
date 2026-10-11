@@ -30,6 +30,23 @@ internal static class StreamContracts
         await RawContracts(url, ca, path, password, stop);
         Pass("origin and subprotocol rejected; application messages disconnect the stream");
         var started = await host.Send<RoomView>(HttpMethod.Post, path + "/start", cancellation: stop);
+        async Task RejectBatch(OnlineClient sender, object body, HttpStatusCode expected)
+        {
+            try { await sender.Send<InputReceipt>(HttpMethod.Post, path + "/input/batch", body, stop); }
+            catch (HttpRequestException error) when (error.StatusCode == expected) { return; }
+            throw new Exception("Expected TLS batch rejection " + expected);
+        }
+        var batch = new InputBatchRequest([new(1, CommandKind.SetMove), new(2, CommandKind.SetMove)]);
+        await RejectBatch(outsider, batch, HttpStatusCode.Forbidden);
+        await RejectBatch(host, new InputBatchRequest([new(1, CommandKind.SetMove), new(2, CommandKind.SetMove, 999)]), HttpStatusCode.BadRequest);
+        await RejectBatch(host, new InputBatchRequest([null!]), HttpStatusCode.BadRequest);
+        await RejectBatch(host, new { inputs = batch.Inputs, extra = true }, HttpStatusCode.BadRequest);
+        if (!host.SupportsInputBatches || (await host.SendInputs(room.Id, batch.Inputs, stop)).NextSequence != 3)
+            throw new Exception("Atomic TLS batch failed after rejected requests.");
+        await RejectBatch(host, batch, HttpStatusCode.Conflict);
+        started = await host.Send<RoomView>(HttpMethod.Get, path, cancellation: stop);
+        if (started.NextSequence != 3 || host.InputBatchRequests != 1) throw new Exception("TLS batch cursor differs.");
+        Pass("atomic input batch over TLS; malformed/unauthorized/replay rejected without partial cursor advance");
         // Remove the nearby attacker through normal gameplay before timing movement.
         // Slow CI runners must not turn transport sampling into a passive survival test.
         while (started.Entities.Single(e => e.Id.Value == 100).IsAlive)

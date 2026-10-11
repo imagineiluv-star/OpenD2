@@ -2,7 +2,7 @@ using OpenD2.Core;
 
 namespace OpenD2.Online;
 
-public sealed record ServerInfo(int Protocol, int Rules, int RoomStream = 0, string Mode = "realm", int CharacterFileVersion = 0, int InputReceipt = 0, int RoomDelta = 0);
+public sealed record ServerInfo(int Protocol, int Rules, int RoomStream = 0, string Mode = "realm", int CharacterFileVersion = 0, int InputReceipt = 0, int RoomDelta = 0, int InputBatch = 0);
 public sealed record RoomUpdate(RoomView? State, int Status = 200, string? Error = null);
 public sealed record Credentials(string Username, string Password);
 public sealed record LoginResult(string Token, string Username);
@@ -20,6 +20,7 @@ public sealed record RoomInvitation(string Token, DateTimeOffset ExpiresAt)
 public sealed record RoomInfo(Guid Id, string Name, int Players, bool Started, bool Locked);
 public sealed record MemberInfo(Guid Character, string Name, uint Actor);
 public sealed record InputRequest(long Sequence, CommandKind Kind, int X = 0, int Y = 0, uint Target = 0, ulong Item = 0);
+public sealed record InputBatchRequest(InputRequest[] Inputs);
 // Acceptance queues a command for a later tick; it is not a simulation result.
 public sealed record InputReceipt(Guid Room, uint Actor, long NextSequence, long Tick);
 public sealed record RoomView(Guid Id, string Name, bool Started, bool Host, uint Actor, long NextSequence,
