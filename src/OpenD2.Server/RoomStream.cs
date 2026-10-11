@@ -52,7 +52,7 @@ internal static class RoomStream
         do
         {
             RoomUpdate update;
-            try { update = new(realm.StreamState(token, room, interest)); }
+            try { update = new(realm.StreamState(token, room, interest, previous)); }
             catch (Rejected error) { update = new(null, error.Status, error.Message); }
             byte[] bytes = delta ? JsonSerializer.SerializeToUtf8Bytes(update.State is { } state
                 ? RoomFrames.Create(state, previous, checked(++sequence))

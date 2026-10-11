@@ -34,8 +34,13 @@ internal static class RoomSnapshotContracts
                 realm.Start(users[0].Token, room);
                 var original = realm.StreamState(users[0].Token, room);
                 var filtered = realm.StreamState(users[0].Token, room, interest: true);
-                Check(ReferenceEquals(filtered.Entities, realm.StreamState(users[0].Token, room, interest: true).Entities), "per-actor projection reused");
+                Check(ReferenceEquals(original.Entities, realm.StreamState(users[0].Token, room).Entities), "full snapshot remains shared across projections");
                 Check(filtered.Entities.SequenceEqual(RoomInterest.Project(original).Entities), "stream projection matches policy");
+                // Monster 101 starts exactly at the exit radius, outside the entry radius.
+                var retained = realm.StreamState(users[0].Token, room, interest: true, previous: original);
+                Check(retained.Entities.Any(e => e.Id.Value == 101) && !filtered.Entities.Any(e => e.Id.Value == 101), "stream forwards connection history");
+                Check(!realm.StreamState(users[0].Token, room, interest: true).Entities.Any(e => e.Id.Value == 101), "fresh stream does not inherit peer visibility");
+                Check(realm.StreamState(users[0].Token, room, previous: filtered).Entities.SequenceEqual(original.Entities), "legacy stream ignores interest history");
                 string originalJson = JsonSerializer.Serialize(original);
                 long builds = realm.SnapshotBuilds;
                 var reference = Arena.Create(4);
