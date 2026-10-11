@@ -63,7 +63,12 @@ internal static class TlsContracts
                     try { using var tcp = new TcpClient(); await tcp.ConnectAsync(IPAddress.Loopback, port); listening = true; break; }
                     catch (SocketException) { await Task.Delay(100); }
                 }
-                if (!listening) throw new TimeoutException("TLS server startup.");
+                if (!listening)
+                {
+                    process.Kill(true);
+                    await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
+                    throw new TimeoutException("TLS server startup (" + name + "): " + await stderr + await stdout);
+                }
                 if (name == "valid")
                 {
                     using var client = new OnlineClient(url, ca);
