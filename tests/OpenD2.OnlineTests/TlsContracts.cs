@@ -73,6 +73,7 @@ internal static class TlsContracts
                 {
                     using var client = new OnlineClient(url, ca);
                     await client.CheckServer();
+                    await ConnectionInviteContracts.VerifyTls(url, ca, Path.Combine(fixtures, "other-ca.pem"), root.GetCertHashString(HashAlgorithmName.SHA256));
                     using (var wrongMode = new OnlineClient(url, ca, "open"))
                     {
                         try { await wrongMode.CheckServer(); throw new Exception("Open client accepted Realm server."); }

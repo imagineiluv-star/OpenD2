@@ -206,7 +206,7 @@ OpenD2 빌드만 선택한다. macOS/Linux에서는 실행 권한이 필요하�
    사설 CA로 발급했으면 `Choose public root CA`로 공개 루트 인증서를 선택한다.
    [TLS 발급/접속 안내](ONLINE_NETWORK.md)를 참고하며 OS 신뢰 저장소를 자동 변경하지 않는다.
 4. `Start personal host` 후 표시된 HTTPS 주소와 CA SHA-256을 확인한다.
-   `Copy connection details`는 주소·Open 모드·CA 지문만 복사한다. 게스트에게는 공개 CA만
+   `Copy connection invite`는 주소·Open 모드·CA 지문을 초대 JSON으로 복사한다. 게스트는 `Apply invite`로 적용한다. 게스트에게는 공개 CA만
    전달하고 PFX/개인 키/암호를 공유하지 않는다. 게스트는 Open 모드, 해당 주소, 공개 CA로
    `Check server` 후 계정 등록/로그인 → 캐릭터 → 같은 방에 참가한다.
 5. 필요한 경우 해당 TCP 포트의 방화벽 허용을 직접 설정한다. 자동 포트 포워딩/UPnP/VPN은

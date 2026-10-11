@@ -33,12 +33,10 @@ public partial class OnlinePanel
         var roots = new HFlowContainer(); settings.AddChild(roots); roots.AddChild(hostCa);
         AddHostFilePicker(roots, "Choose public root CA", "*.pem,*.crt ; Public root CA certificate", hostCa);
         Button(roots, "Use system trust", () => { hostCa.Text = ""; return Task.CompletedTask; });
-        Button(settings, "Copy connection details", () =>
+        Button(settings, "Copy connection invite", () =>
         {
-            if (!personalHost.Running || personalHost.Address is not { } url || !url.StartsWith("https://", StringComparison.Ordinal))
-                throw new InvalidOperationException("Start a LAN host first.");
-            DisplayServer.ClipboardSet(url + "\nOpen mode\n" + (personalHost.TrustedRootSha256 is { } sha ? "Public root CA SHA-256: " + sha : "System certificate trust"));
-            status.Text = "Address and trust details copied. Share only the public CA, never the PFX or its password.";
+            DisplayServer.ClipboardSet(PersonalHostInvite());
+            status.Text = "Invite copied. Share only the public CA, never the PFX or its password. Guests paste it into Apply invite.";
             return Task.CompletedTask;
         });
         settings.AddChild(new Label { Text = "The PFX must cover the selected IP. Guests use Open mode, this HTTPS address and the public CA. Allow the selected TCP port in your firewall if needed. Router/NAT settings are not changed.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
@@ -65,14 +63,32 @@ public partial class OnlinePanel
             await StartPersonalHostAt(folder);
             if (SelectedMode != "open" || !address.Text.StartsWith("https://127.0.0.1:", StringComparison.Ordinal) || caFile != hostCa.Text || hostPfxPassword.Text.Length != 0 || personalHost.TrustedRootSha256 is null)
                 throw new InvalidDataException("LAN host TLS connection binding failed.");
+            string inviteText = PersonalHostInvite();
+            ApplyInvite(inviteText);
+            if (connectionInvite?.Mode != "open" || caFile.Length != 0 || connectionInvite.RootCaSha256 != personalHost.TrustedRootSha256)
+                throw new InvalidDataException("Invite UI binding failed.");
+            try { using var missingCa = CreateConnection(); throw new Exception("Invite accepted missing CA."); }
+            catch (InvalidDataException) { }
+            try { ApplyInvite("{bad json}"); throw new Exception("Malformed invite accepted."); }
+            catch (InvalidDataException) { }
+            if (address.Text != personalHost.Address || connectionInvite.RootCaSha256 != personalHost.TrustedRootSha256)
+                throw new InvalidDataException("Malformed invite changed connection settings.");
+            serverMode.Select(0);
+            try { using var changed = CreateConnection(); throw new Exception("Edited invite mode accepted."); }
+            catch (InvalidOperationException) { }
+            serverMode.Select(1); caFile = hostCa.Text;
+            using (var invited = CreateConnection()) await invited.CheckServer(lifetime.Token);
             username.Text = "lanuitest"; password.Text = Guid.NewGuid().ToString("N"); await Login(true);
+            try { ApplyInvite(inviteText); throw new Exception("Signed-in invite change accepted."); }
+            catch (InvalidOperationException) { }
+            GD.Print("OPEND2_CONNECTION_INVITE_UI_PASS CLIPBOARD_GESTURE_NOT_RUN");
             await StopPersonalHost();
             if (signedIn || personalHost.Running) throw new InvalidDataException("LAN host stop failed.");
             GD.Print("OPEND2_LAN_HOST_UI_PASS LOOPBACK_TLS_NOT_PHYSICAL_LAN DIALOG_GESTURES_NOT_RUN");
         }
         finally
         {
-            await personalHost.Stop(); Reset(); hostLan.ButtonPressed = false;
+            await personalHost.Stop(); Reset(); connectionInvite = null; hostLan.ButtonPressed = false;
             hostPfx.Text = ""; hostCa.Text = ""; hostPfxPassword.Text = "";
             if (Directory.Exists(folder)) Directory.Delete(folder, true);
         }

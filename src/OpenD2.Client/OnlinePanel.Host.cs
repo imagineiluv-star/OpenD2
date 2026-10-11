@@ -29,7 +29,7 @@ public partial class OnlinePanel
         var lan = ReadLanHostSettings();
         status.Text = "Starting personal host…";
         await personalHost.Start(hostExecutable.Text, data, lan, lifetime.Token);
-        serverMode.Select(1); address.Text = personalHost.Address!; caFile = lan?.RootCaFile ?? "";
+        connectionInvite = null; serverMode.Select(1); address.Text = personalHost.Address!; caFile = lan?.RootCaFile ?? "";
         trust.Text = personalHost.TrustedRootSha256 is { } hash ? "Private CA SHA-256: " + hash : lan is null ? "Trust: local personal host (loopback)" : "Trust: system certificates";
         hostWasRunning = true;
         hostStatus.Text = "Personal host running — " + personalHost.Address + " | Data: " + data;
