@@ -16,12 +16,18 @@ internal static class ConnectionInviteContracts
         }
         foreach (string url in new[] { "http://127.0.0.1:5443", "https://0.0.0.0", "https://[::]", "https://user:secret@example.com", "https://example.com/path", "https://example.com?secret=x", "https://example.com#token", "https://example.com:0" })
             Reject(JsonSerializer.Serialize(invite with { Address = url }));
-        Reject(JsonSerializer.Serialize(invite with { Version = 2 }));
+        Reject(JsonSerializer.Serialize(invite with { Version = 3 }));
         Reject(JsonSerializer.Serialize(invite with { Mode = "unknown" }));
         Reject(JsonSerializer.Serialize(invite with { RootCaSha256 = "bad" }));
         Reject(text.Replace("\"Version\":1", "\"Version\":1,\"Version\":1"));
         Reject(text.Replace("\"Version\":1,", ""));
         Reject(text.Replace("\"Mode\":\"open\"", "\"Mode\":\"open\",\"Password\":\"secret\""));
+        var roomInvite = invite with { Version = 2, Room = Guid.NewGuid() };
+        if (ConnectionInvite.Parse(roomInvite.Encode()) != roomInvite || text.Contains("\"Room\"", StringComparison.Ordinal))
+            throw new Exception("Room invite or legacy format compatibility failed.");
+        Reject(JsonSerializer.Serialize(invite with { Version = 2 }));
+        Reject(JsonSerializer.Serialize(invite with { Room = Guid.NewGuid() }));
+        Reject(JsonSerializer.Serialize(roomInvite with { Room = Guid.Empty }));
         Reject("null"); Reject(new string('x', ConnectionInvite.MaxCharacters + 1));
         try { using var missing = invite.CreateClient(null); throw new Exception("Invite accepted missing private CA."); }
         catch (InvalidDataException) { }

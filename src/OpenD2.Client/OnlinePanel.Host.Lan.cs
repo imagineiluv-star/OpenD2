@@ -82,6 +82,20 @@ public partial class OnlinePanel
             try { ApplyInvite(inviteText); throw new Exception("Signed-in invite change accepted."); }
             catch (InvalidOperationException) { }
             GD.Print("OPEND2_CONNECTION_INVITE_UI_PASS CLIPBOARD_GESTURE_NOT_RUN");
+            var owner = await client!.Send<CharacterInfo>(System.Net.Http.HttpMethod.Post, "v1/characters", new NameRequest("InviteOwner"), lifetime.Token);
+            string roomSecret = Guid.NewGuid().ToString("N");
+            var invitedRoom = await client.Send<RoomView>(System.Net.Http.HttpMethod.Post, "v1/rooms", new RoomRequest(owner.Id, "InviteUI", roomSecret), lifetime.Token);
+            Apply(invitedRoom);
+            string roomInvite = CurrentRoomInvite();
+            Reset(); ApplyInvite(roomInvite); caFile = hostCa.Text;
+            username.Text = "inviteuitest"; password.Text = Guid.NewGuid().ToString("N"); await Login(true);
+            var guest = await client!.Send<CharacterInfo>(System.Net.Http.HttpMethod.Post, "v1/characters", new NameRequest("InviteGuest"), lifetime.Token);
+            await Refresh(); characters.Select(Array.FindIndex(characterList, c => c.Id == guest.Id));
+            try { await JoinInvitedRoom(); throw new Exception("Room invite bypassed password."); }
+            catch (System.Net.Http.HttpRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.Forbidden) { }
+            roomPassword.Text = roomSecret; await JoinInvitedRoom();
+            if (state?.Id != invitedRoom.Id || state.Actor != 2) throw new InvalidDataException("Room invite UI joined wrong room.");
+            GD.Print("OPEND2_ROOM_INVITE_UI_PASS CLIPBOARD_GESTURE_NOT_RUN");
             await StopPersonalHost();
             if (signedIn || personalHost.Running) throw new InvalidDataException("LAN host stop failed.");
             GD.Print("OPEND2_LAN_HOST_UI_PASS LOOPBACK_TLS_NOT_PHYSICAL_LAN DIALOG_GESTURES_NOT_RUN");

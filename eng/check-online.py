@@ -208,6 +208,7 @@ def main():
                             if os.environ.get('OPEND2_TEST_HOST_TLS_FIXTURES'):
                                 assert 'OPEND2_LAN_HOST_UI_PASS' in text, 'LAN host UI binding missing'
                                 assert 'OPEND2_CONNECTION_INVITE_UI_PASS' in text, 'Connection invite UI binding missing'
+                                assert 'OPEND2_ROOM_INVITE_UI_PASS' in text, 'Room invite UI binding missing'
                     result = json.loads((evidence / (role + '-result.json')).read_text())
                     assert result['result'] == 'PASS' and len(result['checks']) >= 11, role
                     assert result['observations'] == 'room-websocket-stream' and result['http_state_polling'] is False, role
