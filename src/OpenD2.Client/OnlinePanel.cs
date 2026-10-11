@@ -172,7 +172,7 @@ public partial class OnlinePanel : VBoxContainer
             await foreach (var update in owner.WatchRoom(id, source.Token))
             {
                 if (source.IsCancellationRequested || roomStream != source || client != owner || state?.Id != id) return;
-                Apply(update); streamFrames++;
+                ApplyStream(update);
             }
         }
         catch (OperationCanceledException) when (source.IsCancellationRequested) { }
@@ -190,6 +190,13 @@ public partial class OnlinePanel : VBoxContainer
             try { previous.Cancel(); } catch (ObjectDisposedException) { }
         }
         streamError = null; streamFrames = 0;
+    }
+    private void ApplyStream(RoomView update)
+    {
+        Apply(update);
+        // Receiving an obsolete frame is not a fresh displayed WSS observation.
+        // HTTP start/join replies can overtake the stream's queued lobby/older state.
+        if (ReferenceEquals(state, update)) streamFrames++;
     }
     private async Task WaitForRoomUpdate()
     {

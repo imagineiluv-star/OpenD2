@@ -8,7 +8,7 @@ using OpenD2.Online;
 
 internal static class TlsContracts
 {
-    internal static async Task Run(string server, string fixtures, string output, int networkSeconds = 5)
+    internal static async Task Run(string server, string fixtures, string output, int networkSeconds = 5, bool capacityOnly = false, int capacitySeconds = 5)
     {
         if (networkSeconds is < 1 or > 3600) throw new ArgumentOutOfRangeException(nameof(networkSeconds));
         Directory.CreateDirectory(fixtures);
@@ -37,13 +37,16 @@ internal static class TlsContracts
             File.WriteAllBytes(Path.Combine(fixtures, name + ".pfx"), leaf.Export(X509ContentType.Pfx, password));
             if (name == "valid") File.WriteAllText(Path.Combine(fixtures, "leaf.pem"), leaf.ExportCertificatePem());
         }
-        await CatalogDownloadContracts.Run(fixtures, password);
-        await CatalogPublishContracts.InvalidStartup(server, fixtures);
-        await LanHostContracts.Run(server, fixtures, password);
+        if (!capacityOnly)
+        {
+            await CatalogDownloadContracts.Run(fixtures, password);
+            await CatalogPublishContracts.InvalidStartup(server, fixtures);
+            await LanHostContracts.Run(server, fixtures, password);
+        }
         var checks = new List<string>();
         void Pass(string name) { checks.Add(name); Console.WriteLine("TLS PASS " + name); }
         string ca = Path.Combine(fixtures, "ca.pem");
-        foreach (string name in new[] { "valid", "open", "wrong-host", "expired" })
+        foreach (string name in capacityOnly ? new[] { "valid", "open" } : new[] { "valid", "open", "wrong-host", "expired" })
         {
             using var reservation = new TcpListener(IPAddress.Loopback, 0);
             reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port;
@@ -53,6 +56,8 @@ internal static class TlsContracts
             reservation.Stop();
             string plainUrl = "http://127.0.0.1:" + plainPort;
             var start = new ProcessStartInfo(server) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+            // Duration probes retain warnings/errors, not unbounded per-request info logs.
+            if (capacityOnly) start.Environment["Logging__LogLevel__Default"] = "Warning";
             foreach (string arg in new[] { "--urls", name is "valid" or "open" ? url + ";" + plainUrl : url, "--data", Path.Combine(fixtures, "data-" + name) }) start.ArgumentList.Add(arg);
             start.ArgumentList.Add("--mode"); start.ArgumentList.Add(name == "open" ? "open" : "realm");
             var catalog = new ServerCatalog(1, [new("Published server", "Test", url, name == "open" ? "open" : "realm", root.GetCertHashString(HashAlgorithmName.SHA256)),
@@ -83,7 +88,14 @@ internal static class TlsContracts
                     await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
                     throw new TimeoutException("TLS server startup (" + name + "): " + await stderr + await stdout);
                 }
-                if (name == "valid")
+                if (capacityOnly)
+                {
+                    string mode = name == "open" ? "open" : "realm";
+                    await StreamCapacityContracts.Run(url, ca, mode,
+                        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "capacity-" + mode + ".json"), capacitySeconds);
+                    Pass(mode + " 32 WSS streams, admission limit, slot recovery and room isolation");
+                }
+                else if (name == "valid")
                 {
                     using (var plain = new HttpClient { Timeout = TimeSpan.FromSeconds(10) })
                     {
@@ -133,7 +145,7 @@ internal static class TlsContracts
                     Pass("Open server mode, pre-login mismatch rejection, WSS identity and personal profile file transfer");
                 }
                 else { await RejectTls(url, ca); Pass(name + " certificate rejected"); }
-                if (name is "valid" or "open")
+                if (!capacityOnly && (name is "valid" or "open"))
                 {
                     string mode = name == "open" ? "open" : "realm";
                     await NetworkResilienceContracts.Run(url, ca, mode,
