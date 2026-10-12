@@ -36,8 +36,9 @@ internal static class RoomPresentationContracts
         display.Reset(); display.Push(state, 1); display.Push(next, 1.04);
         var early = Move(next, 832, 12); display.Push(early, 1.06);
         Check(Near(display.Position(early.Entities[1], 1.06).X, 784));
-        Check(Near(display.Position(early.Entities[1], 1.08).X, 808));
-        Exact(early, 1.11);
+        Check(Near(display.Delay, 0.08));
+        Check(Near(display.Position(early.Entities[1], 1.08).X, 796));
+        Exact(early, 1.15);
         display.Reset(); display.Push(state, 1);
         var reordered = next with { Entities = next.Entities.Reverse().ToArray() };
         display.Push(reordered, 1.04);

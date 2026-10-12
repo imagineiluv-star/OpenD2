@@ -46,6 +46,7 @@ def main():
     report['room_delta_ui'] = 'NOT_RUN'
     report['input_batch_ui'] = 'NOT_RUN'
     report['room_presentation_ui'] = 'NOT_RUN'
+    report['adaptive_presentation_ui'] = 'NOT_RUN'
     report['room_prediction_ui'] = 'NOT_RUN'
     report['room_correction_ui'] = 'NOT_RUN'
     report['room_input_progress_ui'] = 'NOT_RUN'
@@ -244,6 +245,7 @@ def main():
                     assert 'OPEND2_ROOM_INTEREST_UI_PASS '+role in text, role
                     assert 'OPEND2_INPUT_BATCH_UI_PASS '+role in text, role
                     assert 'OPEND2_ROOM_PRESENTATION_UI_PASS' in text, role
+                    assert 'OPEND2_ADAPTIVE_PRESENTATION_UI_PASS' in text, role
                     assert 'OPEND2_ROOM_PREDICTION_UI_PASS' in text, role
                     assert 'OPEND2_ROOM_CORRECTION_UI_PASS' in text, role
                     assert 'OPEND2_MOVEMENT_HISTORY_UI_PASS' in text, role
@@ -281,6 +283,7 @@ def main():
                 report['room_delta_ui'] = 'PASS'
                 report['input_batch_ui'] = 'PASS'
                 report['room_presentation_ui'] = 'PASS'
+                report['adaptive_presentation_ui'] = 'PASS'
                 report['room_prediction_ui'] = 'PASS'
                 report['room_correction_ui'] = 'PASS'
                 report['room_input_progress_ui'] = 'PASS'
