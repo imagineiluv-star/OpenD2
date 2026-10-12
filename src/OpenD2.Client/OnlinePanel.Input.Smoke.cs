@@ -21,6 +21,14 @@ public partial class OnlinePanel
         if (arena.Display(next.Entities[1], 2).X != next.Entities[1].Position.X || arena.PresentationTransitions != 0)
             throw new Exception("Reconnect retained display interpolation.");
         arena.State = null;
+        arena.SetState(first, 3); arena.SetState(next, 3.12);
+        arena.SetState(next with { NextSequence = 2 }, 3.16);
+        if (Math.Abs(arena.Display(next.Entities[1], 3.18).X - (entities[1].Position.X + 16)) > 0.000001 ||
+            arena.Display(next.Entities[0], 3.18).X != next.Entities[0].Position.X ||
+            Math.Abs(arena.Display(next.Entities[1], 3.24).X - next.Entities[1].Position.X) > 0.000001)
+            throw new Exception("Adaptive display delay or duplicate deadline changed.");
+        arena.State = null;
+        Godot.GD.Print("OPEND2_ADAPTIVE_PRESENTATION_UI_PASS");
         Godot.GD.Print("OPEND2_ROOM_PRESENTATION_UI_PASS");
     }
     private void CheckRoomPrediction()
