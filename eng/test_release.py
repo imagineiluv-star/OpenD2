@@ -46,6 +46,22 @@ class ReleaseTests(unittest.TestCase):
                 "sha256": release.sha256(archive), "headless_smoke": "PASS",
             })
 
+    def server_info(self, preset, **changes):
+        runtime = release.SERVER_RUNTIMES[preset]
+        archive = self.output / f"OpenD2-server-{runtime}.zip"
+        archive.write_bytes(b"synthetic server fixture " + runtime.encode())
+        info = {"commit": self.commit, "runtime": runtime, "file": archive.name, "bytes": archive.stat().st_size,
+                "sha256": release.sha256(archive), "rendered_gameplay": "NOT_RUN",
+                **{key: "PASS" for key in release.SERVER_REQUIRED_PASS},
+                **{key: "NOT_RUN" for key in release.SERVER_MUST_BE_NOT_RUN}, **changes}
+        release.write_json(self.output / f"server-{runtime}.json", info)
+        return info
+
+    def servers(self):
+        # CI-built server packages as eng/pack-online-server.py records them (synthetic bytes, not a real server).
+        for preset in release.SERVER_RUNTIMES:
+            self.server_info(preset)
+
     def prepare(self):
         release.prepare(self.output, self.version, self.commit, "owner/repo", "https://example.test/run/1")
 
@@ -76,20 +92,21 @@ class ReleaseTests(unittest.TestCase):
 
     def test_complete_handoff_is_pending_and_all_checksums_match(self):
         self.packages()
+        self.servers()
         self.prepare()
         manifest = json.loads((self.output / "release-manifest.json").read_text())
-        self.assertEqual(2, manifest["schema_version"])
+        self.assertEqual(3, manifest["schema_version"])
         self.assertEqual("NOT_RUN", manifest["gui_qa_status"])
         self.assertEqual("synthetic_preview", manifest["gui_qa_scope"])
         self.assertEqual("NOT_RUN", manifest["legacy_scene_qa_status"])
         self.assertEqual("NOT_RUN", manifest["two_hour_soak_status"])
         self.assertFalse(manifest["original_rules_validated"])
         report = json.loads((self.output / "qa-result-template.json").read_text())
-        self.assertEqual(2, report["schema_version"])
-        self.assertEqual("PLAY-17", report["qa_plan"])
+        self.assertEqual(3, report["schema_version"])
+        self.assertEqual("RC5", report["qa_plan"])
         self.assertEqual(report["qa_plan"], manifest["qa_plan"])
         self.assertEqual(manifest["required_case_ids"], [case["id"] for case in report["cases"] if case["required"]])
-        self.assertEqual((release.ROOT / "docs/migration/RC4_QA.md").read_bytes(),
+        self.assertEqual((release.ROOT / "docs/migration/RC5_QA.md").read_bytes(),
                          (self.output / "FEATURE_QA.md").read_bytes())
         self.assertEqual("NOT_RUN", report["status"])
         self.assertEqual("synthetic_preview", report["status_scope"])
@@ -99,8 +116,27 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(0, report["two_hour_soak"]["active_seconds"])
         self.assertEqual({"QA-01", "QA-02", "QA-03", "QA-04", "QA-05", "QA-06", "QA-08", "QA-11", "QA-12", "QA-13", "QA-14"},
                          {case["id"] for case in report["cases"] if case["required"]})
-        self.assertEqual({"QA-07", "QA-09", "QA-10"},
+        self.assertEqual({"QA-07", "QA-09", "QA-10", "QA-15", "QA-16", "QA-17", "QA-18"},
                          {case["id"] for case in report["cases"] if not case["required"]})
+        # Online acceptance is tracked on its own and is never part of the desktop GUI verdict.
+        self.assertEqual("NOT_RUN", manifest["online_qa_status"])
+        self.assertEqual(["QA-15", "QA-16", "QA-17", "QA-18"], manifest["online_case_ids"])
+        self.assertTrue(set(manifest["online_case_ids"]).isdisjoint(manifest["required_case_ids"]))
+        self.assertEqual("NOT_RUN", report["online_qa_status"])
+        self.assertEqual("", report["server_package_sha256"])
+        self.assertEqual({"linux-x64", "win-x64", "osx-arm64"}, {item["runtime"] for item in manifest["server_packages"]})
+        for item in manifest["server_packages"]:
+            archive = self.output / item["file"]
+            self.assertEqual(release.server_name(self.version, item["platform"]), item["file"])
+            self.assertEqual(item["sha256"], release.sha256(archive))
+            self.assertEqual("PASS", item["validation"]["cooperative_world_realm"])
+            self.assertEqual("NOT_RUN", item["validation"]["physical_multi_pc"])
+            self.assertFalse((self.output / f"OpenD2-server-{item['runtime']}.zip").exists(), "only the versioned name is released")
+            self.assertTrue((self.output / f"server-package-{item['platform']}.json").is_file())
+            self.assertFalse((self.output / f"server-{item['runtime']}.json").exists())
+        notes = (self.output / "RELEASE_NOTES.md").read_text(encoding="utf-8")
+        self.assertIn("**Online QA: NOT_RUN.**", notes)
+        self.assertIn("server-linux-x64.zip", notes.replace("<version>-server-<runtime>.zip", "server-linux-x64.zip"))
         self.assertEqual((release.ROOT / "docs/migration/PLAY_INTEGRATION.md").read_bytes(),
                          (self.output / "LEGACY_PLAY_SETUP.md").read_bytes())
         self.assertTrue(all(case["status"] == "NOT_RUN" for case in report["cases"]))
@@ -110,12 +146,14 @@ class ReleaseTests(unittest.TestCase):
 
     def test_missing_platform_rejects_handoff(self):
         self.packages()
+        self.servers()
         (self.output / "package-Windows.json").unlink()
         with self.assertRaises(FileNotFoundError):
             self.prepare()
 
     def test_changed_archive_rejects_handoff(self):
         self.packages()
+        self.servers()
         with (self.output / release.package_name(self.version, "Linux")).open("ab") as stream:
             stream.write(b"tampered")
         with self.assertRaisesRegex(ValueError, "checksum"):
@@ -123,12 +161,70 @@ class ReleaseTests(unittest.TestCase):
 
     def test_wrong_commit_path_or_missing_smoke_rejects_handoff(self):
         self.packages()
+        self.servers()
         path = self.output / "package-Linux.json"
         original = json.loads(path.read_text())
         for key, value in (("commit", "b" * 40), ("file", "../wrong.tar.gz"), ("headless_smoke", "NOT_RUN")):
             release.write_json(path, {**original, key: value})
             with self.subTest(key=key), self.assertRaises(ValueError):
                 self.prepare()
+
+    def test_missing_server_package_rejects_handoff(self):
+        self.packages()
+        self.servers()
+        (self.output / "server-win-x64.json").unlink()
+        with self.assertRaises(FileNotFoundError):
+            self.prepare()
+
+    def test_changed_or_misattributed_server_package_rejects_handoff(self):
+        self.packages()
+        self.servers()
+        with (self.output / "OpenD2-server-linux-x64.zip").open("ab") as stream:
+            stream.write(b"tampered")
+        with self.assertRaisesRegex(ValueError, "checksum"):
+            self.prepare()
+        for key, value in (("commit", "b" * 40), ("runtime", "win-x64"), ("file", "../wrong.zip")):
+            self.setUp()
+            self.packages()
+            self.servers()
+            self.server_info("Linux", **{key: value})
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "provenance"):
+                self.prepare()
+
+    def test_server_without_every_passing_validation_is_rejected(self):
+        for key in release.SERVER_REQUIRED_PASS:
+            self.setUp()
+            self.packages()
+            self.servers()
+            self.server_info("macOS", **{key: "NOT_RUN"})
+            with self.subTest(missing=key), self.assertRaisesRegex(ValueError, key):
+                self.prepare()
+        self.setUp()
+        self.packages()
+        self.servers()
+        info = self.server_info("Windows")
+        del info["cooperative_world_network_open"]
+        release.write_json(self.output / "server-win-x64.json", info)
+        with self.assertRaisesRegex(ValueError, "cooperative_world_network_open"):
+            self.prepare()
+
+    def test_server_claiming_unrun_validation_is_rejected(self):
+        for key in release.SERVER_MUST_BE_NOT_RUN:
+            self.setUp()
+            self.packages()
+            self.servers()
+            self.server_info("Linux", **{key: "PASS"})
+            with self.subTest(claimed=key), self.assertRaisesRegex(ValueError, key):
+                self.prepare()
+
+    def test_server_checks_match_what_the_server_packager_records(self):
+        # A key that the packager never writes would make every release handoff fail; one it writes under a different
+        # value would let an unrun check through. Keep both lists tied to eng/pack-online-server.py.
+        source = (release.ROOT / "eng/pack-online-server.py").read_text(encoding="utf-8")
+        for key in release.SERVER_REQUIRED_PASS:
+            self.assertIn(f"'{key}': 'PASS'", source, key)
+        for key in release.SERVER_MUST_BE_NOT_RUN:
+            self.assertIn(f"'{key}': 'NOT_RUN'", source, key)
 
     def test_existing_archive_is_not_overwritten(self):
         source = self.fixture("Windows")

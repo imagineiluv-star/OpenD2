@@ -1,4 +1,4 @@
-"""Package validated exports and produce a reviewable, explicitly untested GUI QA handoff."""
+"""Package validated exports and servers and produce a reviewable, explicitly untested GUI/online QA handoff."""
 import argparse
 import hashlib
 import json
@@ -14,6 +14,19 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORMS = {"Linux": "linux-x64.tar.gz", "Windows": "windows-x64.zip", "macOS": "macos-universal.zip"}
+# The online server is published self-contained per OS runtime (macOS CI runs on arm64; an Intel Mac build is not produced).
+SERVER_RUNTIMES = {"Linux": "linux-x64", "Windows": "win-x64", "macOS": "osx-arm64"}
+# Recorded as PASS by eng/pack-online-server.py after it ran the EXTRACTED server with packaged clients, TLS and the
+# network/capacity/world contracts. A server package missing any of them is not handed off.
+SERVER_REQUIRED_PASS = (
+    "extracted_server_and_two_clients", "two_client_gameplay", "tls_certificates", "tls_two_client_gameplay",
+    "open_tls_two_client_gameplay", "realm_invite_to_gameplay", "open_invite_to_gameplay", "host_and_guest_reconnect",
+    "cooperative_world_realm", "cooperative_world_open", "cooperative_world_network_realm", "cooperative_world_network_open",
+    "network_relay_realm", "network_relay_open", "silent_stream_realm", "silent_stream_open",
+    "realm_32_stream_admission", "open_32_stream_admission", "world_realm_32_stream_admission", "world_open_32_stream_admission",
+    "lan_host_tls_lifecycle", "personal_host_lifecycle", "room_stream_contracts")
+# Never run for this package; a package that claims otherwise is rejected rather than trusted.
+SERVER_MUST_BE_NOT_RUN = ("physical_multi_pc", "wan", "packet_loss", "maximum_server_capacity", "gui", "clipboard_gestures")
 CASES = [
     ("QA-01", "Clean install and visible startup without SDK or model", True),
     ("QA-02", "Move, accept quest, enter Cellar, fight and return to Guide", True),
@@ -29,6 +42,11 @@ CASES = [
     ("QA-12", "Power strike: mana, cooldown, input focus and checkpoint", True),
     ("QA-13", "Potions: bag/belt transfers, one use per key press and checkpoint", True),
     ("QA-14", "Overlapping ground names: selected approach/pickup and cancellation", True),
+    # Online acceptance needs the server package and a second client (second window or second PC): scheduled separately.
+    ("QA-15", "Realm server: extracted server, two accounts, room, invite, combat/loot and reconnect", False),
+    ("QA-16", "Open host: personal and LAN host from the client, guest on another PC, character file export/import", False),
+    ("QA-17", "Cooperative world: Camp/Field portals, personal quest accept/complete per player, reconnect and server restart", False),
+    ("QA-18", "Server package on each OS: extract, run with a private data folder, TLS and graceful stop", False),
 ]
 
 
@@ -49,6 +67,39 @@ def write_json(path, value):
 
 def package_name(version, preset):
     return f"OpenD2-{version}-{PLATFORMS[preset]}"
+
+
+def server_name(version, preset):
+    return f"OpenD2-{version}-server-{SERVER_RUNTIMES[preset]}.zip"
+
+
+def server_package(folder, version, commit, preset):
+    """Verify one CI-built server package, give it the versioned name and return its release metadata."""
+    runtime = SERVER_RUNTIMES[preset]
+    archive = folder / f"OpenD2-server-{runtime}.zip"
+    info_path = folder / f"server-{runtime}.json"
+    info = json.loads(info_path.read_text(encoding="utf-8"))
+    if (info.get("commit"), info.get("runtime"), info.get("file")) != (commit, runtime, archive.name):
+        raise ValueError(f"Server package provenance mismatch: {preset}")
+    if info.get("bytes") != archive.stat().st_size or info.get("sha256") != sha256(archive):
+        raise ValueError(f"Server package checksum mismatch: {preset}")
+    missing = [key for key in SERVER_REQUIRED_PASS if info.get(key) != "PASS"]
+    if missing:
+        raise ValueError(f"Server package lacks passing validation ({', '.join(missing)}): {preset}")
+    overclaimed = [key for key in SERVER_MUST_BE_NOT_RUN if info.get(key) != "NOT_RUN"]
+    if overclaimed:
+        raise ValueError(f"Server package claims validation that was not run ({', '.join(overclaimed)}): {preset}")
+    target = folder / server_name(version, preset)
+    if target.exists():
+        raise FileExistsError(target)
+    archive.rename(target)  # the same bytes under the release name
+    info_path.unlink()
+    metadata = {"schema_version": 1, "version": version, "commit": commit, "platform": preset, "runtime": runtime,
+                "file": target.name, "bytes": target.stat().st_size, "sha256": sha256(target),
+                "validation": {key: value for key, value in sorted(info.items())
+                               if key not in ("commit", "runtime", "file", "bytes", "sha256")}}
+    write_json(folder / f"server-package-{preset}.json", metadata)
+    return metadata
 
 
 def mpq_kit(output, version, commit):
@@ -135,20 +186,23 @@ def prepare(folder, version, commit, repository, run_url):
         if metadata.get("headless_smoke") != "PASS":
             raise ValueError(f"Extracted package has not passed headless smoke: {preset}")
         packages.append(metadata)
+    servers = [server_package(folder, version, commit, preset) for preset in SERVER_RUNTIMES]
     release_url = f"https://github.com/{repository}/releases/tag/{version}"
     mpq_kit(folder, version, commit)
     write_json(folder / "release-manifest.json", {
-        "schema_version": 2, "version": version, "commit": commit,
+        "schema_version": 3, "version": version, "commit": commit,
         "repository": repository, "build_run": run_url, "release_url": release_url,
         "gui_qa_status": "NOT_RUN", "gui_qa_scope": "synthetic_preview",
-        "qa_plan": "PLAY-17", "required_case_ids": [key for key, _, required in CASES if required],
+        "qa_plan": "RC5", "required_case_ids": [key for key, _, required in CASES if required],
+        "online_qa_status": "NOT_RUN", "online_case_ids": ["QA-15", "QA-16", "QA-17", "QA-18"],
         "legacy_scene_qa_status": "NOT_RUN", "original_rules_validated": False,
-        "two_hour_soak_status": "NOT_RUN", "packages": packages,
+        "two_hour_soak_status": "NOT_RUN", "packages": packages, "server_packages": servers,
     })
     write_json(folder / "qa-result-template.json", {
-        "schema_version": 2, "version": version, "commit": commit,
+        "schema_version": 3, "version": version, "commit": commit,
         "platform": "", "package_sha256": "", "status": "NOT_RUN",
-        "status_scope": "synthetic_preview", "qa_plan": "PLAY-17",
+        "status_scope": "synthetic_preview", "qa_plan": "RC5", "online_qa_status": "NOT_RUN",
+        "server_package_sha256": "",
         "legacy_scene_qa": {"status": "NOT_RUN", "scene_json_sha256": "", "content_id": "",
                             "profile": "", "asset_report": "", "source_hashes": [],
                             "original_rules_validated": False},
@@ -161,7 +215,7 @@ def prepare(folder, version, commit, repository, run_url):
     for source, target in (("docs/migration/RELEASE_QA.md", "GROK_BOT_SETUP.md"),
                            ("eng/qa/grok-task.md", "GROK_TASK.md"),
                            ("docs/migration/PLAY_INTEGRATION.md", "LEGACY_PLAY_SETUP.md"),
-                           ("docs/migration/RC4_QA.md", "FEATURE_QA.md"),
+                           ("docs/migration/RC5_QA.md", "FEATURE_QA.md"),
                            ("LICENSE", "LICENSE"), ("THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md")):
         shutil.copyfile(ROOT / source, folder / target)
     notes = f"""# OpenD2 {version} — GUI QA pending
@@ -180,15 +234,22 @@ SDK, Godot editor, Python and NPC model downloads are not needed to play the syn
 The Simulation tab opens first with New game / Continue / Load checkpoint.
 The HUD shows health, mana, region and play/pause state.
 
-Features since rc.3: scene creation and actor/NPC/HUD/item artwork configuration (PLAY-08–13),
-10x4 grid inventory (PLAY-14), Power strike and mana (PLAY-15), recovery potions and a four-slot
-belt (PLAY-16), separated ground names and selected-item approach/pickup (PLAY-17).
-Click a loot name to approach that item; L toggles names and right-click cancels movement.
-F picks up the nearest item in range. Q uses the selected skill; 1–4 use belt potions once per press.
+Features since rc.4: the online preview. A self-contained **server** is now part of this release
+(`OpenD2-<version>-server-<runtime>.zip` for linux-x64, win-x64 and osx-arm64). Realm (operator-run) and Open
+(personal or LAN host) modes, accounts, characters, rooms with invites and reconnect, WSS streams, Open character
+files, and a synthetic cooperative Camp/Field world with personal quests. Server hardening: login hashing and
+checkpoint writes no longer stall rooms, and restart, network-fault and 32-stream capacity behaviour are
+covered by contract tests (see the server package's documentation).
+Carried over from rc.4: scene creation and artwork configuration (PLAY-08–13), 10x4 grid inventory, Power strike
+and mana, recovery potions and a four-slot belt, separated ground names. F picks up the nearest item in range.
+Q uses the selected skill; 1–4 use belt potions once per press. L toggles ground names.
 Godot 4.7.2 includes the desktop Android-polling lifecycle fix; strict ERROR checks remain enabled.
 Save schema 5 / rules 8 reads validated older preview saves; back up your profile before testing.
+Existing cooperative-world server data from `cooperative-demo-v1` is not read by this server (content changed to v2).
 Original Diablo II save-body import and original game rule parity are not implemented.
-See FEATURE_QA.md for the new mandatory GUI cases QA-11–14 and the candidate scope.
+See FEATURE_QA.md for the mandatory GUI cases QA-01–06, 08, 11–14 and the separately scheduled online cases QA-15–18.
+**Online QA: NOT_RUN.** The server packages passed the extracted-server, TLS, two-client, reconnect, cooperative-world,
+network-fault and 32-stream checks in CI. They have not been run across two physical PCs, over a WAN, or by a person.
 FPS/fullscreen/diagnostics preferences apply immediately; choose Save settings to keep them.
 Use F11 to leave fullscreen and Show diagnostics for seed, replay, tick and state hashes.
 Master/effects/music volume and mute are saved with Save settings. Synthetic scenes use short effect tones.

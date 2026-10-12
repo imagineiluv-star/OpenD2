@@ -72,7 +72,13 @@ jobs:
           pattern: OpenD2-M2-*
           path: artifacts/release
           merge-multiple: true
-      - name: Verify all packages and prepare Grok Bot test material
+      # Self-contained online servers, already run extracted with TLS, two clients and the network/capacity checks in `validate`.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: OpenD2-server-*
+          path: artifacts/release
+          merge-multiple: true
+      - name: Verify all packages and prepare Grok Bot and online test material
         env:
           RELEASE_TAG: ${{ needs.preflight.outputs.version }}
           SOURCE_SHA: ${{ github.sha }}
