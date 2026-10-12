@@ -102,7 +102,7 @@ public sealed partial class GameSimulation
 			failure = item.Location != ItemLocation.Ground ? ItemFailure.InvalidLocation :
 				item.Region != actor.Region ? ItemFailure.WrongRegion :
 				DistanceSquared(actor.Position, item.Position) > (long)AttackRange * AttackRange ? ItemFailure.OutOfRange :
-				Collision is null || !Collision.HasMeleeLine(actor.Position, item.Position) ? ItemFailure.Obstructed : null;
+				GridFor(actor) is not { } grid || !grid.HasMeleeLine(actor.Position, item.Position) ? ItemFailure.Obstructed : null;
 			if (failure is null && (slot = FindInventorySpace(actor.Id, item.Definition)) < 0) failure = ItemFailure.InventoryFull;
 		}
 		else if (failure is null)

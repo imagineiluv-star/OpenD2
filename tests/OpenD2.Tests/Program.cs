@@ -41,6 +41,7 @@ try
 	SimulationContracts.Run(Test);
 	CombatContracts.Run(Test);
 	WorldContracts.Run(Test);
+	CooperativeWorldContracts.Run(root, Test);
 	ItemContracts.Run(Test);
 	GridInventoryContracts.Run(root, Test);
 	SkillContracts.Run(root, Test);

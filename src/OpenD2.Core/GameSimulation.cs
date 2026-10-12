@@ -59,15 +59,13 @@ public sealed partial class GameSimulation
 		if (entities.Length is < 1 or > MaxEntities) throw new ArgumentException("Expected 1..1024 entities.", nameof(initialEntities));
 		if (world is not null && collision is not null) throw new ArgumentException("Select either a single collision grid or a world.");
 		World = world;
+		worldPlayers = world is null ? [] : Enumerable.Range(0, entities.Length).Where(i => entities[i].Kind == EntityKind.Player).ToArray();
+		interactions = new EntityId[worldPlayers.Length];
+		transferQueue = worldPlayers.Length > 1 ? new GameCommand[MaxPendingCommands] : [];
 		if (world is not null)
 		{
-			for (int i = 0; i < entities.Length; i++)
-				if (entities[i].Kind == EntityKind.Player)
-				{
-					if (worldPlayerIndex >= 0) throw new ArgumentException("The world slice supports exactly one player.");
-					worldPlayerIndex = i;
-				}
-			if (worldPlayerIndex < 0) throw new ArgumentException("The world slice requires one player.");
+			if (worldPlayers.Length < 1 || worldPlayers.Length > world.PlayerLimit) throw new ArgumentException("The player count exceeds the world's explicit limit.");
+			worldPlayerIndex = worldPlayers[0];
 			Collision = world.GetRegion(entities[worldPlayerIndex].Region).Collision;
 		}
 		else Collision = collision;
@@ -149,7 +147,7 @@ public sealed partial class GameSimulation
 	}
 	public void Step()
 	{
-		long nextTick = checked(Tick + 1); eventCount = 0; interaction = default;
+		long nextTick = checked(Tick + 1); eventCount = 0; Array.Clear(interactions);
 		for (int i = 0; i < entities.Length; i++)
 		{
 			var e = entities[i]; bool active = IsActive(e); canAct[i] = active && e.IsAlive && e.HitStun == 0; attacked[i] = false; attacks[i] = default; skillAttacks[i] = false; usedPotions[i] = false;
@@ -170,7 +168,7 @@ public sealed partial class GameSimulation
 				if (canAct[index]) entities[index] = entity with { SelectedSkill = (SkillId)command.X };
 				else Emit(nextTick, SimulationEventKind.SkillFailed, entity, entity.Position, (int)SkillFailure.Interrupted);
 			}
-			else if (command.Kind == CommandKind.Interact) interaction = command.Target;
+			else if (command.Kind == CommandKind.Interact) interactions[Array.IndexOf(worldPlayers, index)] = command.Target;
 			else if (command.Kind == CommandKind.UseBelt) UseBelt(index, command.X, nextTick);
 			else if (IsItemCommand(command.Kind)) ApplyItemCommand(index, command, nextTick);
 			else Emit(nextTick, SimulationEventKind.Signaled, entity, entity.Position, random.NextInt(6));
