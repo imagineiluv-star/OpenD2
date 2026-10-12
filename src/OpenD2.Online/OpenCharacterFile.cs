@@ -7,7 +7,7 @@ namespace OpenD2.Online;
 
 // A portable Open profile, not a room snapshot or a trusted Realm character.
 public sealed record OpenItem(ItemDefinition Definition, ItemLocation Location, int Slot);
-public sealed record OpenCharacter(int Version, int Rules, string Mode, string Name, int Victories, OpenItem[]? Inventory = null);
+public sealed record OpenCharacter(int Version, int Rules, string Mode, string Name, int Victories, OpenItem[]? Inventory = null, QuestRecord[]? Quests = null);
 
 public static class OpenCharacterFile
 {
@@ -22,10 +22,12 @@ public static class OpenCharacterFile
     };
     public static void Validate(OpenCharacter? value)
     {
-        if (value is null || value.Version is not (1 or 2) || value.Mode != "open" ||
+        if (value is null || value.Version is not (1 or 2 or 3) || value.Mode != "open" ||
             value.Name is null || !Regex.IsMatch(value.Name, "\\A[a-zA-Z0-9_-]{3,24}\\z") || value.Victories is < 0 or > 1_000_000 ||
             (value.Version == 1 && (value.Rules is not (7 or GameSimulation.RulesVersion) || value.Inventory is not null)) ||
-            (value.Version == 2 && (value.Rules != GameSimulation.RulesVersion || value.Inventory is null)))
+            (value.Version >= 2 && (value.Rules != GameSimulation.RulesVersion || value.Inventory is null)) ||
+            // Format 3 is the first to carry quest completions; earlier formats must not smuggle the field in.
+            (value.Version < 3 ? value.Quests is not null : !QuestRecords.IsValid(value.Quests)))
             throw new InvalidDataException("Invalid Open character file, version or game rules.");
         if (value.Inventory is { } items)
         {
@@ -39,7 +41,7 @@ public static class OpenCharacterFile
     public static OpenCharacter Upgrade(OpenCharacter value)
     {
         Validate(value);
-        return value with { Version = 2, Rules = GameSimulation.RulesVersion, Inventory = value.Inventory?.ToArray() ?? [] };
+        return value with { Version = 3, Rules = GameSimulation.RulesVersion, Inventory = value.Inventory?.ToArray() ?? [], Quests = value.Quests?.ToArray() ?? [] };
     }
     public static OpenCharacter Load(string path)
     {

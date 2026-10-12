@@ -8,7 +8,7 @@ using OpenD2.Server;
 internal static class PersonalQuestContracts
 {
     private static void Check(bool value, string reason) { if (!value) throw new Exception("Personal quest: " + reason); }
-    internal static void Run() { foreach (string mode in new[] { "realm", "open" }) Verify(mode); }
+    internal static void Run() { foreach (string mode in new[] { "realm", "open" }) Verify(mode); OpenFile(); }
 
     // Real server output with one controlled change: both monsters are dead and the quest awaits turn-in,
     // members 1 and 2 stand beside the Guide, member 3 is dead. The state hash is computed by Core, not forged.
@@ -90,6 +90,20 @@ internal static class PersonalQuestContracts
                 Check(realm.Characters(token).Single().Quests!.Single() == new QuestRecord(content.Id, 2), "records survive restart");
             }
 
+            if (mode == "open")
+            {
+                // The completions earned above leave the server inside the portable file and arrive on another host.
+                using var realm = new Realm(folder, time, mode);
+                var token = realm.Login(new(names[0], password), false).Token;
+                var exported = realm.ExportCharacter(token, characters[0]);
+                Check(exported.Version == 3 && exported.Quests!.SequenceEqual([new QuestRecord(content.Id, 2)]), "export carries earned completion records");
+                string path = Path.Combine(folder, "earned.json"); OpenCharacterFile.Save(path, exported);
+                using var destination = new Realm(Path.Combine(folder, "destination"), time, mode);
+                var guest = destination.Login(new("quest-dest", password), true).Token;
+                var copy = destination.ImportCharacter(guest, OpenCharacterFile.Load(path));
+                Check(copy.Quests!.SequenceEqual(exported.Quests!) && destination.ExportCharacter(guest, copy.Id).Quests!.SequenceEqual(exported.Quests!),
+                    "earned records survive file export and import on another host");
+            }
             bool Refused(byte[] bytes)
             {
                 File.WriteAllBytes(file, bytes);
@@ -129,5 +143,106 @@ internal static class PersonalQuestContracts
             Console.WriteLine($"PERSONAL QUEST PASS {mode} credit/dead-excluded/restart/close/repeat/validation/legacy/wire");
         }
         finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
+    }
+
+    // Open file format 3: quest completions travel with the character, and earlier formats cannot carry them.
+    private static void OpenFile()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "opend2-quest-file-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        void Reject(int status, Action action)
+        {
+            try { action(); } catch (Rejected e) when (e.Status == status) { return; }
+            throw new Exception("Personal quest: expected rejection " + status);
+        }
+        void Invalid(string reason, OpenCharacter file)
+        {
+            try { OpenCharacterFile.Validate(file); }
+            catch (InvalidDataException) { return; }
+            throw new Exception("Personal quest: invalid file accepted: " + reason);
+        }
+        try
+        {
+            string world = CooperativeWorld.Content.Id;
+            QuestRecord[] earned = [new(world, 3), new("future-world-v2", 1)];
+            var profile = OpenItemTransferContracts.FullCharacter() with { Version = 3, Quests = earned };
+
+            // Budget: the largest inventory plus the maximum number of records still fits the 8 KiB file limit.
+            var many = profile with { Quests = [.. Enumerable.Range(0, QuestRecords.MaxRecords).Select(i => new QuestRecord("extra-world-" + i, QuestRecords.MaxCompletions))] };
+            string big = Path.Combine(root, "big.json"); OpenCharacterFile.Save(big, many);
+            Check(new FileInfo(big).Length <= OpenCharacterFile.MaximumBytes && OpenCharacterFile.Load(big).Quests!.Length == QuestRecords.MaxRecords, "maximum inventory and records fit the file budget");
+
+            string path = Path.Combine(root, "hero.json"); OpenCharacterFile.Save(path, profile);
+            string text = File.ReadAllText(path);
+            Check(text.Contains("\"version\":3") && text.Contains("\"quests\":[{\"world\":\"" + world + "\",\"completions\":3}") &&
+                !text.Contains("\"owner\"") && !text.Contains("\"account\""), "format 3 stores only world ID and count");
+            OpenItemTransferContracts.Same(profile, OpenCharacterFile.Load(path));
+
+            // Earlier formats upgrade in memory without touching the source file, and gain an empty record list.
+            string v2 = Path.Combine(root, "v2.json");
+            string v2Text = text.Replace("\"version\":3", "\"version\":2");
+            v2Text = v2Text[..v2Text.IndexOf(",\"quests\"", StringComparison.Ordinal)] + "}";
+            File.WriteAllText(v2, v2Text);
+            var upgraded = OpenCharacterFile.Load(v2);
+            Check(upgraded.Version == 3 && upgraded.Quests is { Length: 0 } && upgraded.Inventory!.Length == 46 && File.ReadAllText(v2) == v2Text, "format 2 file upgrades without records and stays unmodified");
+
+            // Format 2 cannot carry records, format 3 must state them, and every record obeys the realm.json rules.
+            Invalid("format 2 with records", profile with { Version = 2 });
+            Invalid("format 1 with records", new(1, GameSimulation.RulesVersion, "open", "Traveler", 1, null, earned));
+            Invalid("format 3 without records", profile with { Quests = null });
+            Invalid("zero completions", profile with { Quests = [new(world, 0)] });
+            Invalid("excess completions", profile with { Quests = [new(world, QuestRecords.MaxCompletions + 1)] });
+            Invalid("bad world ID", profile with { Quests = [new("Bad World", 1)] });
+            Invalid("duplicate world", profile with { Quests = [new(world, 1), new(world, 2)] });
+            Invalid("null record", profile with { Quests = [null!] });
+            Invalid("too many records", profile with { Quests = [.. Enumerable.Range(0, QuestRecords.MaxRecords + 1).Select(i => new QuestRecord("w" + i, 1))] });
+            foreach (string malformed in new[] { text.Replace("\"completions\":3", "\"completions\":null"), text.Replace("\"world\":", "\"owner\":2,\"world\":"),
+                text.Replace("\"quests\":", "\"quests\":null,\"quests\":") })
+            {
+                string bad = Path.Combine(root, "bad.json"); File.WriteAllText(bad, malformed);
+                try { OpenCharacterFile.Load(bad); throw new Exception("Personal quest: malformed file accepted."); } catch (InvalidDataException) { }
+            }
+
+            string database = Path.Combine(root, "open", "realm.json");
+            Guid id;
+            using (var open = new Realm(Path.Combine(root, "open"), mode: "open"))
+            {
+                var token = open.Login(new("quest-file", "personal-quest-file-password"), true).Token;
+                id = open.ImportCharacter(token, profile).Id;
+                Check(open.Characters(token).Single().Quests!.SequenceEqual(earned), "import stores the records on the new character");
+                OpenItemTransferContracts.Same(profile, open.ExportCharacter(token, id));
+                var exported = open.ExportCharacter(token, id); exported.Quests![0] = new("changed", 9);
+                Check(open.ExportCharacter(token, id).Quests!.SequenceEqual(earned), "export does not alias stored records");
+
+                byte[] before = File.ReadAllBytes(database);
+                foreach (var bad in new[] { profile with { Version = 2 }, profile with { Quests = null }, profile with { Quests = [new(world, 0)] },
+                    profile with { Quests = [new(world, 1), new(world, 1)] }, profile with { Quests = [new("Bad World", 1)] } })
+                    Reject(400, () => open.ImportCharacter(token, bad with { Name = "BadQuestHero" }));
+                Check(before.SequenceEqual(File.ReadAllBytes(database)), "rejected quest imports leave storage unchanged");
+
+                var plain = open.ImportCharacter(token, profile with { Name = "NoRecords", Quests = [] });
+                Check(plain.Quests is null && JsonSerializer.Serialize(plain).IndexOf("Quests", StringComparison.Ordinal) < 0 &&
+                    open.ExportCharacter(token, plain.Id).Quests is { Length: 0 }, "empty records stay absent on the wire and export as an empty list");
+
+                // Playing a room and closing it must not erase what the file brought in.
+                var room = open.CreateRoom(token, new(id, "QuestFileRoom", ""));
+                open.Start(token, room.Id); open.Close(token, room.Id);
+                Check(open.ExportCharacter(token, id).Quests!.SequenceEqual(earned), "room close keeps imported records");
+            }
+            using (var open = new Realm(Path.Combine(root, "open"), mode: "open"))
+            {
+                var token = open.Login(new("quest-file", "personal-quest-file-password"), false).Token;
+                Check(open.Characters(token).Single(c => c.Id == id).Quests!.SequenceEqual(earned), "imported records survive restart");
+            }
+            using (var realm = new Realm(Path.Combine(root, "realm"), mode: "realm"))
+            {
+                var token = realm.Login(new("quest-realm", "personal-quest-file-password"), true).Token;
+                var hero = realm.CreateCharacter(token, "RealmHero");
+                Reject(403, () => realm.ImportCharacter(token, profile));
+                Reject(403, () => realm.ExportCharacter(token, hero.Id));
+            }
+            Console.WriteLine("PERSONAL QUEST FILE PASS format-3/upgrade/budget/validation/import/export/restart/room-close/realm-boundary");
+        }
+        finally { Directory.Delete(root, true); }
     }
 }

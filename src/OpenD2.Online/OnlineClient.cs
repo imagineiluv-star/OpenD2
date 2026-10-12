@@ -91,7 +91,7 @@ public sealed partial class OnlineClient : IDisposable
         var health = await Send<ServerInfo>(HttpMethod.Get, "health", cancellation: cancellation);
         if (health.Protocol != 1 || health.Rules != OpenD2.Core.GameSimulation.RulesVersion || health.RoomStream != 1)
             throw new InvalidDataException("Server protocol or game rules do not match this client.");
-        if (Mode == "open" && health.CharacterFileVersion != 2)
+        if (Mode == "open" && health.CharacterFileVersion != 3)
             throw new InvalidDataException("Open character file support does not match. Use the same client/server build.");
         if (health.Mode != Mode) throw new InvalidDataException("Server mode does not match the selected character mode.");
         SupportsInputReceipts = health.InputReceipt == 1;

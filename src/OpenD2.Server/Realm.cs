@@ -71,7 +71,7 @@ public sealed partial class Realm : IDisposable
             foreach (var character in characters)
             {
                 if (character.Inventory is { } inventory) Arena.Create(1).WithCarriedItems(inventory);
-                if (character.Quests is { } quests && !ValidQuests(quests)) throw new InvalidDataException("Invalid character quest records.");
+                if (character.Quests is { } quests && !QuestRecords.IsValid(quests)) throw new InvalidDataException("Invalid character quest records.");
             }
             // A credit exists only while the completed shared quest that earned it is still part of the saved room.
             foreach (var room in rooms.Values)
@@ -83,15 +83,11 @@ public sealed partial class Realm : IDisposable
         catch { writerLock.Dispose(); throw; }
     }
     private static void Need(bool condition, int status, string message) { if (!condition) throw new Rejected(status, message); }
-    private const int MaxQuestRecords = 8, MaxQuestCompletions = 1_000_000;
-    private static bool ValidQuests(QuestRecord[] quests) =>
-        quests.Length <= MaxQuestRecords && quests.All(q => q is not null && q.World is not null && Regex.IsMatch(q.World, "\\A[a-z0-9-]{1,64}\\z") && q.Completions is >= 1 and <= MaxQuestCompletions) &&
-        quests.Select(q => q.World).Distinct().Count() == quests.Length;
     // Saturating: Close() must not throw after it has begun updating characters.
     private static QuestRecord[] WithCompletion(QuestRecord[]? records, string world)
     {
         var list = (records ?? []).ToList(); int at = list.FindIndex(q => q.World == world);
-        if (at < 0) list.Add(new(world, 1)); else list[at] = list[at] with { Completions = Math.Min(MaxQuestCompletions, list[at].Completions + 1) };
+        if (at < 0) list.Add(new(world, 1)); else list[at] = list[at] with { Completions = Math.Min(QuestRecords.MaxCompletions, list[at].Completions + 1) };
         return list.ToArray();
     }
     private static string Name(string value)
@@ -154,8 +150,8 @@ public sealed partial class Realm : IDisposable
             Need(Mode == "open", 403, "Personal characters are only available in Open mode.");
             var c = Owned(account, id);
             Need(!rooms.Values.Any(r => r.Saved.Members.Any(m => m.Character == id)), 409, "Leave or close the room before exporting.");
-            return new(2, GameSimulation.RulesVersion, "open", c.Name, c.Victories,
-                (c.Inventory ?? []).Select(i => new OpenItem(i.Definition, i.Location, i.Slot)).ToArray());
+            return new(3, GameSimulation.RulesVersion, "open", c.Name, c.Victories,
+                (c.Inventory ?? []).Select(i => new OpenItem(i.Definition, i.Location, i.Slot)).ToArray(), c.Quests?.ToArray() ?? []);
         }
     }
     public CharacterInfo ImportCharacter(string token, OpenCharacter input)
@@ -169,8 +165,9 @@ public sealed partial class Realm : IDisposable
             Need(characters.Count(c => c.Account == account) < 4, 409, "Four characters per account.");
             Need(!characters.Any(c => c.Account == account && c.Name.Equals(input.Name, StringComparison.OrdinalIgnoreCase)), 409, "Character name already exists; import never overwrites.");
             var character = new Character(Guid.NewGuid(), account, input.Name, input.Victories,
-                input.Inventory!.Select(i => new CarriedItem(new(1), i.Definition, i.Location, i.Slot)).ToArray());
-            characters.Add(character); Save(); return new(character.Id, character.Name, character.Victories);
+                input.Inventory!.Select(i => new CarriedItem(new(1), i.Definition, i.Location, i.Slot)).ToArray(),
+                input.Quests!.Length == 0 ? null : input.Quests.ToArray());
+            characters.Add(character); Save(); return new(character.Id, character.Name, character.Victories, character.Quests?.ToArray());
         }
     }
     public object DeleteCharacter(string token, Guid id)
