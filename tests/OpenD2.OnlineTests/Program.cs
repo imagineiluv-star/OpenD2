@@ -47,6 +47,7 @@ ModeContracts.Run();
 CharacterTransferContracts.Run();
 OpenItemTransferContracts.Run();
 InventoryContracts.Run();
+WorldBandwidthContracts.Run();
 
 static void Check(bool yes, string message) { if (!yes) throw new Exception(message); Console.WriteLine("PASS " + message); }
 static void Reject(int code, Action action)
