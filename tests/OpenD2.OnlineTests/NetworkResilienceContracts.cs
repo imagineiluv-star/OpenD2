@@ -199,7 +199,7 @@ internal static class NetworkResilienceContracts
         }
     }
 
-    private static (TimeSpan Cpu, long Memory)? ProcessSample(Process process)
+    internal static (TimeSpan Cpu, long Memory)? ProcessSample(Process process)
     {
         if (process.HasExited) throw new Exception("Server exited during resource sampling.");
         try { process.Refresh(); return (process.TotalProcessorTime, process.WorkingSet64); }

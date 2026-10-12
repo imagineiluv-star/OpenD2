@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Net;
 using System.Security.Cryptography;
@@ -9,7 +10,8 @@ using OpenD2.Online;
 // Test clients only. The normal Godot single-instance policy is not involved.
 internal static class StreamCapacityContracts
 {
-    internal static async Task Run(string url, string ca, string mode, string output, int seconds)
+    // 'server' (optional) is the real server process: its CPU time and working set are sampled during the steady-state window.
+    internal static async Task Run(string url, string ca, string mode, string output, int seconds, Process? server = null)
     {
         if (seconds is < 1 or > 3600) throw new ArgumentOutOfRangeException(nameof(seconds));
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(seconds + 240));
@@ -24,6 +26,7 @@ internal static class StreamCapacityContracts
         long inputs = 0, matches = 0, frames = 0, rounds = 0;
         int throttles = 0;
         double sampled = 0, recovery = 0;
+        double? serverCpuMs = null; long? peakWorkingSet = null; bool metricsAvailable = false;
         var elapsed = Stopwatch.StartNew();
         void Pass(string name) { checks.Add(name); Console.WriteLine("CAPACITY PASS " + mode + " " + name); }
         // The production password budget covers registration AND room admission (60/min).
@@ -86,6 +89,8 @@ internal static class StreamCapacityContracts
             Pass("33rd stream rejected with 429 while all 32 slots are occupied");
 
             var sequence = feeds.Select(f => f.Latest!.NextSequence).ToArray();
+            var cpuStart = server is null ? null : NetworkResilienceContracts.ProcessSample(server);
+            metricsAvailable = cpuStart.HasValue;
             var sample = Stopwatch.StartNew();
             do
             {
@@ -131,9 +136,19 @@ internal static class StreamCapacityContracts
                 }
                 await clients[32].Send<CharacterInfo[]>(HttpMethod.Get, "v1/characters", cancellation: stop);
                 rounds++;
+                if (metricsAvailable)
+                {
+                    var resources = NetworkResilienceContracts.ProcessSample(server!);
+                    metricsAvailable &= resources.HasValue;
+                    if (resources.HasValue) peakWorkingSet = Math.Max(peakWorkingSet ?? 0, resources.Value.Memory);
+                }
                 await Task.Delay(100, stop);
             } while (sample.Elapsed.TotalSeconds < seconds);
             sampled = sample.Elapsed.TotalSeconds;
+            var cpuEnd = metricsAvailable ? NetworkResilienceContracts.ProcessSample(server!) : null;
+            metricsAvailable &= cpuEnd.HasValue;
+            if (metricsAvailable) serverCpuMs = (cpuEnd!.Value.Cpu - cpuStart!.Value.Cpu).TotalMilliseconds;
+            else peakWorkingSet = null; // Restricted process inspection reports UNAVAILABLE, never invented zeros.
             if (clients.Take(32).Any(c => c.RoomDeltaFrames == 0)) throw new Exception("Not every stream received deltas.");
             Pass("eight active rooms keep matching peer hashes and exact input cursors while HTTP stays live");
 
@@ -208,6 +223,10 @@ internal static class StreamCapacityContracts
                     room_interest = clients.Count == 33 && clients.All(c => c.SupportsRoomInterest) ? "v3" : "NOT_VERIFIED",
                     requested_seconds = seconds, sampled_seconds = sampled, elapsed_seconds = elapsed.Elapsed.TotalSeconds,
                     rounds, inputs, matched_room_rounds = matches, frames, slot_recovery_ms = recovery, setup_throttle_waits = throttles,
+                    server_process_metrics = server is null ? "NOT_RUN" : metricsAvailable ? "PASS" : "UNAVAILABLE",
+                    server_cpu_ms = serverCpuMs,
+                    server_cpu_percent_of_one_core = serverCpuMs is { } cpu && sampled > 0 ? cpu / (sampled * 1000) * 100 : (double?)null,
+                    server_peak_sampled_working_set_bytes = peakWorkingSet,
                     http_response_ms = new { measured = inputs, retained = sorted.Length, window = "last-4096-requests", p50 = Percentile(.5), p95 = Percentile(.95), max = Percentile(1) },
                     setup_http_state_polling = true, measurement_http_state_polling = false,
                     physical_multi_pc = "NOT_RUN", wan = "NOT_RUN", packet_loss = "NOT_RUN", manual_gui = "NOT_RUN",
