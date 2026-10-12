@@ -46,7 +46,16 @@ builder.Services.AddRateLimiter(o =>
     o.AddFixedWindowLimiter("game", x => { x.PermitLimit = 1000; x.Window = TimeSpan.FromSeconds(1); x.QueueLimit = 0; });
     o.AddFixedWindowLimiter("catalog", x => { x.PermitLimit = 60; x.Window = TimeSpan.FromMinutes(1); x.QueueLimit = 0; });
 });
-builder.Services.AddSingleton(new Realm(builder.Configuration["data"] ?? Path.Combine(AppContext.BaseDirectory, mode + "-data"), mode: mode));
+// Operator opt-in only, like the catalog: a client-owned host never reads a directory its launcher names. The tables are read once, before
+// the realm opens its storage, and a missing file or malformed table stops the server with a message that names the file and line.
+OpenD2.Assets.CharacterTables? characterTables = null;
+if (!managedHost && builder.Configuration["tables"] is { Length: > 0 } tableDirectory)
+{
+    characterTables = TableDirectory.Load(tableDirectory);
+    Console.WriteLine($"Character tables: {characterTables.Progression.Source} ({characterTables.Skills.All.Count} class skills)");
+}
+builder.Services.AddSingleton(new Realm(builder.Configuration["data"] ?? Path.Combine(AppContext.BaseDirectory, mode + "-data"), mode: mode,
+    tables: characterTables?.Progression, skills: characterTables?.Skills));
 builder.Services.AddHostedService<RealmLoop>();
 var app = builder.Build();
 app.Use(async (context, next) =>
@@ -65,7 +74,7 @@ string Token(HttpContext c)
     string header = c.Request.Headers.Authorization.ToString();
     return header.StartsWith("Bearer ", StringComparison.Ordinal) && header.Length == 71 ? header[7..] : "";
 }
-app.MapGet("/health", () => new { protocol = 1, rules = OpenD2.Core.GameSimulation.RulesVersion, roomStream = 1, mode, characterFileVersion = 4, inputReceipt = 1, roomDelta = 1, inputBatch = 1, roomInterest = 1, roomInputProgress = 1, roomWorld = 1, characterProgress = 1, monsterKinds = 1 });
+app.MapGet("/health", (Realm r) => new { protocol = 1, rules = OpenD2.Core.GameSimulation.RulesVersion, roomStream = 1, mode, characterFileVersion = 4, inputReceipt = 1, roomDelta = 1, inputBatch = 1, roomInterest = 1, roomInputProgress = 1, roomWorld = 1, characterProgress = 1, monsterKinds = 1, tables = r.TablesAreOriginal ? "original" : "preview" });
 if (catalog is not null)
     app.MapGet("/v1/server-catalog", (HttpContext context) => context.Request.IsHttps
         ? Results.Bytes(catalog, "application/json") : (IResult)Results.StatusCode(400)).RequireRateLimiting("catalog");

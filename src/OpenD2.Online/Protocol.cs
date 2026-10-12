@@ -2,7 +2,7 @@ using OpenD2.Core;
 
 namespace OpenD2.Online;
 
-public sealed record ServerInfo(int Protocol, int Rules, int RoomStream = 0, string Mode = "realm", int CharacterFileVersion = 0, int InputReceipt = 0, int RoomDelta = 0, int InputBatch = 0, int RoomInterest = 0, int RoomInputProgress = 0, int RoomWorld = 0, int CharacterProgress = 0, int MonsterKinds = 0);
+public sealed record ServerInfo(int Protocol, int Rules, int RoomStream = 0, string Mode = "realm", int CharacterFileVersion = 0, int InputReceipt = 0, int RoomDelta = 0, int InputBatch = 0, int RoomInterest = 0, int RoomInputProgress = 0, int RoomWorld = 0, int CharacterProgress = 0, int MonsterKinds = 0, string? Tables = null);
 public sealed record RoomUpdate(RoomView? State, int Status = 200, string? Error = null);
 public sealed record Credentials(string Username, string Password);
 public sealed record LoginResult(string Token, string Username);

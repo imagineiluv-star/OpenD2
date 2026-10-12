@@ -27,6 +27,8 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
     shutil.copyfile(ROOT/'docs/migration/ONLINE_PLAY.md', stage/'ONLINE_PLAY.md')
     shutil.copyfile(ROOT/'docs/migration/ONLINE_NETWORK.md', stage/'ONLINE_NETWORK.md')
     shutil.copyfile(ROOT/'docs/migration/ONLINE_MODES.md', stage/'ONLINE_MODES.md')
+    shutil.copyfile(ROOT/'docs/migration/CHARACTER_PROGRESSION.md', stage/'CHARACTER_PROGRESSION.md')
+    shutil.copyfile(ROOT/'docs/migration/MONSTER_KINDS.md', stage/'MONSTER_KINDS.md')
     shutil.copyfile(ROOT/'docs/migration/TWO_CLIENT_ACCEPTANCE.md', stage/'TWO_CLIENT_ACCEPTANCE.md')
     shutil.copyfile(ROOT/'docs/migration/NETWORK_ACCEPTANCE.md', stage/'NETWORK_ACCEPTANCE.md')
     shutil.copyfile(ROOT/'docs/migration/STREAM_CAPACITY.md', stage/'STREAM_CAPACITY.md')

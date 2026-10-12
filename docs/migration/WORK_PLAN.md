@@ -93,6 +93,7 @@ M1 1차 구현: [M1_RESULTS.md](M1_RESULTS.md). 01~03 코드와 합성 검증을
     - [x] **M5-04b** `GET /v1/skills`와 클라이언트 API(`CreateCharacter(name, class)`, `SpendStat`, `SpendSkill`, `ListSkills`), Godot 개발 패널의 직업 선택·진행 표시·포인트 사용, 헤드리스 확인 `OPEND2_PROGRESS_UI_PASS`. 정식 UI 디자인·사람 GUI 시험은 미수행. [패널](CHARACTER_PROGRESSION.md#godot-개발-패널-m5-04b).
     - [x] **M5-05a** 몬스터 종류·레벨 구조: `MonsterTable`(코드·이름 키·레벨·경험치)·`MonsterRoster`(방의 몬스터 → 종류)·`monstats.txt` 로더·`AssetAudit --monsters-txt`, 처치 경험치가 종류 표를 따름(이전의 "경험치 = 최대 체력" 임시 규칙 제거), `GET /v1/monsters`, Godot 패널의 "Monsters here" 문구. 시뮬레이션·저장·해시·프로토콜 프레임 불변. **원본 값 대조 없음(preview 표)**, 레벨 보정·난이도는 미구현. [범위/한계](MONSTER_KINDS.md).
     - [x] **M5-05b** 방 안에서 본인의 방 경험치를 본다: `RoomView.experience`(본인 값만, 직업 없으면 생략 — 구형 프레임과 같은 모양), 값이 바뀔 때만 전체 프레임, 개발 패널의 "Room experience" 문구, 릴리스 노트에 직업·몬스터 종류 설명. [범위](CHARACTER_PROGRESSION.md).
+    - [x] **M5-04c** 서버 `--tables <폴더>`: 본인이 꺼낸 `charstats/experience/skills.txt`로 서버를 돌림(MPQ·네이티브 의존성 없음), 읽기 실패는 저장소 열기 전 시작 실패, 직업 캐릭터가 있는 데이터 폴더는 표 하나에 묶임(다른 표면 시작 거부), `/health.tables`와 패널의 "PREVIEW" 표시, 개인 호스트는 무시. **진짜 설치본 파일로는 시험하지 못함.** [방법과 주의](CHARACTER_PROGRESSION.md#원본-표로-서버-실행---tables).
     - [ ] 직업·레벨·스킬: 원본 설치본 표 대조, 서버 표 로드, 스킬 효과·능력치 전투 효과, 몬스터 경험치, 정식 직업 선택/능력치·스킬 창. 파티원 퀘스트 단계 표시, 실제 MPQ·두 PC 인수.
 - [ ] **M5-02** 지연·패킷 손실·분할 수신·재접속·호스트 종료 정책 시험.
   - [x] **M5-02a** 협동 월드 방의 응답 유실: 거부/성공 포탈 입력의 불확실 결과 복구·재생 입력 거부·분할 파티 프레임 해시 일치(TLS 바이트 프록시, Realm/Open). [범위/한계](NETWORK_ACCEPTANCE.md#협동-월드-방의-응답-유실과-무응답-수신자-m5-02ab).

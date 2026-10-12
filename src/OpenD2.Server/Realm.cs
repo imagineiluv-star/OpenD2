@@ -45,6 +45,8 @@ public sealed partial class Realm : IDisposable
     internal ProgressionTables Tables { get; }
     internal SkillTable SkillTree { get; }
     internal MonsterTable Monsters { get; }
+    // The tables are the owner's own (read from --tables) rather than the built-in preview.
+    public bool TablesAreOriginal => Tables.Original;
     public Realm(string directory, TimeProvider? time = null, string mode = "realm", ProgressionTables? tables = null, SkillTable? skills = null, MonsterTable? monsters = null)
     {
         if (mode is not ("realm" or "open")) throw new ArgumentException("Unknown online mode.", nameof(mode));
@@ -63,6 +65,11 @@ public sealed partial class Realm : IDisposable
             if (db.Version is not (1 or 2 or 3) || db.RulesVersion is not (7 or GameSimulation.RulesVersion) || db.Accounts.Length > 256 || db.Characters.Length > 1024 || db.Rooms.Length > 32) throw new InvalidDataException("Unsupported realm version/budget.");
             string? storedMode = db.Version == 1 && db.Mode is null ? "realm" : db.Mode;
             if (storedMode != Mode || (db.Version == 1 && Mode != "realm")) throw new InvalidDataException("Database mode does not match this server. Use separate data directories.");
+            // Characters, skill points and room experience only mean something under the tables that produced them, so a data directory
+            // is tied to one table set once it holds any. Plain accounts alone can move between table sets.
+            string storedTables = db.Tables ?? ProgressionTables.Preview.Source;
+            if (storedTables != Tables.Source && db.Characters.Any(c => c.Progress is not null))
+                throw new InvalidDataException($"This data directory holds characters built with the progression tables '{storedTables}', but this server runs '{Tables.Source}'. Use one data directory per table set.");
             foreach (var saved in db.Rooms)
                 if (saved.World is not null)
                 {
@@ -503,7 +510,8 @@ public sealed partial class Realm : IDisposable
     {
         try
         {
-            var db = new Database(rooms.Values.Any(r => r.Saved.World is not null) ? 3 : 2, GameSimulation.RulesVersion, accounts.ToArray(), characters.ToArray(), rooms.Values.Select(r => r.Saved with { Game = r.Game is null ? null : SavedGame.Capture(r.Game) }).ToArray(), Mode);
+            var db = new Database(rooms.Values.Any(r => r.Saved.World is not null) ? 3 : 2, GameSimulation.RulesVersion, accounts.ToArray(), characters.ToArray(), rooms.Values.Select(r => r.Saved with { Game = r.Game is null ? null : SavedGame.Capture(r.Game) }).ToArray(), Mode,
+                Tables.Source == ProgressionTables.Preview.Source ? null : Tables.Source);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(db);
             if (bytes.Length > 16 * 1024 * 1024) throw new IOException("Realm exceeds storage budget.");
             return (bytes, ++saveSequence);

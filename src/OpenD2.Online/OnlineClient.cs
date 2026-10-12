@@ -26,6 +26,9 @@ public sealed partial class OnlineClient : IDisposable
     public bool SupportsCharacterProgress { get; private set; }
     // The server lists its monster kinds (GET v1/monsters).
     public bool SupportsMonsterKinds { get; private set; }
+    // "original" when the server runs on tables the operator read from their own install, "preview" for the built-in stand-ins.
+    public string TableSet { get; private set; } = "preview";
+    public bool TablesAreOriginal => TableSet == "original";
     public bool SupportsInputBatches { get; private set; }
     private long inputBatchRequests;
     public long InputBatchRequests => Interlocked.Read(ref inputBatchRequests);
@@ -106,6 +109,7 @@ public sealed partial class OnlineClient : IDisposable
         SupportsWorldRooms = health.RoomWorld == 1 && SupportsRoomInputProgress;
         SupportsCharacterProgress = health.CharacterProgress == 1;
         SupportsMonsterKinds = health.MonsterKinds == 1;
+        TableSet = health.Tables == "original" ? "original" : "preview";
     }
     public async Task<InputReceipt> SendInput(Guid room, InputRequest input, CancellationToken cancellation = default)
     {

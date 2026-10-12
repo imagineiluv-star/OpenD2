@@ -33,5 +33,8 @@ public sealed record SavedGame(string StateHash, long Tick, uint Random, EntityS
     }
 }
 public sealed record SavedRoom(Guid Id, string Name, Guid Host, string Salt, string PasswordHash, Member[] Members, SavedGame? Game, WorldContent? World = null);
-public sealed record Database(int Version, int RulesVersion, Account[] Accounts, Character[] Characters, SavedRoom[] Rooms, string? Mode = null);
+// Tables: the label of the progression tables the characters were built with. Omitted for the built-in preview tables, so a database
+// written before original tables existed still reads as "preview".
+public sealed record Database(int Version, int RulesVersion, Account[] Accounts, Character[] Characters, SavedRoom[] Rooms, string? Mode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Tables = null);
 public sealed class Rejected(int status, string message) : Exception(message) { public int Status => status; }
