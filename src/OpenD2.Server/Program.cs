@@ -65,7 +65,7 @@ string Token(HttpContext c)
     string header = c.Request.Headers.Authorization.ToString();
     return header.StartsWith("Bearer ", StringComparison.Ordinal) && header.Length == 71 ? header[7..] : "";
 }
-app.MapGet("/health", () => new { protocol = 1, rules = OpenD2.Core.GameSimulation.RulesVersion, roomStream = 1, mode, characterFileVersion = 4, inputReceipt = 1, roomDelta = 1, inputBatch = 1, roomInterest = 1, roomInputProgress = 1, roomWorld = 1, characterProgress = 1 });
+app.MapGet("/health", () => new { protocol = 1, rules = OpenD2.Core.GameSimulation.RulesVersion, roomStream = 1, mode, characterFileVersion = 4, inputReceipt = 1, roomDelta = 1, inputBatch = 1, roomInterest = 1, roomInputProgress = 1, roomWorld = 1, characterProgress = 1, monsterKinds = 1 });
 if (catalog is not null)
     app.MapGet("/v1/server-catalog", (HttpContext context) => context.Request.IsHttps
         ? Results.Bytes(catalog, "application/json") : (IResult)Results.StatusCode(400)).RequireRateLimiting("catalog");
@@ -76,6 +76,7 @@ api.MapPost("/logout", (HttpContext c, Realm r) => r.Logout(Token(c)));
 api.MapGet("/characters", (HttpContext c, Realm r) => r.Characters(Token(c)));
 api.MapPost("/characters", (HttpContext c, Realm r, NameRequest input) => r.CreateCharacter(Token(c), input.Name, input.Class));
 api.MapGet("/skills", (HttpContext c, Realm r) => r.Skills(Token(c)));
+api.MapGet("/monsters", (HttpContext c, Realm r) => r.MonsterKinds(Token(c)));
 api.MapPost("/characters/{id:guid}/stats", (HttpContext c, Realm r, Guid id, StatRequest input) => r.SpendStat(Token(c), id, input));
 api.MapPost("/characters/{id:guid}/skills", (HttpContext c, Realm r, Guid id, SkillRequest input) => r.SpendSkill(Token(c), id, input));
 api.MapDelete("/characters/{id:guid}", (HttpContext c, Realm r, Guid id) => r.DeleteCharacter(Token(c), id));

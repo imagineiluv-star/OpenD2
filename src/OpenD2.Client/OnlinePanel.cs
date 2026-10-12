@@ -139,6 +139,7 @@ public partial class OnlinePanel : VBoxContainer
         RequireLogin(); var selected = characters.Selected >= 0 && characters.Selected < characterList.Length ? characterList[characters.Selected].Id : Guid.Empty;
         characterList = await client!.Send<CharacterInfo[]>(HttpMethod.Get, "v1/characters", cancellation: lifetime.Token);
         if (client.SupportsCharacterProgress && skillList.Length == 0) skillList = await client.ListSkills(lifetime.Token);
+        if (client.SupportsMonsterKinds && monsterList.Length == 0) monsterList = await client.ListMonsters(lifetime.Token);
         await RefreshWorlds();
         Guid selectedRoom = rooms.Selected >= 0 && rooms.Selected < roomList.Length ? roomList[rooms.Selected].Id : Guid.Empty;
         roomList = await client.Send<RoomInfo[]>(HttpMethod.Get, RoomsPath, cancellation: lifetime.Token);
@@ -176,6 +177,8 @@ public partial class OnlinePanel : VBoxContainer
             var me = next.Entities.First(e => e.Id.Value == next.Actor);
             details.Text += $" | HP {me.Health}/{me.MaxHealth} | Mana {me.Mana}/{me.MaxMana}";
             if (next.World is { } world) details.Text += $"\n{RegionName(me)} | Quest: {world.Quest.Stage} ({world.Quest.Defeated}/{world.Quest.Required})";
+            if (monsterList.Length > 0 && MonsterLabels.Describe(next, next.World is null ? Arena.Roster : CooperativeWorld.Roster, monsterList) is { Length: > 0 } monsters)
+                details.Text += "\nMonsters here: " + monsters;
         }
         if (changedRoom) StartRoomStream(next.Id);
     }
@@ -231,7 +234,7 @@ public partial class OnlinePanel : VBoxContainer
         throw new TimeoutException("Room stream did not deliver a fresh state.");
     }
     private void ClearRoom() { StopRoomStream(); state = null; nextInputSequence = 0; arena.State = null; arena.QueueRedraw(); details.Text = ""; moveX = moveY = 0; worldChoice.Disabled = !signedIn; }
-    private void Reset() { requests.Clear(); skillList = []; signedIn = false; connectedAddress = null; serverMode.Disabled = false; client?.Dispose(); client = null; ClearRoom(); characters.Clear(); rooms.Clear(); worldChoice.Clear(); worldChoice.AddItem("Arena"); worldChoice.Disabled = true; }
+    private void Reset() { requests.Clear(); skillList = []; monsterList = []; signedIn = false; connectedAddress = null; serverMode.Disabled = false; client?.Dispose(); client = null; ClearRoom(); characters.Clear(); rooms.Clear(); worldChoice.Clear(); worldChoice.AddItem("Arena"); worldChoice.Disabled = true; }
     public override void _Process(double delta)
     {
         UpdateHostStatus();

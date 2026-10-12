@@ -3,7 +3,7 @@ using OpenD2.Assets;
 
 if (args.Length == 0 || args[0] is "--help" or "-h")
 {
-	Console.WriteLine("Usage: OpenD2.AssetAudit --check-demo-music <pinned-demo-data-directory> <demo-scene.json>\n       OpenD2.AssetAudit --check-scene|--check-play-ready <game-data-directory> <scene-request.json>\n       OpenD2.AssetAudit --check-map <game-data-directory> <map-request.json>\n       OpenD2.AssetAudit --inspect-save <legacy-v96.d2s> (read-only header/checksum; no import)\n       OpenD2.AssetAudit [--probe|--decode|--decode-demo] <game-data-directory> [known-paths.txt]\n       OpenD2.AssetAudit --items-txt <game-data-directory> (lod-1.10f reference data; no gameplay import)\n       OpenD2.AssetAudit --character-txt <game-data-directory> (lod-1.10f charstats/experience/skills; no gameplay import)\n       OpenD2.AssetAudit --tables-txt|--tables-bin-110f <game-data-directory>\nJSON goes to stdout. Scan uses read-only MPQs; no resource extraction. --decode validates Palette/text TBL/DC6/DCC/COF/DT1/DS1 and TXT structure. BIN schemas require explicit --tables-bin-110f.\nExit 0: scan completed without reported errors; 3: missing archives, read, decode or reference failures; 1: fatal error; 2: usage.\nA successful scan does not establish version compatibility or complete coverage.");
+	Console.WriteLine("Usage: OpenD2.AssetAudit --check-demo-music <pinned-demo-data-directory> <demo-scene.json>\n       OpenD2.AssetAudit --check-scene|--check-play-ready <game-data-directory> <scene-request.json>\n       OpenD2.AssetAudit --check-map <game-data-directory> <map-request.json>\n       OpenD2.AssetAudit --inspect-save <legacy-v96.d2s> (read-only header/checksum; no import)\n       OpenD2.AssetAudit [--probe|--decode|--decode-demo] <game-data-directory> [known-paths.txt]\n       OpenD2.AssetAudit --items-txt <game-data-directory> (lod-1.10f reference data; no gameplay import)\n       OpenD2.AssetAudit --character-txt <game-data-directory> (lod-1.10f charstats/experience/skills; no gameplay import)\n       OpenD2.AssetAudit --monsters-txt <game-data-directory> (lod-1.10f monstats: code, name key, level, experience; no gameplay import)\n       OpenD2.AssetAudit --tables-txt|--tables-bin-110f <game-data-directory>\nJSON goes to stdout. Scan uses read-only MPQs; no resource extraction. --decode validates Palette/text TBL/DC6/DCC/COF/DT1/DS1 and TXT structure. BIN schemas require explicit --tables-bin-110f.\nExit 0: scan completed without reported errors; 3: missing archives, read, decode or reference failures; 1: fatal error; 2: usage.\nA successful scan does not establish version compatibility or complete coverage.");
 	return args.Length == 0 ? 2 : 0;
 }
 try
@@ -58,6 +58,15 @@ try
 			Skills = tables.Skills.All.Where(s => s.Class == c).OrderBy(s => s.Id).ToArray() }).ToArray();
 		Console.WriteLine(JsonSerializer.Serialize(new { Installation = installation, Profile = CharacterTables.Profile, VersionStatus = "unverified", GameplayValidated = false,
 			tables.Progression.Source, tables.Sources, Classes = classes }, new JsonSerializerOptions { WriteIndented = true }));
+		return installation.MissingArchives.Count == 0 ? 0 : 3;
+	}
+	if (args[0] == "--monsters-txt")
+	{
+		if (args.Length != 2) return 2;
+		var installation = GameInstall.Probe(args[1]);
+		var tables = MonsterTables.Load(path => AssetDecoders.ReadFromInstall(args[1], path));
+		Console.WriteLine(JsonSerializer.Serialize(new { Installation = installation, Profile = MonsterTables.Profile, VersionStatus = "unverified", GameplayValidated = false,
+			tables.Monsters.Source, tables.Sources, Monsters = tables.Monsters.All.OrderBy(m => m.Code, StringComparer.OrdinalIgnoreCase).ToArray() }, new JsonSerializerOptions { WriteIndented = true }));
 		return installation.MissingArchives.Count == 0 ? 0 : 3;
 	}
 	if (args[0] is "--tables-txt" or "--tables-bin-110f")

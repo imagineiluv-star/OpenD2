@@ -7,6 +7,8 @@ namespace OpenD2.Online;
 public static class CooperativeWorld
 {
     public static WorldDefinition Definition { get; } = Build();
+    // Which kind each Field monster is. Not part of the content hash: the simulation does not know kinds.
+    public static MonsterRoster Roster { get; } = new([(100, "preview-grunt"), (101, "preview-brute")]);
     // Include seed, actors, spawn positions and initial items as well as map content.
     public static WorldContent Content { get; } = new("cooperative-demo-v2", Create(4).ComputeStateHash());
 

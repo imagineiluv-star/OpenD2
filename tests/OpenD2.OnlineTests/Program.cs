@@ -38,6 +38,7 @@ InputProgressContracts.Run();
 CooperativeRoomContracts.Run();
 PersonalQuestContracts.Run();
 CharacterProgressContracts.Run();
+MonsterKindContracts.Run();
 WorldRestartContracts.Run();
 RoomInterestContracts.Run();
 await InputReceiptContracts.Run();

@@ -24,6 +24,8 @@ public sealed partial class OnlineClient : IDisposable
     public bool SupportsWorldRooms { get; private set; }
     // Characters can have a class, earn experience and spend attribute and skill points on this server.
     public bool SupportsCharacterProgress { get; private set; }
+    // The server lists its monster kinds (GET v1/monsters).
+    public bool SupportsMonsterKinds { get; private set; }
     public bool SupportsInputBatches { get; private set; }
     private long inputBatchRequests;
     public long InputBatchRequests => Interlocked.Read(ref inputBatchRequests);
@@ -103,6 +105,7 @@ public sealed partial class OnlineClient : IDisposable
         SupportsInputBatches = health.InputBatch == 1;
         SupportsWorldRooms = health.RoomWorld == 1 && SupportsRoomInputProgress;
         SupportsCharacterProgress = health.CharacterProgress == 1;
+        SupportsMonsterKinds = health.MonsterKinds == 1;
     }
     public async Task<InputReceipt> SendInput(Guid room, InputRequest input, CancellationToken cancellation = default)
     {
@@ -140,6 +143,11 @@ public sealed partial class OnlineClient : IDisposable
     {
         if (characterClass is not null && !SupportsCharacterProgress) throw new NotSupportedException("Server does not support character classes.");
         return await Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest(name, characterClass?.ToString()), cancellation);
+    }
+    public async Task<MonsterInfo[]> ListMonsters(CancellationToken cancellation = default)
+    {
+        if (!SupportsMonsterKinds) throw new NotSupportedException("Server does not list monster kinds.");
+        return await Send<MonsterInfo[]>(HttpMethod.Get, "v1/monsters", cancellation: cancellation);
     }
     public async Task<SkillInfo[]> ListSkills(CancellationToken cancellation = default)
     {

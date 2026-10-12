@@ -181,10 +181,6 @@ public static class Progression
 			StatPoints = progress.StatPoints + gained * d.StatPointsPerLevel, SkillPoints = progress.SkillPoints + gained * ProgressionTables.SkillPointsPerLevel }, gained);
 	}
 
-	// Preview rule until monster data exists in the simulation: a kill is worth the monster's maximum health.
-	// This is not a Diablo II value (the original pays per monster type and level, and scales it by the level difference).
-	public static uint PreviewKillExperience(int monsterMaxHealth) => (uint)Math.Clamp(monsterMaxHealth, 0, 100_000);
-
 	public static CharacterProgress AddStat(CharacterProgress progress, CharacterStat stat)
 	{
 		ArgumentNullException.ThrowIfNull(progress);

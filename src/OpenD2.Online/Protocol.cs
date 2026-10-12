@@ -2,7 +2,7 @@ using OpenD2.Core;
 
 namespace OpenD2.Online;
 
-public sealed record ServerInfo(int Protocol, int Rules, int RoomStream = 0, string Mode = "realm", int CharacterFileVersion = 0, int InputReceipt = 0, int RoomDelta = 0, int InputBatch = 0, int RoomInterest = 0, int RoomInputProgress = 0, int RoomWorld = 0, int CharacterProgress = 0);
+public sealed record ServerInfo(int Protocol, int Rules, int RoomStream = 0, string Mode = "realm", int CharacterFileVersion = 0, int InputReceipt = 0, int RoomDelta = 0, int InputBatch = 0, int RoomInterest = 0, int RoomInputProgress = 0, int RoomWorld = 0, int CharacterProgress = 0, int MonsterKinds = 0);
 public sealed record RoomUpdate(RoomView? State, int Status = 200, string? Error = null);
 public sealed record Credentials(string Username, string Password);
 public sealed record LoginResult(string Token, string Username);
@@ -12,6 +12,8 @@ public sealed record NameRequest(string Name,
 public sealed record StatRequest(string Stat);
 public sealed record SkillRequest(int Skill);
 // One entry of the server's skill table (all classes). Requires lists skill IDs that need at least one point first.
+// One kind of the server's monster table: Name is the table's name key, Experience what a kill pays each eligible member.
+public sealed record MonsterInfo(string Code, string Name, int Level, int Experience);
 public sealed record SkillInfo(int Id, string Name, string Class, int RequiredLevel, int MaxLevel, int[] Requires);
 // Per-character count of finished shared world quests, keyed by world content ID (never by hash).
 // Quests is omitted from the wire until a character has a record, so earlier clients see the same JSON.
@@ -60,6 +62,8 @@ public sealed record ApiError(string Error);
 public static class Arena
 {
     public const int Width = 24, Height = 18;
+    // The two monsters of the Arena and what they are (see MonsterRoster).
+    public static MonsterRoster Roster { get; } = new([(100, "preview-grunt"), (101, "preview-brute")]);
     public static CollisionGrid Grid()
     {
         var cells = Enumerable.Repeat(CollisionCell.Open, Width * Height).ToArray();

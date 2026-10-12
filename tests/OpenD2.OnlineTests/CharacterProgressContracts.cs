@@ -109,6 +109,7 @@ internal static class CharacterProgressContracts
                 3 => e with { Region = new(2), Position = new(3300, 2560) },
                 4 => e with { Region = new(2), Position = new(3300, 2816), Health = 0, Mode = MonsterMode.Dead },
                 100 => e with { Health = 1 },
+                101 => e with { Health = 1, Position = new(3500, 2500) },
                 _ => e
             }).ToArray();
             return db with { Rooms = [db.Rooms[0] with { Game = SavedGame.Capture(GameSimulation.Restore(snapshot with { Entities = entities })) }] };
@@ -121,14 +122,25 @@ internal static class CharacterProgressContracts
             var view = realm.StreamState(tokens[0], room, inputProgress: true, world: true);
             realm.Input(tokens[0], room, new(view.NextSequence, CommandKind.Attack, Target: 100, Region: 2, RegionEpoch: view.World!.RegionEpoch));
             realm.Tick();
-            Check(!Actor(realm.StreamState(tokens[0], room, world: true), 100).IsAlive, "the monster died");
+            Check(!Actor(realm.StreamState(tokens[0], room, world: true), 100).IsAlive, "the first monster died");
+            // The second kill is a different kind and pays its own value once the attack cooldown is over.
+            for (int wait = 0; wait < 60 && Actor(realm.StreamState(tokens[0], room, world: true), 101).IsAlive; wait++)
+            {
+                view = realm.StreamState(tokens[0], room, inputProgress: true, world: true);
+                var self = Actor(view, 1);
+                if (self.AttackCooldown == 0 && self.HitStun == 0)
+                    realm.Input(tokens[0], room, new(view.NextSequence, CommandKind.Attack, Target: 101, Region: 2, RegionEpoch: view.World!.RegionEpoch));
+                realm.Tick();
+            }
+            Check(!Actor(realm.StreamState(tokens[0], room, world: true), 101).IsAlive, "the second monster died");
             realm.Checkpoint(tokens[0], room);
             Check(realm.Characters(tokens[0]).Single().Progress!.Experience == 480, "experience is room state until the host closes the room");
         }
         playing = File.ReadAllBytes(file);
         var members = Read(file).Rooms[0].Members;
         uint ExperienceOf(int index) => members.Single(m => m.Character == characters[index]).Experience;
-        Check(ExperienceOf(0) == Progression.PreviewKillExperience(60) && ExperienceOf(0) == 60, "the living classed member beside the monster is paid");
+        Check(MonsterTable.Preview.Get("preview-grunt").Experience == 60 && MonsterTable.Preview.Get("preview-brute").Experience == 100, "the preview kinds are worth 60 and 100");
+        Check(ExperienceOf(0) == 160, "the living classed member beside the monsters is paid the value of each kind that died");
         Check(ExperienceOf(1) == 0, "a member in another region is not paid");
         Check(ExperienceOf(2) == 0, "a character without a class earns nothing");
         Check(ExperienceOf(3) == 0, "a dead member is not paid");
@@ -141,7 +153,7 @@ internal static class CharacterProgressContracts
             Reject(403, "close by a guest", () => realm.Close(tokens[1], room));
             realm.Close(tokens[0], room);
             var a = realm.Characters(tokens[0]).Single().Progress!;
-            Check(a.Level == 2 && a.Experience == 540 && a.StatPoints == 5 && a.SkillPoints == 1, "closing pays the experience and the level-up points");
+            Check(a.Level == 2 && a.Experience == 640 && a.StatPoints == 5 && a.SkillPoints == 1, "closing pays the experience and the level-up points");
             Progression.Validate(Tables, SkillTable.Preview, a);
             foreach (int i in new[] { 1, 3 })
             {
