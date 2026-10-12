@@ -56,9 +56,10 @@ public partial class OnlinePanel : VBoxContainer
         var auth = new HFlowContainer(); AddChild(auth);
         Button(auth, "Register", () => Login(true)); Button(auth, "Login", () => Login(false));
         Button(auth, "Logout", async () => { RequireLogin(); await client!.Send<object>(HttpMethod.Post, "v1/logout", cancellation: lifetime.Token); Reset(); });
-        var chars = new HFlowContainer(); AddChild(chars); chars.AddChild(characterName); chars.AddChild(characters);
-        Button(chars, "Create character", async () => { RequireLogin(); await client!.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest(characterName.Text), lifetime.Token); await Refresh(); });
+        var chars = new HFlowContainer(); AddChild(chars); chars.AddChild(characterName); chars.AddChild(characterClass); chars.AddChild(characters);
+        Button(chars, "Create character", async () => { RequireLogin(); await client!.CreateCharacter(characterName.Text, SelectedClass, lifetime.Token); await Refresh(); });
         Confirm(chars, "Delete selected", "Delete this character permanently?", async () => { RequireLogin(); await client!.Send<object>(HttpMethod.Delete, "v1/characters/" + SelectedCharacter(), cancellation: lifetime.Token); await Refresh(); });
+        AddProgressControls();
         AddProfileControls();
         worldChoice.AddItem("Arena"); AddChild(worldChoice);
         var lobby = new HFlowContainer(); AddChild(lobby); lobby.AddChild(roomName); lobby.AddChild(roomPassword); lobby.AddChild(rooms);
@@ -137,11 +138,13 @@ public partial class OnlinePanel : VBoxContainer
     {
         RequireLogin(); var selected = characters.Selected >= 0 && characters.Selected < characterList.Length ? characterList[characters.Selected].Id : Guid.Empty;
         characterList = await client!.Send<CharacterInfo[]>(HttpMethod.Get, "v1/characters", cancellation: lifetime.Token);
+        if (client.SupportsCharacterProgress && skillList.Length == 0) skillList = await client.ListSkills(lifetime.Token);
         await RefreshWorlds();
         Guid selectedRoom = rooms.Selected >= 0 && rooms.Selected < roomList.Length ? roomList[rooms.Selected].Id : Guid.Empty;
         roomList = await client.Send<RoomInfo[]>(HttpMethod.Get, RoomsPath, cancellation: lifetime.Token);
-        characters.Clear(); foreach (var c in characterList) characters.AddItem($"{c.Name} ({c.Victories} victories)");
+        characters.Clear(); foreach (var c in characterList) characters.AddItem(CharacterLabel(c));
         int index = Array.FindIndex(characterList, c => c.Id == selected); if (index >= 0) characters.Select(index);
+        ShowProgress();
         rooms.Clear(); foreach (var r in roomList) rooms.AddItem($"{r.Name} [{WorldTitle(r.World)}] {r.Players}/4 {(r.Started ? "playing" : "lobby")} {(r.Locked ? "locked" : "")}");
         int roomIndex = Array.FindIndex(roomList, r => r.Id == selectedRoom); if (roomIndex >= 0) rooms.Select(roomIndex);
     }
@@ -228,7 +231,7 @@ public partial class OnlinePanel : VBoxContainer
         throw new TimeoutException("Room stream did not deliver a fresh state.");
     }
     private void ClearRoom() { StopRoomStream(); state = null; nextInputSequence = 0; arena.State = null; arena.QueueRedraw(); details.Text = ""; moveX = moveY = 0; worldChoice.Disabled = !signedIn; }
-    private void Reset() { requests.Clear(); signedIn = false; connectedAddress = null; serverMode.Disabled = false; client?.Dispose(); client = null; ClearRoom(); characters.Clear(); rooms.Clear(); worldChoice.Clear(); worldChoice.AddItem("Arena"); worldChoice.Disabled = true; }
+    private void Reset() { requests.Clear(); skillList = []; signedIn = false; connectedAddress = null; serverMode.Disabled = false; client?.Dispose(); client = null; ClearRoom(); characters.Clear(); rooms.Clear(); worldChoice.Clear(); worldChoice.AddItem("Arena"); worldChoice.Disabled = true; }
     public override void _Process(double delta)
     {
         UpdateHostStatus();

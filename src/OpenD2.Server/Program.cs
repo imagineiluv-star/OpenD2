@@ -75,6 +75,7 @@ var api = app.MapGroup("/v1").RequireRateLimiting("game");
 api.MapPost("/logout", (HttpContext c, Realm r) => r.Logout(Token(c)));
 api.MapGet("/characters", (HttpContext c, Realm r) => r.Characters(Token(c)));
 api.MapPost("/characters", (HttpContext c, Realm r, NameRequest input) => r.CreateCharacter(Token(c), input.Name, input.Class));
+api.MapGet("/skills", (HttpContext c, Realm r) => r.Skills(Token(c)));
 api.MapPost("/characters/{id:guid}/stats", (HttpContext c, Realm r, Guid id, StatRequest input) => r.SpendStat(Token(c), id, input));
 api.MapPost("/characters/{id:guid}/skills", (HttpContext c, Realm r, Guid id, SkillRequest input) => r.SpendSkill(Token(c), id, input));
 api.MapDelete("/characters/{id:guid}", (HttpContext c, Realm r, Guid id) => r.DeleteCharacter(Token(c), id));

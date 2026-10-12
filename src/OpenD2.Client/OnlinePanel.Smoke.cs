@@ -51,6 +51,9 @@ public partial class OnlinePanel
             characters.Select(Array.FindIndex(characterList, c => c.Id == character.Id));
             if (SelectedCharacter() != character.Id) throw new InvalidDataException("Character selection binding failed.");
             Acceptance("character_selected");
+            await CheckProgressUi(role);
+            characters.Select(Array.FindIndex(characterList, c => c.Id == character.Id)); ShowProgress();
+            if (SelectedCharacter() != character.Id) throw new InvalidDataException("Character selection binding failed after the progress check.");
             if (!serverMode.Disabled || client.Mode != mode) throw new InvalidDataException("Mode selection binding failed.");
             if (mode == "open") await CheckProfileFiles(character);
             string roomTitle = "test" + run;
