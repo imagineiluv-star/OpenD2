@@ -4,8 +4,10 @@ using OpenD2.Online;
 namespace OpenD2.Server;
 
 public sealed record Account(Guid Id, string Name, string Salt, string Hash);
-public sealed record Character(Guid Id, Guid Account, string Name, int Victories = 0, CarriedItem[]? Inventory = null);
-public sealed record Member(Guid Character, uint Actor, long ClientSequence = 0, long RegionEpoch = 0);
+public sealed record Character(Guid Id, Guid Account, string Name, int Victories = 0, CarriedItem[]? Inventory = null, QuestRecord[]? Quests = null);
+// QuestCredit: this member was alive when the room's shared quest completed. It is room state until
+// the host closes the room, so it is saved with the game and cannot outlive the quest that earned it.
+public sealed record Member(Guid Character, uint Actor, long ClientSequence = 0, long RegionEpoch = 0, bool QuestCredit = false);
 public sealed record SavedGame(string StateHash, long Tick, uint Random, EntityState[] Entities, CommandCursor[] Inputs, GameCommand[] Pending, ItemState[] Items,
     string? WorldHash = null, QuestStage Quest = QuestStage.Available)
 {
