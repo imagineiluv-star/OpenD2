@@ -30,6 +30,7 @@ await RoomFrameContracts.Run();
 await StreamSendDeadlineContracts.Run();
 RoomPresentationContracts.Run();
 RoomPredictionContracts.Run();
+MovementHistoryContracts.Run();
 RoomSnapshotContracts.Run();
 InputProgressContracts.Run();
 RoomInterestContracts.Run();
