@@ -8,8 +8,8 @@ using OpenD2.Server;
 // 32-stream target). Two parts, both in process and on one thread, so this is CPU cost only:
 //   * Realm.Tick(): lease handling, the simulation step of every room, event handling and snapshots' invalidation.
 //   * Frame production for every recipient: StreamState (+ interest projection), RoomFrames.Create and JSON encoding.
-//   * Realm.Checkpoint(): the once-a-second save (JSON of every room, fsync, atomic replace) the server loop runs under
-//     the same lock as Tick, input and stream reads, so its duration is time the room cannot advance.
+//   * Realm.Checkpoint(): the once-a-second save (JSON of every room, fsync, atomic replace). Since M5-03d only the snapshot
+//     is taken under the lock shared with Tick, input and stream reads; this measures the whole call.
 // No sockets, TLS, WebSocket send or HTTP input handling are included, and wall-clock numbers depend on the machine.
 // Only gross regressions are asserted (far above what was measured); the numbers are for sizing, not an SLA.
 internal static class WorldHostLoadContracts
@@ -92,7 +92,7 @@ internal static class WorldHostLoadContracts
             Console.WriteLine($"WORLD HOST LOAD {Rooms * Players} frames ms p50 {Percentile(produce, .5):F2} p99 {Percentile(produce, .99):F2} max {produce[^1]:F2}");
             Console.WriteLine($"WORLD HOST LOAD tick+frames ms p50 {Percentile(total, .5):F2} p99 {Percentile(total, .99):F2} of the 40 ms budget; frame stage allocates p50 {bytesAllocated[bytesAllocated.Length / 2] / 1024.0:F0} KiB/tick; payload {bytes / (double)frames:F0} B/frame");
 
-            Console.WriteLine($"WORLD HOST LOAD Checkpoint (JSON + fsync + replace under the realm lock) ms p50 {Percentile(saves, .5):F2} max {saves[^1]:F2} for a {databaseBytes / 1024.0:F0} KiB database with {Rooms} rooms; it runs every 25 ticks");
+            Console.WriteLine($"WORLD HOST LOAD Checkpoint call (JSON snapshot under the lock, fsync + replace outside it) ms p50 {Percentile(saves, .5):F2} max {saves[^1]:F2} for a {databaseBytes / 1024.0:F0} KiB database with {Rooms} rooms; it runs every 25 ticks");
 
             // Gross-regression limits only: an order of magnitude above a typical desktop, to survive slow CI runners.
             Check(Percentile(total, .5) < 20, "median CPU cost of one tick for eight active rooms exceeds half of the 40 ms budget");
