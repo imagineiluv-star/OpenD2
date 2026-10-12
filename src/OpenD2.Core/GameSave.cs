@@ -13,7 +13,8 @@ public static class GameSave
 {
 	public const int SchemaVersion = 5, MaxFileBytes = 4 * 1024 * 1024;
 	private sealed record Document(int SchemaVersion, int RulesVersion, string ContentHash, string StateHash, long Tick, uint RandomState,
-		EntityState[] Entities, CommandCursor[] Inputs, GameCommand[] PendingCommands, EntityId WorldPlayer, QuestStage QuestState, ItemState[] Items, ItemFootprint[]? Inventory = null);
+		EntityState[] Entities, CommandCursor[] Inputs, GameCommand[] PendingCommands, EntityId WorldPlayer, QuestStage QuestState, ItemState[] Items, ItemFootprint[]? Inventory = null,
+		[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] QuestStage[]? PlayerQuests = null);
 	private static readonly JsonSerializerOptions Options = new()
 	{
 		MaxDepth = 32, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, RespectRequiredConstructorParameters = true
@@ -62,7 +63,7 @@ public static class GameSave
 			var layout = oldGrid ? InventoryLayout.Legacy : new InventoryLayout(doc.Inventory!);
 			if (!oldGrid && layout.ContentHash != inventory.ContentHash) throw new SaveCompatibilityException("Save requires different item dimensions/codes. File preserved.");
 			var state = new SimulationSnapshot(doc.RulesVersion, doc.Tick, doc.RandomState, doc.Entities, doc.Inputs, doc.PendingCommands,
-				collision, world, doc.WorldPlayer, doc.QuestState, doc.Items, layout);
+				collision, world, doc.WorldPlayer, doc.QuestState, doc.Items, layout, doc.PlayerQuests);
 			var game = legacy ? GameSimulation.RestoreLegacy(state) : GameSimulation.Restore(state);
 			if (doc.StateHash != game.ComputeStateHash(doc.RulesVersion)) throw new InvalidDataException("Save state checksum mismatch.");
 			if (oldGrid) game = Migrate(game, inventory);
@@ -105,7 +106,8 @@ public static class GameSave
 	{
 		var game = GameSimulation.Restore(checkpoint); // validate before touching existing files
 		var doc = new Document(SchemaVersion, GameSimulation.RulesVersion, ContentHash(game.Collision, game.World), game.ComputeStateHash(), game.Tick, game.RandomState,
-			game.Entities.ToArray(), checkpoint.Inputs.ToArray(), checkpoint.PendingCommands.ToArray(), game.WorldPlayer, game.QuestState, game.Items.ToArray(), game.Inventory.Entries.ToArray());
+			game.Entities.ToArray(), checkpoint.Inputs.ToArray(), checkpoint.PendingCommands.ToArray(), game.WorldPlayer, game.QuestState, game.Items.ToArray(), game.Inventory.Entries.ToArray(),
+			checkpoint.World?.PersonalQuests == true ? game.CaptureSnapshot().PlayerQuests!.ToArray() : null);
 		byte[] data = JsonSerializer.SerializeToUtf8Bytes(doc, Options);
 		if (data.Length > MaxFileBytes) throw new InvalidDataException("Save exceeds file budget.");
 		path = Path.GetFullPath(path); Directory.CreateDirectory(Path.GetDirectoryName(path)!);

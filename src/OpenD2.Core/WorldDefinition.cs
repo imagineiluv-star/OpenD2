@@ -27,12 +27,15 @@ public sealed class WorldDefinition
 	public string ContentHash { get; }
 	public bool NavigateWalls { get; }
 	public int PlayerLimit { get; }
+	// Each player accepts, progresses and completes the quest on their own; killing the targets stays a shared fact.
+	// Off by default so single-player worlds and shared-quest cooperative worlds keep their content hash, saves and behaviour.
+	public bool PersonalQuests { get; }
 	public WorldDefinition(IEnumerable<WorldRegion> regions, IEnumerable<WorldPortal> portals, WorldNpc questGiver,
-		IEnumerable<EntityId> questTargets, string questTitle, bool navigateWalls = false, int playerLimit = 1)
+		IEnumerable<EntityId> questTargets, string questTitle, bool navigateWalls = false, int playerLimit = 1, bool personalQuests = false)
 	{
 		ArgumentNullException.ThrowIfNull(regions); ArgumentNullException.ThrowIfNull(portals); ArgumentNullException.ThrowIfNull(questTargets);
 		if (playerLimit is < 1 or > GameSimulation.MaxWorldPlayers) throw new ArgumentOutOfRangeException(nameof(playerLimit));
-		PlayerLimit = playerLimit;
+		PlayerLimit = playerLimit; PersonalQuests = personalQuests;
 		this.regions = regions.Take(MaxRegions + 1).ToArray();
 		if (this.regions.Length is < 1 or > MaxRegions || this.regions.Any(r => r.Collision is null || !ValidName(r.Name))) throw new ArgumentException("Invalid world regions.");
 		Array.Sort(this.regions, (a, b) => a.Id.Value.CompareTo(b.Id.Value));
@@ -91,6 +94,7 @@ public sealed class WorldDefinition
 		foreach (var id in questTargets) writer.Write(id.Value);
 		if (NavigateWalls) writer.Write("bounded-navigation-v1"); // Default worlds preserve their existing content hash.
 		if (PlayerLimit > 1) { writer.Write("cooperative-world-v1"); writer.Write(PlayerLimit); }
+		if (PersonalQuests) writer.Write("personal-quests-v1"); // Other worlds keep their existing content hash.
 		writer.Flush(); return Convert.ToHexStringLower(SHA256.HashData(stream.GetBuffer().AsSpan(0, (int)stream.Length)));
 	}
 }

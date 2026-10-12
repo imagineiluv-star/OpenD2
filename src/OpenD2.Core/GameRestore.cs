@@ -37,9 +37,20 @@ public sealed partial class GameSimulation
 				(cursor.Sequence == 0 ? cursor.Tick != 0 : cursor.Tick == 0) || (e.Kind != EntityKind.Player && cursor.Sequence != 0))
 				throw new InvalidDataException("Invalid input cursor.");
 		}
-		game.Tick = state.Tick; game.QuestState = state.QuestState;
-		if (game.World is not null && ((game.QuestState is QuestStage.ReadyToTurnIn or QuestStage.Completed) != (game.Quest.Defeated == game.Quest.Required) && game.QuestState != QuestStage.Available))
-			throw new InvalidDataException("Quest stage disagrees with defeated targets.");
+		game.Tick = state.Tick;
+		if (game.World?.PersonalQuests == true)
+		{
+			// Personal stages are mandatory for personal-quest worlds and forbidden elsewhere, so a stage can never be silently dropped.
+			if (state.PlayerQuests is not { } stages || stages.Count != game.playerQuests.Length || stages.Any(stage => !Enum.IsDefined(stage)) || stages[0] != state.QuestState)
+				throw new InvalidDataException("Invalid personal quest stages.");
+			for (int k = 0; k < stages.Count; k++) game.playerQuests[k] = stages[k];
+		}
+		else if (state.PlayerQuests is not null) throw new InvalidDataException("Personal quest stages require a personal-quest world.");
+		else game.SetSharedQuest(state.QuestState);
+		if (game.World is not null)
+			foreach (var stage in game.playerQuests)
+				if ((stage is QuestStage.ReadyToTurnIn or QuestStage.Completed) != (game.DefeatedTargets() == game.World.QuestTargets.Length) && stage != QuestStage.Available)
+					throw new InvalidDataException("Quest stage disagrees with defeated targets.");
 		int carried = 0;
 		var ids = new HashSet<ItemId>(); var slots = new HashSet<(EntityId, ItemLocation, int)>();
 		foreach (var item in state.Items)

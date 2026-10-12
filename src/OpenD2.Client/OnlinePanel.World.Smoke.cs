@@ -135,9 +135,23 @@ public partial class OnlinePanel
         Check(state.World?.Content == CooperativeWorld.Content && state.Members.Length == 2 && worldChoice.Disabled && worldChoice.Selected == 1,
             "world create/join selection binding");
         await Barrier("started"); await Capture("camp");
-        if (role == "host") await PressInteract(300);
-        await Until(() => state!.World!.Quest.Stage == QuestStage.Active, "shared quest accepted");
-        Check(details.Text.Contains("Shared quest: Active", StringComparison.Ordinal), "shared quest HUD");
+        // Quests are personal. The host accepts first; the guest has not spoken to the Guide, so their own quest stays
+        // available. They then walk to the Guide (clear of the host's body, inside interaction range) and accept for themselves.
+        if (role == "host")
+        {
+            await PressInteract(300);
+            await Until(() => state!.World!.Quest.Stage == QuestStage.Active, "own quest accepted");
+        }
+        await Barrier("host-accepted");
+        if (role == "guest")
+        {
+            await WaitForRoomUpdate();
+            Check(state!.World!.Quest.Stage == QuestStage.Available && details.Text.Contains("Quest: Available", StringComparison.Ordinal),
+                "the host's acceptance leaves the guest's quest available");
+            await Approach(new(512, 600), 48); await PressInteract(300);
+            await Until(() => state!.World!.Quest.Stage == QuestStage.Active, "own quest accepted");
+        }
+        Check(details.Text.Contains("Quest: Active", StringComparison.Ordinal), "own quest HUD");
         await Barrier("quest");
         if (role == "host") { await Approach(new(1024, 768)); await PressInteract(200); }
         await Until(() => Actor(1).Region.Value == 2, "host portal");
