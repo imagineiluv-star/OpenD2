@@ -218,17 +218,18 @@ internal static class NetworkResilienceContracts
     }
 
     private static EntityState Actor(RoomView view, uint id) => view.Entities.Single(e => e.Id.Value == id);
-    private static async Task Wait(Func<bool> predicate, CancellationToken stop)
+    internal static async Task Wait(Func<bool> predicate, CancellationToken stop)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stop);
         timeout.CancelAfter(TimeSpan.FromSeconds(10));
         while (!predicate()) await Task.Delay(10, timeout.Token);
     }
 
-    private sealed class Feed : IAsyncDisposable
+    internal sealed class Feed : IAsyncDisposable
     {
         private readonly CancellationTokenSource stop;
         private readonly Task read;
+        private readonly WorldContent? world;
         private RoomView? latest;
         private long frames;
         public readonly ConcurrentQueue<RoomView> History = new();
@@ -236,16 +237,17 @@ internal static class NetworkResilienceContracts
         public long Frames => Interlocked.Read(ref frames);
         public Exception? Error { get; private set; }
         public bool Finished => read.IsCompleted;
-        public Feed(OnlineClient client, Guid room, CancellationToken cancellation)
+        public Feed(OnlineClient client, Guid room, CancellationToken cancellation, WorldContent? world = null)
         {
             stop = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+            this.world = world;
             read = Read(client, room);
         }
         private async Task Read(OnlineClient client, Guid room)
         {
             try
             {
-                await foreach (var view in client.WatchRoom(room, stop.Token))
+                await foreach (var view in client.WatchRoom(room, stop.Token, world))
                 {
                     if (Latest is { } previous && (view.Actor != previous.Actor || view.Tick < previous.Tick))
                         throw new InvalidDataException("Stream identity or tick regressed.");

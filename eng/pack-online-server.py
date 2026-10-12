@@ -70,6 +70,7 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
         'file': package.name, 'sha256': digest, 'bytes': package.stat().st_size,
         'lan_host_tls_lifecycle': 'PASS', 'personal_host_lifecycle': 'PASS', 'extracted_server_and_two_clients': 'PASS', 'two_client_gameplay': 'PASS', 'tls_certificates': 'PASS', 'tls_two_client_gameplay': 'PASS',
         'cooperative_world_realm': 'PASS', 'cooperative_world_open': 'PASS',
+        'cooperative_world_network_realm': 'PASS', 'cooperative_world_network_open': 'PASS',
         'open_tls_two_client_gameplay': 'PASS', 'open_profile_ui_binding': 'PASS', 'open_item_file_transfer': 'PASS',
         'realm_invite_to_gameplay': 'PASS', 'open_invite_to_gameplay': 'PASS', 'host_and_guest_reconnect': 'PASS',
         'network_relay_realm': 'PASS', 'network_relay_open': 'PASS', 'packet_loss': 'NOT_RUN',
