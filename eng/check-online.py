@@ -52,6 +52,7 @@ def main():
     report['room_input_progress_ui'] = 'NOT_RUN'
     report['movement_history_ui'] = 'NOT_RUN'
     report['room_interest_ui'] = 'NOT_RUN'
+    report['cooperative_world_ui'] = 'NOT_RUN'
     with tempfile.TemporaryDirectory(prefix='opend2-online-') as temporary:
         private = Path(temporary)
         with socket.socket() as listener:
@@ -219,6 +220,7 @@ def main():
                         stdout=handle, stderr=subprocess.STDOUT, env=client_env)))
                 deadline = time.monotonic() + 180
                 restarted = False
+                world_restarted = False
                 while any(child.poll() is None for _, child in children):
                     if time.monotonic() >= deadline:
                         raise TimeoutError('Two-client gameplay timed out')
@@ -230,13 +232,20 @@ def main():
                         start(3)
                         (evidence / 'server-restarted').write_text('ready')
                         restarted = True
+                    if restarted and not world_restarted and all((evidence / (role + '-world-restart-ready')).exists() for role in ('host', 'guest')):
+                        process.kill(); process.wait(timeout=10)
+                        start(4)
+                        (evidence / 'server-world-restarted').write_text('ready')
+                        world_restarted = True
                     time.sleep(0.1)
+                assert world_restarted, 'Both Godot clients must restore a split-region world after restart'
                 assert restarted, 'Both Godot clients must survive a hard server restart'
                 for role, child in children:
                     assert child.returncode == 0, role
                     text = (evidence/f'godot-{role}.log').read_text(encoding='utf-8')
                     assert 'ERROR:' not in text and 'SCRIPT ERROR:' not in text, role
                     assert 'OPEND2_CONNECTION_GUIDANCE_UI_PASS' in text, role
+                    assert 'OPEND2_WORLD_VIEW_PASS' in text and 'OPEND2_WORLD_GAMEPLAY_PASS ' + role in text, role
                     if args.tls_fixtures:
                         assert 'OPEND2_PUBLISHED_CATALOG_UI_PASS ' + role in text, 'Published catalog download and selection missing'
                     assert 'OPEND2_ONLINE_TRANSPORT_PASS '+role in text, role
@@ -270,13 +279,22 @@ def main():
                     assert result['result'] == 'PASS' and len(result['checks']) >= 11, role
                     assert result['observations'] == 'room-websocket-stream' and result['http_state_polling'] is False, role
                     if args.windowed:
-                        assert result['rendering'] == 'PASS' and len(list(evidence.glob(role + '-*.png'))) == 5, role
+                        assert result['rendering'] == 'PASS' and all((evidence / f'{role}-{stage}.png').exists() for stage in ('room', 'combat', 'loot', 'reconnect', 'restored')), role
+                    world = json.loads((evidence / (role + '-world-result.json')).read_text())
+                    assert world['result'] == 'PASS' and world['mode'] == args.mode and len(world['checks']) >= 14, role
+                    assert world['observations'] == 'room-websocket-stream' and world['http_state_polling'] is False, role
+                    assert world['manual_gui'] == 'NOT_RUN' and world['physical_multi_pc'] == 'NOT_RUN' and world['original_mpq'] == 'NOT_RUN', role
+                    if args.windowed:
+                        assert world['rendering'] == 'PASS' and all((evidence / f'{role}-world-{stage}.png').exists() for stage in ('camp', 'split', 'joined', 'restored')), role
                 report['acceptance'] = validate_evidence(evidence, args.mode, bool(args.tls_fixtures))
                 report['guest_reconnect'] = 'PASS'
                 report['invite_to_gameplay'] = 'PASS' if args.tls_fixtures else 'NOT_RUN'
                 if platform.system() == 'Linux':
                     profiles = [json.loads((evidence / (role + '-result.json')).read_text())['user_data'] for role in ('host', 'guest')]
                     assert profiles[0] != profiles[1], 'Godot clients must have independent user data directories'
+                worlds = [json.loads((evidence / (role + '-world-result.json')).read_text()) for role in ('host', 'guest')]
+                assert worlds[0]['room'] == worlds[1]['room'] and worlds[0]['character'] != worlds[1]['character'] and worlds[0]['content'] == worlds[1]['content']
+                report['cooperative_world_ui'] = 'PASS'
                 report['godot_transport'] = 'PASS'
                 report['input_receipt_ui'] = 'PASS'
                 report['accepted_stream_ordering_ui'] = 'PASS'

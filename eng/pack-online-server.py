@@ -23,6 +23,7 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
     stage = Path(temporary)/'stage'
     subprocess.run(['dotnet', 'publish', 'src/OpenD2.Server', '-c', 'Release', '-r', rid,
                     '--self-contained', 'true', '-o', str(stage), '-m:1'], cwd=ROOT, check=True)
+    shutil.copyfile(ROOT/'docs/migration/COOPERATIVE_WORLD.md', stage/'COOPERATIVE_WORLD.md')
     shutil.copyfile(ROOT/'docs/migration/ONLINE_PLAY.md', stage/'ONLINE_PLAY.md')
     shutil.copyfile(ROOT/'docs/migration/ONLINE_NETWORK.md', stage/'ONLINE_NETWORK.md')
     shutil.copyfile(ROOT/'docs/migration/ONLINE_MODES.md', stage/'ONLINE_MODES.md')
@@ -68,6 +69,7 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
     (output/f'server-{rid}.json').write_text(json.dumps({'commit': os.environ.get('GITHUB_SHA', 'local'), 'runtime': rid,
         'file': package.name, 'sha256': digest, 'bytes': package.stat().st_size,
         'lan_host_tls_lifecycle': 'PASS', 'personal_host_lifecycle': 'PASS', 'extracted_server_and_two_clients': 'PASS', 'two_client_gameplay': 'PASS', 'tls_certificates': 'PASS', 'tls_two_client_gameplay': 'PASS',
+        'cooperative_world_realm': 'PASS', 'cooperative_world_open': 'PASS',
         'open_tls_two_client_gameplay': 'PASS', 'open_profile_ui_binding': 'PASS', 'open_item_file_transfer': 'PASS',
         'realm_invite_to_gameplay': 'PASS', 'open_invite_to_gameplay': 'PASS', 'host_and_guest_reconnect': 'PASS',
         'network_relay_realm': 'PASS', 'network_relay_open': 'PASS', 'packet_loss': 'NOT_RUN',

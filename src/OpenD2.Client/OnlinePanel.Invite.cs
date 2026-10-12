@@ -68,8 +68,12 @@ public partial class OnlinePanel
         if (!ConnectedTo(invite.Address) || client!.Mode != invite.Mode ||
             !string.Equals(client.TrustedRootSha256, invite.RootCaSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("This session does not match the room invite. Log out and apply it again.");
-        Apply(await client!.Send<RoomView>(System.Net.Http.HttpMethod.Post, $"v1/rooms/{room}/join",
-            new JoinRequest(SelectedCharacter(), roomPassword.Text, invite.Invitation), lifetime.Token));
+        var character = SelectedCharacter();
+        var listing = await client!.Send<RoomInfo[]>(System.Net.Http.HttpMethod.Get, RoomsPath, cancellation: lifetime.Token);
+        var target = listing.SingleOrDefault(r => r.Id == room) ?? throw new InvalidOperationException("Invited room is no longer available.");
+        ValidateWorld(target.World);
+        Apply(await client.Send<RoomView>(System.Net.Http.HttpMethod.Post, $"v1/rooms/{room}/join",
+            new JoinRequest(character, roomPassword.Text, invite.Invitation, target.World), lifetime.Token));
         // Successful admission no longer needs the single-use secret for reconnect.
         connectionInvite = invite with { Version = 2, Invitation = null, ExpiresAt = null };
         status.Text = "Joined invited room. Server admission checks passed.";
