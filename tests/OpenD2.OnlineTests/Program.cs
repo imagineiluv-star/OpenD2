@@ -47,6 +47,7 @@ ConnectionFailureContracts.Run();
 ModeContracts.Run();
 CharacterTransferContracts.Run();
 OpenItemTransferContracts.Run();
+WorldHostLoadContracts.Run();
 InventoryContracts.Run();
 WorldBandwidthContracts.Run();
 
