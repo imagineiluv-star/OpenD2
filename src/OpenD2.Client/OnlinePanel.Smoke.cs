@@ -7,6 +7,20 @@ namespace OpenD2.Client;
 
 public partial class OnlinePanel
 {
+    private async Task CaptureOnlineFrame(string file)
+    {
+        // Match the product's scrollable panel and bring the whole map into view
+        // after labels have laid out, rather than capturing a clipped viewport.
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        if (GetParent() is ScrollContainer scroll) scroll.EnsureControlVisible(arena);
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        if (!GetViewportRect().Encloses(arena.GetGlobalRect()))
+            throw new InvalidDataException("Online screenshot would clip the map.");
+        using var image = GetViewport().GetTexture().GetImage();
+        if (image.IsEmpty() || image.SavePng(file) != Error.Ok)
+            throw new InvalidDataException("Online screenshot failed.");
+    }
+
     // Two independent Godot processes use the same transport and view binding as the UI.
     // This tests networking in Godot, not visible input/rendering acceptance.
     internal async Task CheckOnline(string url, string role, string run, string evidence, string? certificate = null, string mode = "realm")

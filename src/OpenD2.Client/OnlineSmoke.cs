@@ -14,8 +14,9 @@ public partial class OnlineSmoke : Node
             GetWindow().ContentScaleSize = new(1100, 1100);
             GetWindow().Position = new(Value("--role=") == "host" ? 0 : 1150, 0);
             GetWindow().Title = "OpenD2 online validation — " + Value("--role=");
-            var panel = new OnlinePanel(); AddChild(panel);
-            panel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+            var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+            AddChild(scroll); scroll.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+            var panel = new OnlinePanel { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; scroll.AddChild(panel);
             await panel.CheckOnline(Value("--server="), Value("--role="), Value("--run="), Value("--evidence="), args.SingleOrDefault(a => a.StartsWith("--ca=", StringComparison.Ordinal))?[5..], args.SingleOrDefault(a => a.StartsWith("--mode=", StringComparison.Ordinal))?[7..] ?? "realm");
             GetTree().Quit();
         }

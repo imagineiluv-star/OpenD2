@@ -115,10 +115,7 @@ public partial class OnlinePanel
             Check(arena.Grid.Region == Me().Region && arena.VisibleEntities.All(e => e.Region == Me().Region) &&
                 arena.VisibleGroundItems.All(i => i.Region == Me().Region), "draw scope " + stage);
             if (DisplayServer.GetName() == "headless") return;
-            await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
-            using var image = GetViewport().GetTexture().GetImage();
-            if (image.IsEmpty() || image.SavePng(FileName(role + "-world-" + stage + ".png")) != Error.Ok)
-                throw new InvalidDataException("World screenshot failed.");
+            await CaptureOnlineFrame(FileName(role + "-world-" + stage + ".png"));
         }
         Check(client!.SupportsWorldRooms, "v5 world capability");
         await Refresh(); characters.Select(Array.FindIndex(characterList, c => c.Id == character));

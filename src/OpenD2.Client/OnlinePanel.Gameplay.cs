@@ -81,12 +81,7 @@ public partial class OnlinePanel
             var view = new { state!.Id, state.Tick, state.Actor, state.StateHash, state.Members, state.Entities, state.Items };
             File.WriteAllText(System.IO.Path.Combine(evidence, $"{role}-{stage}.json"), JsonSerializer.Serialize(view));
             if (DisplayServer.GetName() != "headless")
-            {
-                await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
-                using var image = GetViewport().GetTexture().GetImage();
-                if (image.IsEmpty() || image.SavePng(System.IO.Path.Combine(evidence, $"{role}-{stage}.png")) != Error.Ok)
-                    throw new InvalidDataException("Rendered screenshot failed.");
-            }
+                await CaptureOnlineFrame(System.IO.Path.Combine(evidence, $"{role}-{stage}.png"));
         }
         Check(CheckBodyBlocking(), "Recorded body-blocking regression reaches attack range");
         await Barrier("ready");
