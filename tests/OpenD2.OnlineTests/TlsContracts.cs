@@ -148,7 +148,9 @@ internal static class TlsContracts
                     catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.BadRequest) { }
                     var table = await client.ListSkills();
                     if (table.Length != 21 || table.Count(s => s.Class == "Amazon") != 3 || table.Single(s => s.Id == 103).Requires.Single() != 102) throw new Exception("Server skill table over TLS is not the expected preview table.");
-                    Pass("character class creation, skill table and point-spending refusals over TLS via production OnlineClient");
+                    var monsterKinds = await client.ListMonsters();
+                    if (!monsterKinds.Select(m => m.Code).Order().SequenceEqual(["preview-brute", "preview-grunt"])) throw new Exception("Server monster table over TLS is not the expected preview table.");
+                    Pass("character class creation, skill and monster tables and point-spending refusals over TLS via production OnlineClient");
                     try { await client.Send<OpenCharacter>(HttpMethod.Get, $"v1/characters/{character.Id}/export"); throw new Exception("Realm export accepted."); }
                     catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.Forbidden) { }
                     try { await client.Send<CharacterInfo>(HttpMethod.Post, "v1/characters/import", new OpenCharacter(1, OpenD2.Core.GameSimulation.RulesVersion, "open", "ForeignHero", 1)); throw new Exception("Realm import accepted."); }

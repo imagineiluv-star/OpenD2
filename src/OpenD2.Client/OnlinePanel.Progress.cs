@@ -12,6 +12,7 @@ public partial class OnlinePanel
 	private readonly OptionButton skillChoice = new();
 	private readonly Label progressText = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
 	private SkillInfo[] skillList = [];
+	private MonsterInfo[] monsterList = [];
 
 	// Index 0 is "no class": the character keeps the fixed pool and earns no experience.
 	private CharacterClass? SelectedClass => characterClass.Selected <= 0 ? null : (CharacterClass)(characterClass.Selected - 1);
@@ -74,6 +75,10 @@ public partial class OnlinePanel
 	private async Task CheckProgressUi(string role)
 	{
 		if (!client!.SupportsCharacterProgress) throw new InvalidDataException("Packaged server did not advertise character progression.");
+		if (!client.SupportsMonsterKinds) throw new InvalidDataException("Packaged server did not advertise monster kinds.");
+		var monsters = await client.ListMonsters(lifetime.Token);
+		if (monsters.Length == 0 || Arena.Roster.Kinds.Values.Concat(CooperativeWorld.Roster.Kinds.Values).Any(code => !monsters.Any(m => m.Code == code)))
+			throw new InvalidDataException("Server monster table does not cover the built-in rooms.");
 		var skills = await client.ListSkills(lifetime.Token);
 		if (skills.Length == 0 || skills.Any(s => s.Name.Length == 0 || !Enum.TryParse<CharacterClass>(s.Class, out _))) throw new InvalidDataException("Server skill table is not usable.");
 		characterClass.Select(1 + (int)CharacterClass.Sorceress);

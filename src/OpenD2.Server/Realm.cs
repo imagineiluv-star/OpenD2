@@ -44,10 +44,14 @@ public sealed partial class Realm : IDisposable
     // The rules every character's progression is checked against, on load and on every change. Preview unless the operator supplies others.
     internal ProgressionTables Tables { get; }
     internal SkillTable SkillTree { get; }
-    public Realm(string directory, TimeProvider? time = null, string mode = "realm", ProgressionTables? tables = null, SkillTable? skills = null)
+    internal MonsterTable Monsters { get; }
+    public Realm(string directory, TimeProvider? time = null, string mode = "realm", ProgressionTables? tables = null, SkillTable? skills = null, MonsterTable? monsters = null)
     {
         if (mode is not ("realm" or "open")) throw new ArgumentException("Unknown online mode.", nameof(mode));
-        Mode = mode; Tables = tables ?? ProgressionTables.Preview; SkillTree = skills ?? SkillTable.Preview;
+        Mode = mode; Tables = tables ?? ProgressionTables.Preview; SkillTree = skills ?? SkillTable.Preview; Monsters = monsters ?? MonsterTable.Preview;
+        // The built-in rooms' monsters must all be kinds of this table, or kills would silently pay nothing. Nothing is created before this.
+        Arena.Roster.Validate(Monsters, Arena.Create(4).Entities.ToArray());
+        CooperativeWorld.Roster.Validate(Monsters, CooperativeWorld.Create(4).Entities.ToArray());
         clock = time ?? TimeProvider.System;
         Directory.CreateDirectory(directory);
         file = Path.Combine(directory, "realm.json");

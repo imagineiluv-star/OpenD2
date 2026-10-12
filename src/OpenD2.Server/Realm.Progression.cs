@@ -29,6 +29,14 @@ public sealed partial class Realm
             return SkillTree.All.OrderBy(s => s.Id).Select(s => new SkillInfo(s.Id, s.Name, s.Class.ToString(), s.RequiredLevel, s.MaxLevel, s.Requires.ToArray())).ToArray();
         }
     }
+    public MonsterInfo[] MonsterKinds(string token)
+    {
+        lock (gate)
+        {
+            Authorize(token);
+            return Monsters.All.OrderBy(m => m.Code, StringComparer.OrdinalIgnoreCase).Select(m => new MonsterInfo(m.Code, m.Name, m.Level, m.Experience)).ToArray();
+        }
+    }
     public CharacterInfo SpendStat(string token, Guid id, StatRequest request)
     {
         Need(request?.Stat is { Length: >= 1 and <= 16 } name && name.All(char.IsAsciiLetter) && Enum.TryParse<CharacterStat>(name, true, out var stat) && Enum.IsDefined(stat), 400, "Unknown attribute.");
@@ -54,14 +62,16 @@ public sealed partial class Realm
             Save(); return Info(characters[at]);
         }
     }
-    // Caller holds gate. A monster's death pays its experience to every living member of the room who stands in the monster's region
+    // Caller holds gate. A monster's death pays the experience of its kind to every living member of the room who stands in the monster's region
     // (a party share without distance or party bonus) and whose character has a class. It is room state until the host closes the room.
     private void AwardExperience(Room room, SimulationEvent death)
     {
         var game = room.Game!; var monster = game.GetEntity(death.Actor);
         if (monster.Kind != EntityKind.Monster) return;
-        uint reward = Progression.PreviewKillExperience(monster.MaxHealth);
-        if (reward == 0) return;
+        // The kind decides the value. A monster without one (not possible in a built-in room) pays nothing rather than a guess.
+        var roster = room.Saved.World is null ? Arena.Roster : CooperativeWorld.Roster;
+        if (roster.KindOf(monster.Id) is not { } code || !Monsters.TryGet(code, out var kind) || kind.Experience == 0) return;
+        uint reward = (uint)kind.Experience;
         room.Saved = room.Saved with { Members = room.Saved.Members.Select(m =>
             characters.Single(c => c.Id == m.Character).Progress is not null && game.GetEntity(new(m.Actor)) is { IsAlive: true } actor && actor.Region == monster.Region
                 ? m with { Experience = (uint)Math.Min(uint.MaxValue, (long)m.Experience + reward) } : m).ToArray() };
