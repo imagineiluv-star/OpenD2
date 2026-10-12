@@ -11,7 +11,7 @@ public readonly record struct WorldNpc(EntityId Id, RegionId Region, GamePositio
 public enum QuestStage { Available, Active, ReadyToTurnIn, Completed }
 public readonly record struct QuestProgress(QuestStage Stage, int Defeated, int Required);
 
-// Bounded, preloaded content for one local player and one kill/return quest.
+// Bounded, preloaded content for up to four players and one shared kill/return quest.
 // All arrays are owned; live state belongs to GameSimulation, never to this definition.
 public sealed class WorldDefinition
 {
@@ -26,10 +26,13 @@ public sealed class WorldDefinition
 	public string QuestTitle { get; }
 	public string ContentHash { get; }
 	public bool NavigateWalls { get; }
+	public int PlayerLimit { get; }
 	public WorldDefinition(IEnumerable<WorldRegion> regions, IEnumerable<WorldPortal> portals, WorldNpc questGiver,
-		IEnumerable<EntityId> questTargets, string questTitle, bool navigateWalls = false)
+		IEnumerable<EntityId> questTargets, string questTitle, bool navigateWalls = false, int playerLimit = 1)
 	{
 		ArgumentNullException.ThrowIfNull(regions); ArgumentNullException.ThrowIfNull(portals); ArgumentNullException.ThrowIfNull(questTargets);
+		if (playerLimit is < 1 or > GameSimulation.MaxWorldPlayers) throw new ArgumentOutOfRangeException(nameof(playerLimit));
+		PlayerLimit = playerLimit;
 		this.regions = regions.Take(MaxRegions + 1).ToArray();
 		if (this.regions.Length is < 1 or > MaxRegions || this.regions.Any(r => r.Collision is null || !ValidName(r.Name))) throw new ArgumentException("Invalid world regions.");
 		Array.Sort(this.regions, (a, b) => a.Id.Value.CompareTo(b.Id.Value));
@@ -87,6 +90,7 @@ public sealed class WorldDefinition
 		writer.Write(QuestGiver.Name); writer.Write(QuestTitle); writer.Write(questTargets.Length);
 		foreach (var id in questTargets) writer.Write(id.Value);
 		if (NavigateWalls) writer.Write("bounded-navigation-v1"); // Default worlds preserve their existing content hash.
+		if (PlayerLimit > 1) { writer.Write("cooperative-world-v1"); writer.Write(PlayerLimit); }
 		writer.Flush(); return Convert.ToHexStringLower(SHA256.HashData(stream.GetBuffer().AsSpan(0, (int)stream.Length)));
 	}
 }

@@ -7,7 +7,7 @@ public sealed partial class GameSimulation
 	private static bool Overlaps(GamePosition a, GamePosition b) => Math.Abs((long)a.X - b.X) < CollisionGrid.BodyRadius * 2 && Math.Abs((long)a.Y - b.Y) < CollisionGrid.BodyRadius * 2;
 	private bool CanOccupy(int index, GamePosition position)
 	{
-		if (!Collision!.CanOccupy(position)) return false;
+		if (!GridFor(entities[index])!.CanOccupy(position)) return false;
 		for (int i = 0; i < entities.Length; i++)
 			if (i != index && entities[i].Region == entities[index].Region && entities[i].IsAlive && Overlaps(position, entities[i].Position)) return false;
 		return true;
@@ -28,15 +28,16 @@ public sealed partial class GameSimulation
 				if (distance < nearest) { nearest = distance; target = j; } // sorted IDs break ties
 			}
 			EntityId id = target < 0 ? default : entities[target].Id;
-			var mode = target < 0 ? MonsterMode.Idle : nearest <= (long)AttackRange * AttackRange && Collision!.HasMeleeLine(e.Position, entities[target].Position) ? MonsterMode.Attacking : MonsterMode.Chasing;
+			var grid = GridFor(e)!;
+			var mode = target < 0 ? MonsterMode.Idle : nearest <= (long)AttackRange * AttackRange && grid.HasMeleeLine(e.Position, entities[target].Position) ? MonsterMode.Attacking : MonsterMode.Chasing;
 			int x = mode == MonsterMode.Chasing ? Math.Sign(entities[target].Position.X - e.Position.X) : 0;
 			int y = mode == MonsterMode.Chasing ? Math.Sign(entities[target].Position.Y - e.Position.Y) : 0;
-			if (mode == MonsterMode.Chasing && World?.NavigateWalls == true && !GridPathfinder.HasWalkLine(Collision!, e.Position, entities[target].Position))
+			if (mode == MonsterMode.Chasing && World?.NavigateWalls == true && !GridPathfinder.HasWalkLine(grid, e.Position, entities[target].Position))
 			{
 				x = y = 0;
 				if (navigationBudget > 0)
 				{
-					var route = GridPathfinder.Find(Collision!, e.Position, entities[target].Position, navigationBudget);
+					var route = GridPathfinder.Find(grid, e.Position, entities[target].Position, navigationBudget);
 					navigationBudget -= Math.Max(1, route.Expanded);
 					if (route.Status == PathStatus.Found && route.Points.Count > 0)
 					{ x = Math.Sign(route.Points[0].X - e.Position.X); y = Math.Sign(route.Points[0].Y - e.Position.Y); }
@@ -52,7 +53,7 @@ public sealed partial class GameSimulation
 		var e = entities[index]; int targetIndex = indices[attacks[index]]; var target = entities[targetIndex];
 		AttackFailure? failure = !canAct[index] ? AttackFailure.Interrupted : e.AttackCooldown > 0 ? AttackFailure.Cooldown :
 			!target.IsAlive ? AttackFailure.DeadTarget : DistanceSquared(e.Position, target.Position) > (long)AttackRange * AttackRange ? AttackFailure.OutOfRange :
-			!Collision!.HasMeleeLine(e.Position, target.Position) ? AttackFailure.Obstructed : null;
+			target.Region != e.Region || !GridFor(e)!.HasMeleeLine(e.Position, target.Position) ? AttackFailure.Obstructed : null;
 		bool skill = skillAttacks[index];
 		if (skill)
 		{
