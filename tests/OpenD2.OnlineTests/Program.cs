@@ -34,6 +34,7 @@ RoomPredictionContracts.Run();
 MovementHistoryContracts.Run();
 RoomSnapshotContracts.Run();
 InputProgressContracts.Run();
+CooperativeRoomContracts.Run();
 RoomInterestContracts.Run();
 await InputReceiptContracts.Run();
 await InputBatchContracts.Run();

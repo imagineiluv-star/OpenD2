@@ -16,7 +16,8 @@ public sealed partial class Realm : IDisposable
         public byte[]? InviteHash;
         public DateTimeOffset InviteUntil;
         public SavedRoom Saved = saved;
-        public GameSimulation? Game = saved.Game?.Restore(rules);
+        public GameSimulation? Game = saved.Game?.Restore(rules, saved.World);
+        public readonly HashSet<string> WorldSessions = new();
         public RoomSnapshot? Snapshot;
         public readonly Dictionary<uint, long> Processed = new();
         public readonly Dictionary<Guid, DateTimeOffset> Seen = new();
@@ -46,9 +47,15 @@ public sealed partial class Realm : IDisposable
         {
             if (File.Exists(file) && new FileInfo(file).Length > 16 * 1024 * 1024) throw new InvalidDataException("Realm exceeds storage budget.");
             var db = File.Exists(file) ? JsonSerializer.Deserialize<Database>(File.ReadAllBytes(file)) ?? throw new InvalidDataException("Empty realm.") : new(2, GameSimulation.RulesVersion, [], [], [], Mode);
-            if (db.Version is not (1 or 2) || db.RulesVersion is not (7 or GameSimulation.RulesVersion) || db.Accounts.Length > 256 || db.Characters.Length > 1024 || db.Rooms.Length > 32) throw new InvalidDataException("Unsupported realm version/budget.");
+            if (db.Version is not (1 or 2 or 3) || db.RulesVersion is not (7 or GameSimulation.RulesVersion) || db.Accounts.Length > 256 || db.Characters.Length > 1024 || db.Rooms.Length > 32) throw new InvalidDataException("Unsupported realm version/budget.");
             string? storedMode = db.Version == 1 && db.Mode is null ? "realm" : db.Mode;
             if (storedMode != Mode || (db.Version == 1 && Mode != "realm")) throw new InvalidDataException("Database mode does not match this server. Use separate data directories.");
+            foreach (var saved in db.Rooms)
+                if (saved.World is not null)
+                {
+                    if (db.Version != 3) throw new InvalidDataException("World rooms require database version 3.");
+                    CooperativeWorld.Resolve(saved.World); // Validate lobbies too, before any write.
+                }
             accounts = db.Accounts.ToList(); characters = db.Characters.ToList(); rooms = db.Rooms.ToDictionary(r => r.Id, r => new Room(r, db.RulesVersion));
             if (accounts.Select(a => a.Id).Distinct().Count() != accounts.Count || accounts.Select(a => a.Name).Distinct().Count() != accounts.Count ||
                 characters.Select(c => c.Id).Distinct().Count() != characters.Count || characters.Any(c => !accounts.Any(a => a.Id == c.Account)) ||
@@ -57,7 +64,8 @@ public sealed partial class Realm : IDisposable
                 if (room.Saved.Members.Length is < 1 or > 4 || !room.Saved.Members.Any(m => m.Character == room.Saved.Host) ||
                     room.Saved.Members.Any(m => !characters.Any(c => c.Id == m.Character)) ||
                     room.Saved.Members.Select(m => m.Actor).Distinct().Count() != room.Saved.Members.Length ||
-                    room.Saved.Members.Any(m => m.ClientSequence < 0 || m.ClientSequence == long.MaxValue) ||
+                    room.Saved.Members.Any(m => m.Actor is < 1 or > 4 || m.ClientSequence < 0 || m.ClientSequence == long.MaxValue ||
+                        m.RegionEpoch < 0 || m.RegionEpoch > (room.Game?.Tick ?? 0) || (room.Saved.World is null && m.RegionEpoch != 0)) ||
                     (room.Game is not null && !room.Game.Entities.ToArray().Where(e => e.Kind == EntityKind.Player).Select(e => e.Id.Value).Order().SequenceEqual(room.Saved.Members.Select(m => m.Actor).Order())))
                     throw new InvalidDataException("Invalid room members.");
             foreach (var character in characters)
@@ -103,12 +111,12 @@ public sealed partial class Realm : IDisposable
                 bool valid = Matches(input.Password!, account?.Salt ?? new string('0', 32), account?.Hash ?? new string('0', 64));
                 Need(account is not null && valid, 401, "Invalid credentials.");
             }
-            foreach (var key in sessions.Where(p => p.Value.Account == account!.Id || p.Value.Until <= clock.GetUtcNow()).Select(p => p.Key).ToArray()) sessions.Remove(key);
+            foreach (var key in sessions.Where(p => p.Value.Account == account!.Id || p.Value.Until <= clock.GetUtcNow()).Select(p => p.Key).ToArray()) { sessions.Remove(key); foreach (var r in rooms.Values) r.WorldSessions.Remove(key); }
             string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)); sessions.Add(token, (account!.Id, clock.GetUtcNow().AddHours(8)));
             return new(token, name);
         }
     }
-    public object Logout(string token) { lock (gate) { Authorize(token); sessions.Remove(token); return new { ok = true }; } }
+    public object Logout(string token) { lock (gate) { Authorize(token); sessions.Remove(token); foreach (var r in rooms.Values) r.WorldSessions.Remove(token); return new { ok = true }; } }
     public CharacterInfo[] Characters(string token) { lock (gate) { var account = Authorize(token); return characters.Where(c => c.Account == account).Select(c => new CharacterInfo(c.Id, c.Name, c.Victories)).ToArray(); } }
     public CharacterInfo CreateCharacter(string token, string name)
     {
@@ -151,7 +159,10 @@ public sealed partial class Realm : IDisposable
     {
         lock (gate) { var c = Owned(Authorize(token), id); Need(!rooms.Values.Any(r => r.Saved.Members.Any(m => m.Character == id)), 409, "Leave or close the room first."); characters.Remove(c); Save(); return new { ok = true }; }
     }
-    public RoomInfo[] Rooms(string token) { lock (gate) { Authorize(token); return rooms.Values.Select(r => new RoomInfo(r.Saved.Id, r.Saved.Name, r.Saved.Members.Length, r.Game is not null, r.Saved.PasswordHash.Length > 0)).ToArray(); } }
+    public WorldContent[] Worlds(string token) { lock (gate) { Authorize(token); return [CooperativeWorld.Content]; } }
+    public RoomInfo[] Rooms(string token, bool includeWorlds = false) { lock (gate) { Authorize(token); return rooms.Values
+        .Where(r => includeWorlds || r.Saved.World is null)
+        .Select(r => new RoomInfo(r.Saved.Id, r.Saved.Name, r.Saved.Members.Length, r.Game is not null, r.Saved.PasswordHash.Length > 0, r.Saved.World)).ToArray(); } }
     private void Available(Character character)
     {
         Need(!rooms.Values.Any(r => r.Saved.Members.Any(m => characters.Single(c => c.Id == m.Character).Account == character.Account)), 409, "Account already occupies a room; rejoin it or leave first.");
@@ -162,8 +173,10 @@ public sealed partial class Realm : IDisposable
         lock (gate)
         {
             var c = Owned(Authorize(token), request.Character); Available(c); Need(rooms.Count < 32, 409, "Realm room limit reached.");
+            if (request.World is not null) Need(request.World == CooperativeWorld.Content, 409, "World content ID/hash mismatch.");
             var secret = string.IsNullOrEmpty(request.Password) ? (Salt: "", Hash: "") : Secret(request.Password);
-            var room = new Room(new(Guid.NewGuid(), name, c.Id, secret.Salt, secret.Hash, [new(c.Id, 1)], null));
+            var room = new Room(new(Guid.NewGuid(), name, c.Id, secret.Salt, secret.Hash, [new(c.Id, 1)], null, request.World));
+            if (request.World is not null) room.WorldSessions.Add(token);
             rooms.Add(room.Saved.Id, room); Save(); return View(room, c);
         }
     }
@@ -172,6 +185,7 @@ public sealed partial class Realm : IDisposable
         lock (gate)
         {
             var c = Owned(Authorize(token), request.Character); var room = Find(id);
+            Need(request.World == room.Saved.World, 409, "Matching world content is required to join or reconnect.");
             if (!room.Saved.Members.Any(m => m.Character == c.Id))
             {
                 bool invited = request.Invitation is not null;
@@ -182,6 +196,7 @@ public sealed partial class Realm : IDisposable
                 room.Saved = room.Saved with { Members = [..room.Saved.Members, new(c.Id, actor)] }; Save();
                 if (invited) room.InviteHash = null;
             }
+            if (room.Saved.World is not null) room.WorldSessions.Add(token);
             return View(room, c);
         }
     }
@@ -190,17 +205,21 @@ public sealed partial class Realm : IDisposable
     {
         var account = Authorize(token); var room = Find(id);
         var c = characters.FirstOrDefault(c => c.Account == account && room.Saved.Members.Any(m => m.Character == c.Id));
-        Need(c is not null, 403, "Room membership required."); return (room, c!);
+        Need(c is not null, 403, "Room membership required.");
+        Need(room.Saved.World is null || room.WorldSessions.Contains(token), 409, "Rejoin with matching world content first.");
+        return (room, c!);
     }
     public RoomView State(string token, Guid id) { lock (gate) { var (r, c) = Access(token, id); return View(r, c); } }
     // Only internal serialization may borrow these arrays. Authorization and recipient metadata
     // are evaluated on every read, even when the simulation snapshot is reused.
-    internal RoomView StreamState(string token, Guid id, bool interest = false, RoomView? previous = null, bool inputProgress = false)
+    internal RoomView StreamState(string token, Guid id, bool interest = false, RoomView? previous = null, bool inputProgress = false, bool world = false)
     {
         RoomView view;
         lock (gate)
         {
-            var (r, c) = Access(token, id); view = View(r, c, shared: true);
+            var (r, c) = Access(token, id);
+            Need(r.Saved.World is null || world, 409, "World rooms require the v5 stream protocol.");
+            view = View(r, c, shared: true);
             if (inputProgress) view = view with { ProcessedSequence = r.Processed.GetValueOrDefault(view.Actor) };
         }
         // Filtering is connection-specific; immutable full snapshots remain shared.
@@ -223,7 +242,8 @@ public sealed partial class Realm : IDisposable
         var view = new RoomView(room.Saved.Id, room.Saved.Name, room.Game is not null, room.Saved.Host == character.Id, member.Actor, member.ClientSequence + 1,
             snapshot?.Tick ?? 0, snapshot?.Hash ?? "", room.Saved.Members.Select(m => new MemberInfo(m.Character, characters.Single(c => c.Id == m.Character).Name, m.Actor)).ToArray(),
             snapshot is null ? [] : shared ? snapshot.Entities : (EntityState[])snapshot.Entities.Clone(),
-            snapshot is null ? [] : shared ? snapshot.Items : (ItemState[])snapshot.Items.Clone());
+            snapshot is null ? [] : shared ? snapshot.Items : (ItemState[])snapshot.Items.Clone(),
+            World: room.Saved.World is { } content ? new(content, room.Game?.Quest ?? new(QuestStage.Available, 0, CooperativeWorld.Definition.QuestTargets.Length), member.RegionEpoch) : null);
         return view;
     }
     public RoomView Start(string token, Guid id)
@@ -233,7 +253,7 @@ public sealed partial class Realm : IDisposable
             var (r, c) = Access(token, id); Need(r.Saved.Host == c.Id, 403, "Only the host can start."); Need(r.Game is null, 409, "Already started.");
             r.Saved = r.Saved with { Members = r.Saved.Members.Select((m, i) => m with { Actor = (uint)i + 1 }).ToArray() };
             r.InviteHash = null;
-            r.Game = Arena.Create(r.Saved.Members.Length).WithCarriedItems(r.Saved.Members.SelectMany(m =>
+            r.Game = (r.Saved.World is null ? Arena.Create(r.Saved.Members.Length) : CooperativeWorld.Create(r.Saved.Members.Length)).WithCarriedItems(r.Saved.Members.SelectMany(m =>
                 (characters.Single(x => x.Id == m.Character).Inventory ?? []).Select(item => item with { Owner = new(m.Actor) })).ToArray());
             Save(); return View(r, c);
         }
@@ -270,6 +290,7 @@ public sealed partial class Realm : IDisposable
             {
                 var input = inputs[i];
                 Need(input is not null, 400, "Missing input.");
+                ValidateInputRegion(r, m, e, input!);
                 Need(input!.Sequence > m.ClientSequence && input.Sequence < long.MaxValue &&
                     (i == 0 || input.Sequence == inputs[i - 1].Sequence + 1), 409, "Stale or non-contiguous input sequence.");
                 commands[i] = new(game.Tick + 1, cursor.Sequence + (ulong)i + 1, e.Id, e.Region,
@@ -292,6 +313,8 @@ public sealed partial class Realm : IDisposable
         var m = r.Saved.Members.Single(m => m.Character == c.Id);
         Need(input.Sequence > m.ClientSequence && input.Sequence < long.MaxValue, 409, "Stale input sequence.");
         var e = r.Game!.GetEntity(new(m.Actor)); var cursor = r.Game.CaptureSnapshot().Inputs.Single(i => i.Actor == e.Id);
+        ValidateInputRegion(r, m, e, input);
+        Need(cursor.Sequence < ulong.MaxValue, 409, "Input sequence exhausted.");
         var result = r.Game.Submit(new(r.Game.Tick + 1, cursor.Sequence + 1, e.Id, e.Region, input.Kind, input.X, input.Y, new(input.Target), new(input.Item)));
         Need(result == CommandResult.Accepted, 400, "Command rejected: " + result);
         r.Snapshot = null;
@@ -299,6 +322,13 @@ public sealed partial class Realm : IDisposable
         r.Seen[c.Id] = clock.GetUtcNow();
         if (input.Kind == CommandKind.SetMove) r.Moved[c.Id] = clock.GetUtcNow();
         return (r, c, m.Actor);
+    }
+    private static void ValidateInputRegion(Room room, Member member, EntityState actor, InputRequest input)
+    {
+        if (room.Saved.World is not null)
+            Need(input.Region == actor.Region.Value && input.RegionEpoch == member.RegionEpoch, 409,
+                "World input belongs to a stale region visit. Refresh room state.");
+        else Need(input.Region is null && input.RegionEpoch is null, 400, "Arena input must omit world region fields.");
     }
     private static void Stop(Room r, Member m)
     {
@@ -329,7 +359,18 @@ public sealed partial class Realm : IDisposable
             foreach (var r in rooms.Values.Where(r => r.Game is not null))
             {
                 foreach (var m in r.Saved.Members) if (!r.Moved.TryGetValue(m.Character, out var moved) || clock.GetUtcNow() - moved > TimeSpan.FromMilliseconds(500)) Stop(r, m);
-                if (r.Seen.Values.Any(t => clock.GetUtcNow() - t < TimeSpan.FromSeconds(15))) { r.Game!.Step(); MarkProcessed(r); }
+                if (r.Seen.Values.Any(t => clock.GetUtcNow() - t < TimeSpan.FromSeconds(15)))
+                {
+                    r.Game!.Step();
+                    foreach (var change in r.Game.Events)
+                        if (change.Kind == SimulationEventKind.RegionChanged)
+                        {
+                            var member = r.Saved.Members.Single(m => m.Actor == change.Actor.Value);
+                            r.Moved.Remove(member.Character); // A lease never follows an actor through a portal.
+                            r.Saved = r.Saved with { Members = r.Saved.Members.Select(m => m == member ? m with { RegionEpoch = r.Game.Tick } : m).ToArray() };
+                        }
+                    MarkProcessed(r);
+                }
                 else StopAll(r);
             }
         }
@@ -354,7 +395,8 @@ public sealed partial class Realm : IDisposable
             var (r, c) = Access(token, id); Need(r.Saved.Host == c.Id, 403, "Only the host can close.");
             if (r.Game is not null)
             {
-                bool victory = r.Game.Entities.ToArray().Where(e => e.Kind == EntityKind.Monster).All(e => !e.IsAlive);
+                bool victory = r.Game.World is not null ? r.Game.QuestState == QuestStage.Completed :
+                    r.Game.Entities.ToArray().Where(e => e.Kind == EntityKind.Monster).All(e => !e.IsAlive);
                 foreach (var m in r.Saved.Members)
                 {
                     int i = characters.FindIndex(x => x.Id == m.Character);
@@ -371,7 +413,7 @@ public sealed partial class Realm : IDisposable
         Need(!failed, 503, "Storage unavailable."); string temporary = file + ".tmp";
         try
         {
-            var db = new Database(2, GameSimulation.RulesVersion, accounts.ToArray(), characters.ToArray(), rooms.Values.Select(r => r.Saved with { Game = r.Game is null ? null : SavedGame.Capture(r.Game) }).ToArray(), Mode);
+            var db = new Database(rooms.Values.Any(r => r.Saved.World is not null) ? 3 : 2, GameSimulation.RulesVersion, accounts.ToArray(), characters.ToArray(), rooms.Values.Select(r => r.Saved with { Game = r.Game is null ? null : SavedGame.Capture(r.Game) }).ToArray(), Mode);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(db);
             if (bytes.Length > 16 * 1024 * 1024) throw new IOException("Realm exceeds storage budget.");
             var options = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write, Share = FileShare.None };

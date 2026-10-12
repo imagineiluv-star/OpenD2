@@ -46,8 +46,10 @@ internal static class TlsContracts
         var checks = new List<string>();
         void Pass(string name) { checks.Add(name); Console.WriteLine("TLS PASS " + name); }
         string ca = Path.Combine(fixtures, "ca.pem");
-        foreach (string name in capacityOnly ? new[] { "valid", "open" } : new[] { "valid", "open", "wrong-host", "expired" })
+        foreach (string name in capacityOnly ? new[] { "valid", "open" } : new[] { "valid", "open", "world-realm", "world-open", "wrong-host", "expired" })
         {
+            bool worldOnly = name is "world-realm" or "world-open";
+            string serverMode = name is "open" or "world-open" ? "open" : "realm";
             using var reservation = new TcpListener(IPAddress.Loopback, 0);
             reservation.Start(); int port = ((IPEndPoint)reservation.LocalEndpoint).Port;
             string url = "https://127.0.0.1:" + port;
@@ -59,7 +61,7 @@ internal static class TlsContracts
             // Duration probes retain warnings/errors, not unbounded per-request info logs.
             if (capacityOnly) start.Environment["Logging__LogLevel__Default"] = "Warning";
             foreach (string arg in new[] { "--urls", name is "valid" or "open" ? url + ";" + plainUrl : url, "--data", Path.Combine(fixtures, "data-" + name) }) start.ArgumentList.Add(arg);
-            start.ArgumentList.Add("--mode"); start.ArgumentList.Add(name == "open" ? "open" : "realm");
+            start.ArgumentList.Add("--mode"); start.ArgumentList.Add(serverMode);
             var catalog = new ServerCatalog(1, [new("Published server", "Test", url, name == "open" ? "open" : "realm", root.GetCertHashString(HashAlgorithmName.SHA256)),
                 new("Other mode", "Other", "https://other.example.invalid", name == "open" ? "realm" : "open")]);
             string catalogPath = Path.Combine(fixtures, "published-" + name + ".json");
@@ -67,7 +69,7 @@ internal static class TlsContracts
             {
                 catalog.Save(catalogPath); start.ArgumentList.Add("--server-catalog"); start.ArgumentList.Add(catalogPath);
             }
-            start.Environment["Kestrel__Certificates__Default__Path"] = Path.Combine(fixtures, (name == "open" ? "valid" : name) + ".pfx");
+            start.Environment["Kestrel__Certificates__Default__Path"] = Path.Combine(fixtures, (name == "open" || worldOnly ? "valid" : name) + ".pfx");
             start.Environment["Kestrel__Certificates__Default__Password"] = password;
             // Validate the self-contained executable without any SDK/runtime search paths.
             foreach (string key in start.Environment.Keys.Where(k => k.StartsWith("DOTNET_ROOT", StringComparison.OrdinalIgnoreCase) || k.Equals("DOTNET_HOST_PATH", StringComparison.OrdinalIgnoreCase)).ToArray()) start.Environment.Remove(key);
@@ -94,6 +96,11 @@ internal static class TlsContracts
                     await StreamCapacityContracts.Run(url, ca, mode,
                         Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "capacity-" + mode + ".json"), capacitySeconds);
                     Pass(mode + " 32 WSS streams, admission limit, slot recovery and room isolation");
+                }
+                else if (worldOnly)
+                {
+                    await CooperativeStreamContracts.Run(url, ca, serverMode);
+                    Pass(serverMode + " cooperative world content, portal and two-client v5 WSS reconnect");
                 }
                 else if (name == "valid")
                 {

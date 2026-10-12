@@ -1,24 +1,29 @@
 using OpenD2.Core;
+using OpenD2.Online;
 
 namespace OpenD2.Server;
 
 public sealed record Account(Guid Id, string Name, string Salt, string Hash);
 public sealed record Character(Guid Id, Guid Account, string Name, int Victories = 0, CarriedItem[]? Inventory = null);
-public sealed record Member(Guid Character, uint Actor, long ClientSequence = 0);
-public sealed record SavedGame(string StateHash, long Tick, uint Random, EntityState[] Entities, CommandCursor[] Inputs, GameCommand[] Pending, ItemState[] Items)
+public sealed record Member(Guid Character, uint Actor, long ClientSequence = 0, long RegionEpoch = 0);
+public sealed record SavedGame(string StateHash, long Tick, uint Random, EntityState[] Entities, CommandCursor[] Inputs, GameCommand[] Pending, ItemState[] Items,
+    string? WorldHash = null, QuestStage Quest = QuestStage.Available)
 {
     public static SavedGame Capture(GameSimulation game)
     {
         var s = game.CaptureSnapshot();
-        return new(game.ComputeStateHash(), s.Tick, s.RandomState, s.Entities.ToArray(), s.Inputs.ToArray(), s.PendingCommands.ToArray(), s.Items.ToArray());
+        return new(game.ComputeStateHash(), s.Tick, s.RandomState, s.Entities.ToArray(), s.Inputs.ToArray(), s.PendingCommands.ToArray(), s.Items.ToArray(), s.World?.ContentHash, s.QuestState);
     }
-    public GameSimulation Restore(int rules = GameSimulation.RulesVersion)
+    public GameSimulation Restore(int rules = GameSimulation.RulesVersion, WorldContent? content = null)
     {
+        var world = content is null ? null : CooperativeWorld.Resolve(content);
+        if (WorldHash != world?.ContentHash || (world is not null && rules != GameSimulation.RulesVersion))
+            throw new InvalidDataException("Saved room world content does not match.");
         var game = GameSimulation.RestoreCompatible(new(rules, Tick, Random, Entities, Inputs, Pending,
-            Online.Arena.Grid(), null, default, QuestStage.Available, Items, InventoryLayout.Default), StateHash);
+            world is null ? Arena.Grid() : null, world, world is null ? default : new(1), Quest, Items, InventoryLayout.Default), StateHash);
         return game;
     }
 }
-public sealed record SavedRoom(Guid Id, string Name, Guid Host, string Salt, string PasswordHash, Member[] Members, SavedGame? Game);
+public sealed record SavedRoom(Guid Id, string Name, Guid Host, string Salt, string PasswordHash, Member[] Members, SavedGame? Game, WorldContent? World = null);
 public sealed record Database(int Version, int RulesVersion, Account[] Accounts, Character[] Characters, SavedRoom[] Rooms, string? Mode = null);
 public sealed class Rejected(int status, string message) : Exception(message) { public int Status => status; }

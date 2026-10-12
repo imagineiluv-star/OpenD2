@@ -21,6 +21,7 @@ public sealed partial class OnlineClient : IDisposable
     public bool SupportsRoomDeltas { get; private set; }
     public bool SupportsRoomInterest { get; private set; }
     public bool SupportsRoomInputProgress { get; private set; }
+    public bool SupportsWorldRooms { get; private set; }
     public bool SupportsInputBatches { get; private set; }
     private long inputBatchRequests;
     public long InputBatchRequests => Interlocked.Read(ref inputBatchRequests);
@@ -98,6 +99,7 @@ public sealed partial class OnlineClient : IDisposable
         SupportsRoomInterest = health.RoomInterest == 1 && SupportsRoomDeltas;
         SupportsRoomInputProgress = health.RoomInputProgress == 1 && SupportsRoomInterest;
         SupportsInputBatches = health.InputBatch == 1;
+        SupportsWorldRooms = health.RoomWorld == 1 && SupportsRoomInputProgress;
     }
     public async Task<InputReceipt> SendInput(Guid room, InputRequest input, CancellationToken cancellation = default)
     {
@@ -142,15 +144,20 @@ public sealed partial class OnlineClient : IDisposable
         if (Mode != "open") throw new InvalidOperationException("Select Open mode for personal characters.");
         return await Send<CharacterInfo>(HttpMethod.Post, "v1/characters/import", OpenCharacterFile.Load(path), cancellation);
     }
-    public async IAsyncEnumerable<RoomView> WatchRoom(Guid room, [EnumeratorCancellation] CancellationToken cancellation = default)
+    public async IAsyncEnumerable<RoomView> WatchRoom(Guid room, [EnumeratorCancellation] CancellationToken cancellation = default, WorldContent? world = null)
     {
         using var session = CancellationTokenSource.CreateLinkedTokenSource(cancellation, lifetime.Token);
         cancellation = session.Token;
         if (token is null) throw new InvalidOperationException("Login first.");
         using var socket = new ClientWebSocket();
+        if (world is not null)
+        {
+            CooperativeWorld.Resolve(world);
+            if (!SupportsWorldRooms) throw new NotSupportedException("Server does not support world rooms.");
+        }
         bool delta = SupportsRoomDeltas;
         bool inputProgress = SupportsRoomInputProgress;
-        string protocol = inputProgress ? RoomFrames.InputProgressProtocol : SupportsRoomInterest ? RoomInterest.Protocol : delta ? RoomFrames.Protocol : "opend2.room.v1";
+        string protocol = world is not null ? RoomFrames.WorldProtocol : inputProgress ? RoomFrames.InputProgressProtocol : SupportsRoomInterest ? RoomInterest.Protocol : delta ? RoomFrames.Protocol : "opend2.room.v1";
         socket.Options.AddSubProtocol(protocol);
         socket.Options.CollectHttpResponseDetails = true;
         socket.Options.SetRequestHeader("Authorization", "Bearer " + token);
@@ -203,6 +210,7 @@ public sealed partial class OnlineClient : IDisposable
                 state = update.State ?? throw new InvalidDataException("Missing room state.");
                 if (state.Id != room) throw new InvalidDataException("Wrong room update.");
             }
+            if (state.World?.Content != world) throw new InvalidDataException("Room world content differs from the selected content.");
             Interlocked.Add(ref roomPayloadBytes, length);
             if (patched) Interlocked.Increment(ref roomDeltaFrames); else Interlocked.Increment(ref roomFullFrames);
             yield return state;
