@@ -46,7 +46,8 @@ internal static class CooperativeStreamContracts
         var initial = await Until(first, _ => true); await Until(second, _ => true);
         await host.SendInput(room.Id, Input(initial, CommandKind.Interact, target: 300), stop);
         var quest = await Until(first, v => v.World!.Quest.Stage == QuestStage.Active);
-        await Until(second, v => v.World!.Quest.Stage == QuestStage.Active);
+        // Quests are personal: the guest's stream moves past the acceptance while their own quest stays available.
+        await Until(second, v => v.Tick > quest.Tick && v.World!.Quest.Stage == QuestStage.Available);
         await host.SendInput(room.Id, Input(quest, CommandKind.Interact, target: 200), stop);
         var field = await Until(first, v => v.Entities.Single(e => e.Id.Value == 1).Region.Value == 2);
         var town = await Until(second, v => v.Entities.Single(e => e.Id.Value == 1).Region.Value == 2);
