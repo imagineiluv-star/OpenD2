@@ -13,8 +13,9 @@ internal static class RoomStream
 
     internal static async Task Run(HttpContext context, Realm realm, Guid room, string token)
     {
-        realm.StreamState(token, room); // Authorize before upgrading the HTTP response.
-        bool inputProgress = context.WebSockets.WebSocketRequestedProtocols.Contains(RoomFrames.InputProgressProtocol);
+        bool world = context.WebSockets.WebSocketRequestedProtocols.Contains(RoomFrames.WorldProtocol);
+        realm.StreamState(token, room, world: world); // Authorize before upgrading the HTTP response.
+        bool inputProgress = world || context.WebSockets.WebSocketRequestedProtocols.Contains(RoomFrames.InputProgressProtocol);
         bool interest = inputProgress || context.WebSockets.WebSocketRequestedProtocols.Contains(RoomInterest.Protocol);
         bool delta = interest || context.WebSockets.WebSocketRequestedProtocols.Contains(RoomFrames.Protocol);
         if (!context.WebSockets.IsWebSocketRequest || (!delta && !context.WebSockets.WebSocketRequestedProtocols.Contains("opend2.room.v1")))
@@ -24,9 +25,9 @@ internal static class RoomStream
         if (!active.TryAdd(token, 0)) throw new Rejected(409, "One room stream per session.");
         try
         {
-            using var socket = await context.WebSockets.AcceptWebSocketAsync(inputProgress ? RoomFrames.InputProgressProtocol : interest ? RoomInterest.Protocol : delta ? RoomFrames.Protocol : "opend2.room.v1");
+            using var socket = await context.WebSockets.AcceptWebSocketAsync(world ? RoomFrames.WorldProtocol : inputProgress ? RoomFrames.InputProgressProtocol : interest ? RoomInterest.Protocol : delta ? RoomFrames.Protocol : "opend2.room.v1");
             using var stop = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
-            Task receive = Receive(socket, stop.Token), send = Push(socket, realm, room, token, delta, interest, inputProgress, stop.Token);
+            Task receive = Receive(socket, stop.Token), send = Push(socket, realm, room, token, delta, interest, inputProgress, world, stop.Token);
             try { await Task.WhenAny(receive, send); }
             finally
             {
@@ -46,14 +47,14 @@ internal static class RoomStream
         await socket.ReceiveAsync(new byte[1].AsMemory(), stop);
     }
 
-    private static async Task Push(WebSocket socket, Realm realm, Guid room, string token, bool delta, bool interest, bool inputProgress, CancellationToken stop)
+    private static async Task Push(WebSocket socket, Realm realm, Guid room, string token, bool delta, bool interest, bool inputProgress, bool world, CancellationToken stop)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(40));
         RoomView? previous = null; long sequence = 0;
         do
         {
             RoomUpdate update;
-            try { update = new(realm.StreamState(token, room, interest, previous, inputProgress)); }
+            try { update = new(realm.StreamState(token, room, interest, previous, inputProgress, world)); }
             catch (Rejected error) { update = new(null, error.Status, error.Message); }
             byte[] bytes = delta ? JsonSerializer.SerializeToUtf8Bytes(update.State is { } state
                 ? RoomFrames.Create(state, previous, checked(++sequence))

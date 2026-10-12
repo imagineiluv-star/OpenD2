@@ -19,6 +19,7 @@ public static class RoomFrames
 {
     public const string Protocol = "opend2.room.v2";
     public const string InputProgressProtocol = "opend2.room.v4";
+    public const string WorldProtocol = "opend2.room.v5";
     public const int FullInterval = 125; // At most 124 dependent frames between full snapshots.
     public const int MaxItems = 2 * GameSimulation.MaxEntities + GameSimulation.MaxCarriedItems;
 
@@ -27,7 +28,7 @@ public static class RoomFrames
         if (sequence <= 0) throw new ArgumentOutOfRangeException(nameof(sequence));
         if (previous is null || (sequence - 1) % FullInterval == 0 ||
             current.Id != previous.Id || current.Name != previous.Name || current.Started != previous.Started ||
-            current.Host != previous.Host || current.Actor != previous.Actor || !current.Members.SequenceEqual(previous.Members) ||
+            current.World != previous.World || current.Host != previous.Host || current.Actor != previous.Actor || !current.Members.SequenceEqual(previous.Members) ||
             !current.Entities.Select(e => e.Id).SequenceEqual(previous.Entities.Select(e => e.Id)) ||
             !current.Items.Select(i => i.Id).SequenceEqual(previous.Items.Select(i => i.Id))) return new(sequence, State: current);
         var entities = Enumerable.Range(0, current.Entities.Length).Where(i => current.Entities[i] != previous.Entities[i])
@@ -78,6 +79,7 @@ public static class RoomFrames
         else throw new InvalidDataException("Room delta has no matching full baseline. Reconnect to the room.");
         Validate(next, room);
         if (previous is not null && (next.Tick < previous.Tick || next.NextSequence < previous.NextSequence || (previous.Started && !next.Started) ||
+            next.World?.Content != previous.World?.Content || next.World?.RegionEpoch < previous.World?.RegionEpoch ||
             next.ProcessedSequence.HasValue != previous.ProcessedSequence.HasValue || next.ProcessedSequence < previous.ProcessedSequence))
             throw new InvalidDataException("Room state moved backwards.");
         return next;
@@ -85,6 +87,11 @@ public static class RoomFrames
 
     private static void Validate(RoomView state, Guid room)
     {
+        if (state.World is { } world && (world.Content != CooperativeWorld.Content || world.RegionEpoch < 0 || world.RegionEpoch > state.Tick ||
+            !Enum.IsDefined(world.Quest.Stage) || world.Quest.Required != CooperativeWorld.Definition.QuestTargets.Length ||
+            world.Quest.Defeated < 0 || world.Quest.Defeated > world.Quest.Required ||
+            (world.Quest.Stage is QuestStage.ReadyToTurnIn or QuestStage.Completed && world.Quest.Defeated != world.Quest.Required)))
+            throw new InvalidDataException("Invalid world content, quest or region epoch.");
         if (state.Id != room || state.Actor == 0 || state.Tick < 0 || state.NextSequence <= 0 || state.ProcessedSequence < 0 || state.ProcessedSequence >= state.NextSequence || state.Name is not { Length: <= 128 } ||
             state.Members is not { Length: >= 1 and <= 4 } || state.Entities is null || state.Entities.Length > GameSimulation.MaxEntities ||
             state.Items is null || state.Items.Length > MaxItems || state.StateHash is null ||

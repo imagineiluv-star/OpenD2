@@ -18,7 +18,7 @@ public static class RoomInterest
         // The last successfully sent view belongs to this connection only. Never carry
         // visibility across a reconnect, room/actor change, region change or tick rewind.
         bool retain = previous is { Started: true } && previous.Id == state.Id && previous.Actor == state.Actor &&
-            previous.Tick <= state.Tick && previous.Entities.Any(e => e.Id == self.Id && e.Region == self.Region);
+            previous.Tick <= state.Tick && previous.World?.RegionEpoch == state.World?.RegionEpoch && previous.Entities.Any(e => e.Id == self.Id && e.Region == self.Region);
         var actors = retain ? previous!.Entities.Select(e => e.Id).ToHashSet() : [];
         var ground = retain ? previous!.Items.Where(i => i.Location == ItemLocation.Ground).Select(i => i.Id).ToHashSet() : [];
         bool Nearby(RegionId region, GamePosition position, bool visible) => region == self.Region &&
