@@ -101,6 +101,9 @@ internal static class TlsContracts
                 {
                     await CooperativeStreamContracts.Run(url, ca, serverMode);
                     Pass(serverMode + " cooperative world content, portal and two-client v5 WSS reconnect");
+                    await CooperativeNetworkContracts.Run(url, ca, serverMode,
+                        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "network-world-" + serverMode + ".json"));
+                    Pass(serverMode + " cooperative world lost portal response, stale visit replay and split-party recovery through byte relay");
                 }
                 else if (name == "valid")
                 {
