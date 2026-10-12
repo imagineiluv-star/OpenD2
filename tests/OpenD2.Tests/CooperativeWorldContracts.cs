@@ -174,5 +174,113 @@ internal static class CooperativeWorldContracts
             allocated = GC.GetAllocatedBytesForCurrentThread(); for (int i = 0; i < 1000; i++) game.Step();
             Check(GC.GetAllocatedBytesForCurrentThread() == allocated);
         });
+        // ---- Personal quests: each player accepts, progresses and completes on their own; kills stay shared.
+        WorldDefinition PersonalWorld(params EntityId[] targets) => new([new("Town", Grid(Town)), new("Dungeon", Grid(Dungeon)), new("Remote", Grid(Remote))],
+            [Entrance, Exit], Npc, targets.Length == 0 ? [Monster.Id] : targets, "Personal cellar", playerLimit: 4, personalQuests: true);
+        // Stunned for the first ticks so it cannot interrupt the player who kills it.
+        var townMonster = Monster with { Id = new(101), Region = Town, Position = new(640, 896), Health = 1, HitStun = 3 };
+        EntityState Second(int y = 896) => Two with { Region = Town, Position = new(384, y) };
+        int Changes(GameSimulation game, uint actor) => game.Events.ToArray().Count(e => e.Kind == SimulationEventKind.QuestChanged && e.Actor.Value == actor);
+        test("Personal-quest worlds have their own content identity and leave other worlds untouched", () =>
+        {
+            var shared = World(); var personal = PersonalWorld();
+            Check(personal.PersonalQuests && !shared.PersonalQuests && personal.ContentHash != shared.ContentHash);
+            var explicitShared = new WorldDefinition(shared.Regions.ToArray(), shared.Portals.ToArray(), Npc, [Monster.Id], shared.QuestTitle, playerLimit: 4, personalQuests: false);
+            Check(explicitShared.ContentHash == shared.ContentHash);
+            var single = new WorldDefinition(shared.Regions.ToArray(), shared.Portals.ToArray(), Npc, [Monster.Id], shared.QuestTitle);
+            Check(!single.PersonalQuests && single.ContentHash != personal.ContentHash);
+            // The state hash of a personal world covers every player's stage, a shared world's covers one.
+            var a = Game([One, Second(), Monster], PersonalWorld()); var b = Game([One, Second(), Monster], PersonalWorld());
+            Accept(a, Command(a, 1, CommandKind.Interact, 1000)); a.Step(); Accept(b, Command(b, 2, CommandKind.Interact, 1000)); b.Step();
+            Check(a.GetQuest(new(1)) == QuestStage.Active && a.GetQuest(new(2)) == QuestStage.Available);
+            Check(b.GetQuest(new(1)) == QuestStage.Available && b.GetQuest(new(2)) == QuestStage.Active);
+            Check(a.ComputeStateHash() != b.ComputeStateHash());
+        });
+        test("Players accept the personal quest independently, also on the same tick", () =>
+        {
+            var game = Game([One, Second(), Monster], PersonalWorld());
+            Accept(game, Command(game, 1, CommandKind.Interact, 1000)); game.Step();
+            Check(game.GetQuest(new(1)) == QuestStage.Active && game.GetQuest(new(2)) == QuestStage.Available && game.QuestState == QuestStage.Active);
+            Check(Changes(game, 1) == 1 && Changes(game, 2) == 0 && game.Events.ToArray().Count(e => e.Kind == SimulationEventKind.NpcTalked) == 1);
+            var together = Game([One, Second(), Monster], PersonalWorld());
+            for (uint actor = 1; actor <= 2; actor++) Accept(together, Command(together, actor, CommandKind.Interact, 1000));
+            together.Step();
+            Check(together.GetQuest(new(1)) == QuestStage.Active && together.GetQuest(new(2)) == QuestStage.Active);
+            Check(Changes(together, 1) == 1 && Changes(together, 2) == 1); // a shared quest allows one transition per tick, a personal one per player
+            Accept(game, Command(game, 2, CommandKind.Interact, 1000)); game.Step();
+            Check(game.GetQuest(new(2)) == QuestStage.Active && game.GetQuest(new(1)) == QuestStage.Active && Changes(game, 1) == 0);
+        });
+        test("Defeating the targets is shared: accepted players become ready, others are ready the moment they accept", () =>
+        {
+            var game = Game([One, Second(), townMonster], PersonalWorld(townMonster.Id));
+            Accept(game, Command(game, 1, CommandKind.Interact, 1000)); game.Step();
+            Check(game.GetQuest(new(1)) == QuestStage.Active);
+            Accept(game, Command(game, 2, CommandKind.Attack, 101)); game.Step();
+            Check(!game.GetEntity(townMonster.Id).IsAlive);
+            Check(game.GetQuest(new(1)) == QuestStage.ReadyToTurnIn && game.GetQuest(new(2)) == QuestStage.Available);
+            Check(Changes(game, 1) == 1 && Changes(game, 2) == 0);
+            Check(game.GetQuestProgress(new(2)).Defeated == 1 && game.GetQuestProgress(new(2)).Stage == QuestStage.Available);
+            Accept(game, Command(game, 2, CommandKind.Interact, 1000)); game.Step();
+            Check(game.GetQuest(new(2)) == QuestStage.ReadyToTurnIn); // accepting after the kills skips Active, as for a single player
+        });
+        test("Completing heals only the completing player and a dead player cannot talk", () =>
+        {
+            var dead = new EntityState(new(3), Remote, new(8576, 384), Health: 0);
+            var game = Game([One, Second(), dead, townMonster with { Health = 0 }], PersonalWorld(townMonster.Id));
+            for (uint actor = 1; actor <= 2; actor++) Accept(game, Command(game, actor, CommandKind.Interact, 1000));
+            game.Step();
+            Check(game.GetQuest(new(1)) == QuestStage.ReadyToTurnIn && game.GetQuest(new(2)) == QuestStage.ReadyToTurnIn);
+            Check(game.Submit(Command(game, 3, CommandKind.Interact, 1000)) == CommandResult.DeadActor && game.GetQuest(new(3)) == QuestStage.Available);
+            Accept(game, Command(game, 1, CommandKind.Interact, 1000)); game.Step();
+            Check(game.GetQuest(new(1)) == QuestStage.Completed && game.GetEntity(new(1)).Health == 100);
+            Check(game.GetQuest(new(2)) == QuestStage.ReadyToTurnIn && game.GetEntity(new(2)).Health == 50 && game.GetQuest(new(3)) == QuestStage.Available);
+            Check(Changes(game, 1) == 1);
+            Accept(game, Command(game, 1, CommandKind.Interact, 1000)); game.Step();
+            Check(game.GetQuest(new(1)) == QuestStage.Completed && Changes(game, 1) == 0 && game.GetEntity(new(1)).Health == 100); // no second reward
+            Accept(game, Command(game, 2, CommandKind.Interact, 1000)); game.Step();
+            Check(game.GetQuest(new(2)) == QuestStage.Completed && game.GetEntity(new(2)).Health == 100);
+        });
+        test("Personal quest stages survive checkpoints, disk saves and replay", () =>
+        {
+            var actors = new[] { One, Second(), townMonster };
+            var game = Game(actors, PersonalWorld(townMonster.Id)); var trace = new List<RecordedCommand>();
+            void Send(uint actor, CommandKind kind, uint target = 0) { var command = Command(game, actor, kind, target); Accept(game, command); trace.Add(new(game.Tick, command)); }
+            Send(1, CommandKind.Interact, 1000); game.Step();
+            Send(2, CommandKind.Attack, 101); game.Step();
+            for (int i = 0; i < 5; i++) game.Step();
+            var snapshot = game.CaptureSnapshot();
+            Check(snapshot.PlayerQuests is { Count: 2 } && snapshot.PlayerQuests[0] == QuestStage.ReadyToTurnIn && snapshot.PlayerQuests[1] == QuestStage.Available && snapshot.QuestState == QuestStage.ReadyToTurnIn);
+            var restored = GameSimulation.Restore(snapshot);
+            Check(restored.ComputeStateHash() == game.ComputeStateHash() && restored.GetQuest(new(2)) == QuestStage.Available);
+            string file = Path.Combine(root, "personal-quest-world.json"); GameSave.Save(file, snapshot);
+            string text = File.ReadAllText(file);
+            Check(text.Contains("\"PlayerQuests\"", StringComparison.Ordinal));
+            var loaded = GameSave.Load(file, world: game.World).Simulation;
+            Check(loaded.ComputeStateHash() == game.ComputeStateHash() && loaded.GetQuest(new(1)) == QuestStage.ReadyToTurnIn && loaded.GetQuest(new(2)) == QuestStage.Available);
+            Accept(restored, Command(restored, 2, CommandKind.Interact, 1000)); Accept(loaded, Command(loaded, 2, CommandKind.Interact, 1000));
+            Accept(game, Command(game, 2, CommandKind.Interact, 1000));
+            for (int i = 0; i < 4; i++) { game.Step(); restored.Step(); loaded.Step(); Check(game.ComputeStateHash() == restored.ComputeStateHash() && game.ComputeStateHash() == loaded.ComputeStateHash()); }
+            Check(restored.GetQuest(new(2)) == QuestStage.ReadyToTurnIn);
+            // Replaying the recorded commands from the start reaches the same checkpoint.
+            var replayed = GameSimulation.Replay(1, actors, trace, snapshot.Tick, world: PersonalWorld(townMonster.Id));
+            Check(replayed.GetQuest(new(1)) == QuestStage.ReadyToTurnIn && replayed.GetQuest(new(2)) == QuestStage.Available);
+            // A single-player or shared world never writes the personal field, so older files and builds are unaffected.
+            string shared = Path.Combine(root, "shared-quest-world.json"); GameSave.Save(shared, Game().CaptureSnapshot());
+            Check(!File.ReadAllText(shared).Contains("PlayerQuests", StringComparison.Ordinal));
+        });
+        test("Restore refuses personal quest stages that are missing, mismatched or impossible", () =>
+        {
+            var game = Game([One, Second(), townMonster], PersonalWorld(townMonster.Id));
+            Accept(game, Command(game, 1, CommandKind.Interact, 1000)); game.Step();
+            var good = game.CaptureSnapshot(); GameSimulation.Restore(good);
+            Throws<InvalidDataException>(() => GameSimulation.Restore(good with { PlayerQuests = null }));
+            Throws<InvalidDataException>(() => GameSimulation.Restore(good with { PlayerQuests = [QuestStage.Active] }));
+            Throws<InvalidDataException>(() => GameSimulation.Restore(good with { PlayerQuests = [QuestStage.Available, QuestStage.Available] })); // first stage must equal QuestState
+            Throws<InvalidDataException>(() => GameSimulation.Restore(good with { PlayerQuests = [QuestStage.Active, (QuestStage)99] }));
+            Throws<InvalidDataException>(() => GameSimulation.Restore(good with { PlayerQuests = [QuestStage.Active, QuestStage.Completed] })); // completed while a target is alive
+            // Shared and single-player worlds refuse the personal field instead of silently dropping it.
+            var shared = Game().CaptureSnapshot();
+            Throws<InvalidDataException>(() => GameSimulation.Restore(shared with { PlayerQuests = [QuestStage.Available, QuestStage.Available] }));
+        });
     }
 }

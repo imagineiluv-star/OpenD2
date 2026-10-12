@@ -65,7 +65,8 @@ internal static class CooperativeRoomContracts
                 Check(start.World!.Quest.Stage == QuestStage.Available && start.Entities.All(e => e.Kind == EntityKind.Player), "town excludes field monsters");
                 realm.Input(host.Token, room, Input(start, CommandKind.Interact, target: 300)); realm.Tick();
                 var quest = View();
-                Check(quest.World!.Quest.Stage == QuestStage.Active, "server executes shared NPC quest");
+                Check(quest.World!.Quest.Stage == QuestStage.Active, "server executes the host's own NPC quest");
+                Check(View(guest.Token).World!.Quest.Stage == QuestStage.Available, "a peer's quest is untouched by the host's acceptance");
                 var initialFrame = RoomFrames.Create(start, null, 1);
                 var questFrame = RoomFrames.Create(quest, start, 2);
                 Check(questFrame.State is not null && RoomFrames.Apply(questFrame, RoomFrames.Apply(initialFrame, null, 0, room), 1, room).World == quest.World,

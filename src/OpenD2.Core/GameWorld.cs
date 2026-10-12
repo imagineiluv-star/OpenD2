@@ -15,17 +15,25 @@ public sealed partial class GameSimulation
 	// Simulation decisions always use the acting entity's region.
 	public EntityId WorldPlayer => worldPlayerIndex < 0 ? default : entities[worldPlayerIndex].Id;
 	public RegionId ActiveRegion => World is null ? Collision?.Region ?? default : entities[worldPlayerIndex].Region;
-	public QuestStage QuestState { get; private set; }
-	public QuestProgress Quest
+	// One stage per world player, in player order. Shared-quest worlds keep every entry equal; personal-quest worlds advance them independently.
+	private readonly QuestStage[] playerQuests;
+	// Compatibility view: the lowest player ID's stage (the same player WorldPlayer names). Use GetQuest for a specific player.
+	public QuestStage QuestState => playerQuests.Length == 0 ? QuestStage.Available : playerQuests[0];
+	public QuestProgress Quest => World is null ? default : new(QuestState, DefeatedTargets(), World.QuestTargets.Length);
+	public QuestStage GetQuest(EntityId player) => playerQuests[PlayerOrdinal(player)];
+	public QuestProgress GetQuestProgress(EntityId player) => World is null ? default : new(GetQuest(player), DefeatedTargets(), World.QuestTargets.Length);
+	private int PlayerOrdinal(EntityId player)
 	{
-		get
-		{
-			if (World is null) return default;
-			int defeated = 0;
-			foreach (var id in World.QuestTargets) if (!entities[indices[id]].IsAlive) defeated++;
-			return new(QuestState, defeated, World.QuestTargets.Length);
-		}
+		for (int k = 0; k < worldPlayers.Length; k++) if (entities[worldPlayers[k]].Id == player) return k;
+		throw new ArgumentException("Unknown world player.", nameof(player));
 	}
+	private int DefeatedTargets()
+	{
+		int defeated = 0;
+		foreach (var id in World!.QuestTargets) if (!entities[indices[id]].IsAlive) defeated++;
+		return defeated;
+	}
+	private void SetSharedQuest(QuestStage stage) => Array.Fill(playerQuests, stage);
 	public bool IsRegionActive(RegionId region)
 	{
 		if (World is null) return Collision is null || Collision.Region == region;
@@ -50,10 +58,24 @@ public sealed partial class GameSimulation
 	}
 	private void UpdateQuest(long tick)
 	{
-		if (World is null || QuestState != QuestStage.Active) return;
+		if (World is null) return;
+		if (World.PersonalQuests)
+		{
+			// The kills are shared, so every player who had already accepted learns about it; each hears it themselves.
+			if (DefeatedTargets() != World.QuestTargets.Length) return;
+			for (int k = 0; k < worldPlayers.Length; k++)
+			{
+				if (playerQuests[k] != QuestStage.Active) continue;
+				playerQuests[k] = QuestStage.ReadyToTurnIn;
+				var member = entities[worldPlayers[k]];
+				Emit(tick, SimulationEventKind.QuestChanged, member, member.Position, (int)QuestStage.ReadyToTurnIn, World.QuestGiver.Id);
+			}
+			return;
+		}
+		if (QuestState != QuestStage.Active) return;
 		var quest = Quest;
 		if (quest.Defeated != quest.Required) return;
-		QuestState = QuestStage.ReadyToTurnIn;
+		SetSharedQuest(QuestStage.ReadyToTurnIn);
 		var player = entities[worldPlayerIndex];
 		Emit(tick, SimulationEventKind.QuestChanged, player, player.Position, (int)QuestState, World.QuestGiver.Id);
 	}
@@ -75,15 +97,16 @@ public sealed partial class GameSimulation
 		if (failure is { } reason) { Emit(tick, SimulationEventKind.InteractionFailed, player, position, (int)reason, interaction); return; }
 		if (interaction == World.QuestGiver.Id)
 		{
+			if (World.PersonalQuests) { TalkPersonal(index, player, position, tick, interaction); return; }
 			var before = QuestState;
 			if (!questChanged && QuestState == QuestStage.Available)
 			{
 				var quest = Quest;
-				QuestState = quest.Defeated == quest.Required ? QuestStage.ReadyToTurnIn : QuestStage.Active;
+				SetSharedQuest(quest.Defeated == quest.Required ? QuestStage.ReadyToTurnIn : QuestStage.Active);
 			}
 			else if (!questChanged && QuestState == QuestStage.ReadyToTurnIn)
 			{
-				QuestState = QuestStage.Completed;
+				SetSharedQuest(QuestStage.Completed);
 				foreach (int member in worldPlayers)
 					if (entities[member].IsAlive) entities[member] = entities[member] with { Health = entities[member].MaxHealth }; // one-time shared reward
 			}
@@ -105,6 +128,20 @@ public sealed partial class GameSimulation
 		entities[index] = player with { Region = portal.Destination, Position = portal.Arrival, MoveX = 0, MoveY = 0 };
 		if (index == worldPlayerIndex) Collision = destination;
 		events[eventCount++] = new(tick, SimulationEventKind.RegionChanged, player.Id, player.Region, player.Position, portal.Arrival, canceled, portal.Id, portal.Destination);
+	}
+	// Personal quests: only the talking player's own stage changes, so several players can accept or hand in on the same tick.
+	// Completing heals that player (always alive here: dead or interrupted players already failed the interaction checks).
+	private void TalkPersonal(int index, EntityState player, GamePosition position, long tick, EntityId interaction)
+	{
+		int k = Array.IndexOf(worldPlayers, index); var before = playerQuests[k];
+		if (before == QuestStage.Available) playerQuests[k] = DefeatedTargets() == World!.QuestTargets.Length ? QuestStage.ReadyToTurnIn : QuestStage.Active;
+		else if (before == QuestStage.ReadyToTurnIn)
+		{
+			playerQuests[k] = QuestStage.Completed;
+			entities[index] = entities[index] with { Health = entities[index].MaxHealth };
+		}
+		Emit(tick, SimulationEventKind.NpcTalked, player, position, (int)playerQuests[k], interaction);
+		if (before != playerQuests[k]) Emit(tick, SimulationEventKind.QuestChanged, player, player.Position, (int)playerQuests[k], interaction);
 	}
 	private int CancelRegionCommands(EntityId actor)
 	{

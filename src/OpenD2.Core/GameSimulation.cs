@@ -23,7 +23,8 @@ public readonly record struct SimulationEvent(long Tick, SimulationEventKind Kin
 public readonly record struct CommandCursor(EntityId Actor, ulong Sequence, long Tick);
 public readonly record struct RecordedCommand(long SubmittedAfterTick, GameCommand Command);
 public sealed record SimulationSnapshot(int RulesVersion, long Tick, uint RandomState, IReadOnlyList<EntityState> Entities,
-	IReadOnlyList<CommandCursor> Inputs, IReadOnlyList<GameCommand> PendingCommands, CollisionGrid? Collision, WorldDefinition? World, EntityId WorldPlayer, QuestStage QuestState, IReadOnlyList<ItemState> Items, InventoryLayout? Inventory = null);
+	IReadOnlyList<CommandCursor> Inputs, IReadOnlyList<GameCommand> PendingCommands, CollisionGrid? Collision, WorldDefinition? World, EntityId WorldPlayer, QuestStage QuestState, IReadOnlyList<ItemState> Items, InventoryLayout? Inventory = null,
+	IReadOnlyList<QuestStage>? PlayerQuests = null);
 
 // A single owner advances authoritative state. No wall clock, rendering, I/O or callbacks in Step.
 public sealed partial class GameSimulation
@@ -60,7 +61,7 @@ public sealed partial class GameSimulation
 		if (world is not null && collision is not null) throw new ArgumentException("Select either a single collision grid or a world.");
 		World = world;
 		worldPlayers = world is null ? [] : Enumerable.Range(0, entities.Length).Where(i => entities[i].Kind == EntityKind.Player).ToArray();
-		interactions = new EntityId[worldPlayers.Length];
+		interactions = new EntityId[worldPlayers.Length]; playerQuests = new QuestStage[worldPlayers.Length];
 		transferQueue = worldPlayers.Length > 1 ? new GameCommand[MaxPendingCommands] : [];
 		if (world is not null)
 		{
@@ -200,7 +201,8 @@ public sealed partial class GameSimulation
 		Tick = nextTick;
 	}
 	public SimulationSnapshot CaptureSnapshot() => new(RulesVersion, Tick, random.State, Array.AsReadOnly((EntityState[])entities.Clone()),
-		Array.AsReadOnly((CommandCursor[])inputs.Clone()), Array.AsReadOnly(OrderedCommands()), Collision, World, WorldPlayer, QuestState, Array.AsReadOnly(Items.ToArray()), Inventory);
+		Array.AsReadOnly((CommandCursor[])inputs.Clone()), Array.AsReadOnly(OrderedCommands()), Collision, World, WorldPlayer, QuestState, Array.AsReadOnly(Items.ToArray()), Inventory,
+		World?.PersonalQuests == true ? Array.AsReadOnly((QuestStage[])playerQuests.Clone()) : null);
 	public static GameSimulation Replay(uint seed, IEnumerable<EntityState> initialEntities, IReadOnlyList<RecordedCommand> trace, long targetTick, CollisionGrid? collision = null, WorldDefinition? world = null, InventoryLayout? inventory = null)
 	{
 		ArgumentNullException.ThrowIfNull(trace);
@@ -243,7 +245,9 @@ public sealed partial class GameSimulation
 			writer.Write(c.Tick); writer.Write(c.Sequence); writer.Write(c.Actor.Value); writer.Write(c.Region.Value); writer.Write((int)c.Kind); writer.Write(c.X); writer.Write(c.Y); writer.Write(c.Target.Value); WriteItemId(writer, c.Item, version);
 		}
 		writer.Write(World is not null);
-		if (World is { } world) { writer.Write(world.ContentHash); writer.Write(WorldPlayer.Value); writer.Write(ActiveRegion.Value); writer.Write((int)QuestState); }
+		if (World is { } world) { writer.Write(world.ContentHash); writer.Write(WorldPlayer.Value); writer.Write(ActiveRegion.Value);
+			if (world.PersonalQuests) { writer.Write(playerQuests.Length); foreach (var stage in playerQuests) writer.Write((int)stage); }
+			else writer.Write((int)QuestState); }
 		WriteItems(writer, version);
 		if (version >= 5) writer.Write(Inventory.ContentHash);
 		writer.Flush(); return Convert.ToHexStringLower(SHA256.HashData(stream.GetBuffer().AsSpan(0, (int)stream.Length)));

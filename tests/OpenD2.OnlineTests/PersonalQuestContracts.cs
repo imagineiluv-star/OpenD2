@@ -8,7 +8,11 @@ using OpenD2.Server;
 internal static class PersonalQuestContracts
 {
     private static void Check(bool value, string reason) { if (!value) throw new Exception("Personal quest: " + reason); }
-    internal static void Run() { foreach (string mode in new[] { "realm", "open" }) Verify(mode); OpenFile(); }
+    internal static void Run()
+    {
+        foreach (string mode in new[] { "realm", "open" }) { Verify(mode); Independent(mode); Console.WriteLine($"PERSONAL QUEST INDEPENDENT PASS {mode} own-view/own-hand-in/restart/record-and-victory-per-member"); }
+        OpenFile();
+    }
 
     // Real server output with one controlled change: both monsters are dead and the quest awaits turn-in,
     // members 1 and 2 stand beside the Guide, member 3 is dead. The state hash is computed by Core, not forged.
@@ -20,7 +24,8 @@ internal static class PersonalQuestContracts
             e.Id.Value == 1 ? e with { Position = new(768, 640) } :
             e.Id.Value == 2 ? e with { Position = new(896, 512) } :
             e.Id.Value == 3 ? e with { Health = 0, Mode = MonsterMode.Dead } : e).ToArray();
-        var game = GameSimulation.Restore(snapshot with { Entities = entities, QuestState = QuestStage.ReadyToTurnIn });
+        var game = GameSimulation.Restore(snapshot with { Entities = entities, QuestState = QuestStage.ReadyToTurnIn,
+            PlayerQuests = [QuestStage.ReadyToTurnIn, QuestStage.ReadyToTurnIn, QuestStage.ReadyToTurnIn] });
         return JsonSerializer.SerializeToNode(SavedGame.Capture(game))!;
     }
 
@@ -74,10 +79,11 @@ internal static class PersonalQuestContracts
                     var records = tokens.Select(t => realm.Characters(t).Single()).ToArray();
                     var expected = new[] { new QuestRecord(content.Id, round) };
                     Check(records[0].Quests!.SequenceEqual(expected) && records[1].Quests!.SequenceEqual(expected),
-                        $"living participants keep a completion record (round {round})");
+                        $"each member who completed their own quest keeps a record (round {round})");
                     Check(records[2].Quests is null && !JsonSerializer.Serialize(records[2]).Contains("Quests"),
-                        "member dead at completion has no record and the wire shape is unchanged");
-                    Check(records.All(r => r.Victories == round), "existing victory rule is unchanged");
+                        "member who never completed has no record and the wire shape is unchanged");
+                    // A victory is each member's own completed quest; the member who could not turn in earns none.
+                    Check(records[0].Victories == round && records[1].Victories == round && records[2].Victories == 0, "victories follow each member's own completion");
                     Check(realm.Rooms(tokens[0], true).Length == 0, "closed room is gone");
                 }
                 closed = File.ReadAllBytes(file);
@@ -121,7 +127,7 @@ internal static class PersonalQuestContracts
                 ("negative completions", j => j["Characters"]![0]!["Quests"]![0]!["Completions"] = -1),
                 ("excess completions", j => j["Characters"]![0]!["Quests"]![0]!["Completions"] = 1_000_001),
                 ("invalid world ID", j => j["Characters"]![0]!["Quests"]![0]!["World"] = "Bad World"),
-                ("duplicate world", j => j["Characters"]![0]!["Quests"]!.AsArray().Add(JsonNode.Parse("""{"World":"cooperative-demo-v1","Completions":1}""")))
+                ("duplicate world", j => j["Characters"]![0]!["Quests"]!.AsArray().Add(JsonNode.Parse($$"""{"World":"{{content.Id}}","Completions":1}""")))
             })
                 Check(Refused(Edit(closed, change)), "invalid saved quest record is rejected and preserved: " + name);
             Check(Refused(Edit(closed, j =>
@@ -244,5 +250,69 @@ internal static class PersonalQuestContracts
             Console.WriteLine("PERSONAL QUEST FILE PASS format-3/upgrade/budget/validation/import/export/restart/room-close/realm-boundary");
         }
         finally { Directory.Delete(root, true); }
+    }
+
+    // Quests are personal: what one member accepts or hands in is invisible to the others, survives a restart per member,
+    // and only the member who completed earns the record and the victory.
+    private static void Independent(string mode)
+    {
+        string folder = Path.Combine(Path.GetTempPath(), "opend2-quest-independent-" + Guid.NewGuid().ToString("N"));
+        string file = Path.Combine(folder, "realm.json");
+        const string password = "personal-quest-independent-password";
+        var content = CooperativeWorld.Content; var time = new TestTime();
+        string[] names = ["indep-a", "indep-b", "indep-c"]; var heroes = new Guid[3]; Guid room;
+        try
+        {
+            using (var realm = new Realm(folder, time, mode))
+            {
+                var tokens = names.Select(n => realm.Login(new(n, password), true).Token).ToArray();
+                for (int i = 0; i < 3; i++) heroes[i] = realm.CreateCharacter(tokens[i], "Indep" + "ABC"[i]).Id;
+                room = realm.CreateRoom(tokens[0], new(heroes[0], "Independent", "", content)).Id;
+                for (int i = 1; i < 3; i++) realm.Join(tokens[i], room, new(heroes[i], "", World: content));
+                realm.Start(tokens[0], room);
+                // The host walks up to the Guide and accepts; nobody else has said a word.
+                var view = realm.StreamState(tokens[0], room, inputProgress: true, world: true);
+                Check(view.World!.Quest.Stage == QuestStage.Available, "every member starts with an available quest");
+                realm.Input(tokens[0], room, new(view.NextSequence, CommandKind.Interact, Target: 300, Region: 1, RegionEpoch: view.World.RegionEpoch)); realm.Tick();
+                var stages = tokens.Select(t => realm.StreamState(t, room, inputProgress: true, world: true).World!.Quest.Stage).ToArray();
+                Check(stages.SequenceEqual([QuestStage.Active, QuestStage.Available, QuestStage.Available]), "one member's acceptance is visible only in their own view");
+                realm.Checkpoint(tokens[0], room);
+            }
+            // Same room, but both living members are ready to hand in and the third is dead.
+            var json = JsonNode.Parse(File.ReadAllBytes(file))!;
+            json["Rooms"]![0]!["Game"] = ReadyGame();
+            File.WriteAllBytes(file, JsonSerializer.SerializeToUtf8Bytes(json));
+
+            string[] Login(Realm realm)
+            {
+                var tokens = names.Select(n => realm.Login(new(n, password), false).Token).ToArray();
+                for (int i = 0; i < 3; i++) realm.Join(tokens[i], room, new(heroes[i], "", World: content));
+                return tokens;
+            }
+            QuestStage Stage(Realm realm, string token) => realm.StreamState(token, room, inputProgress: true, world: true).World!.Quest.Stage;
+            void HandIn(Realm realm, string token)
+            {
+                var view = realm.StreamState(token, room, inputProgress: true, world: true);
+                realm.Input(token, room, new(view.NextSequence, CommandKind.Interact, Target: 300, Region: 1, RegionEpoch: view.World!.RegionEpoch)); realm.Tick();
+            }
+            using (var realm = new Realm(folder, time, mode))
+            {
+                var tokens = Login(realm);
+                HandIn(realm, tokens[0]);
+                Check(Stage(realm, tokens[0]) == QuestStage.Completed && Stage(realm, tokens[1]) == QuestStage.ReadyToTurnIn && Stage(realm, tokens[2]) == QuestStage.ReadyToTurnIn,
+                    "only the member who handed in has completed");
+                realm.Checkpoint();
+            }
+            using (var realm = new Realm(folder, time, mode))
+            {
+                var tokens = Login(realm);
+                Check(Stage(realm, tokens[0]) == QuestStage.Completed && Stage(realm, tokens[1]) == QuestStage.ReadyToTurnIn, "each member's stage survives a restart");
+                realm.Close(tokens[0], room); // b and c never completed
+                var after = tokens.Select(t => realm.Characters(t).Single()).ToArray();
+                Check(after[0].Quests!.SequenceEqual([new QuestRecord(content.Id, 1)]) && after[0].Victories == 1, "the member who completed has a record and a victory");
+                Check(after[1].Quests is null && after[1].Victories == 0 && after[2].Quests is null && after[2].Victories == 0, "members who did not complete earn neither");
+            }
+        }
+        finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
     }
 }

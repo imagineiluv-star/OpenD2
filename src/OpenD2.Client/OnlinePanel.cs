@@ -172,7 +172,7 @@ public partial class OnlinePanel : VBoxContainer
         {
             var me = next.Entities.First(e => e.Id.Value == next.Actor);
             details.Text += $" | HP {me.Health}/{me.MaxHealth} | Mana {me.Mana}/{me.MaxMana}";
-            if (next.World is { } world) details.Text += $"\n{RegionName(me)} | Shared quest: {world.Quest.Stage} ({world.Quest.Defeated}/{world.Quest.Required})";
+            if (next.World is { } world) details.Text += $"\n{RegionName(me)} | Quest: {world.Quest.Stage} ({world.Quest.Defeated}/{world.Quest.Required})";
         }
         if (changedRoom) StartRoomStream(next.Id);
     }

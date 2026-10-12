@@ -81,8 +81,8 @@ public sealed partial class Realm : IDisposable
             }
             // A credit exists only while the completed shared quest that earned it is still part of the saved room.
             foreach (var room in rooms.Values)
-                if (room.Saved.Members.Any(m => m.QuestCredit) && (room.Saved.World is null || room.Game?.QuestState != QuestStage.Completed))
-                    throw new InvalidDataException("Quest credit requires a completed world quest.");
+                if (room.Saved.Members.Any(m => m.QuestCredit && (room.Saved.World is null || room.Game is null || room.Game.GetQuest(new(m.Actor)) != QuestStage.Completed)))
+                    throw new InvalidDataException("Quest credit requires that member's own completed quest.");
             // Restarts never replay held movement. Preserve combat/items and command cursors.
             foreach (var room in rooms.Values.Where(r => r.Game is not null)) StopAll(room);
         }
@@ -285,7 +285,7 @@ public sealed partial class Realm : IDisposable
             snapshot?.Tick ?? 0, snapshot?.Hash ?? "", room.Saved.Members.Select(m => new MemberInfo(m.Character, characters.Single(c => c.Id == m.Character).Name, m.Actor)).ToArray(),
             snapshot is null ? [] : shared ? snapshot.Entities : (EntityState[])snapshot.Entities.Clone(),
             snapshot is null ? [] : shared ? snapshot.Items : (ItemState[])snapshot.Items.Clone(),
-            World: room.Saved.World is { } content ? new(content, room.Game?.Quest ?? new(QuestStage.Available, 0, CooperativeWorld.Definition.QuestTargets.Length), member.RegionEpoch) : null);
+            World: room.Saved.World is { } content ? new(content, room.Game?.GetQuestProgress(new(member.Actor)) ?? new(QuestStage.Available, 0, CooperativeWorld.Definition.QuestTargets.Length), member.RegionEpoch) : null);
         return view;
     }
     public RoomView Start(string token, Guid id)
@@ -404,7 +404,7 @@ public sealed partial class Realm : IDisposable
                 if (r.Seen.Values.Any(t => clock.GetUtcNow() - t < TimeSpan.FromSeconds(15)))
                 {
                     r.Game!.Step();
-                    bool questCompleted = false;
+                    var completed = new HashSet<uint>();
                     foreach (var change in r.Game.Events)
                         if (change.Kind == SimulationEventKind.RegionChanged)
                         {
@@ -412,11 +412,10 @@ public sealed partial class Realm : IDisposable
                             r.Moved.Remove(member.Character); // A lease never follows an actor through a portal.
                             r.Saved = r.Saved with { Members = r.Saved.Members.Select(m => m == member ? m with { RegionEpoch = r.Game.Tick } : m).ToArray() };
                         }
-                        else if (change.Kind == SimulationEventKind.QuestChanged && change.Value == (int)QuestStage.Completed) questCompleted = true;
-                    // Completion happens once per room. Credit follows the Core reward rule: living participants only,
-                    // judged at the end of the completing tick. Dead members are never revived, so they never qualify later.
-                    if (questCompleted && r.Saved.World is not null)
-                        r.Saved = r.Saved with { Members = r.Saved.Members.Select(m => r.Game.GetEntity(new(m.Actor)).IsAlive ? m with { QuestCredit = true } : m).ToArray() };
+                        else if (change.Kind == SimulationEventKind.QuestChanged && change.Value == (int)QuestStage.Completed) completed.Add(change.Actor.Value);
+                    // Quests are personal: only the members whose own turn-in completed on this tick are credited.
+                    if (completed.Count > 0 && r.Saved.World is not null)
+                        r.Saved = r.Saved with { Members = r.Saved.Members.Select(m => completed.Contains(m.Actor) ? m with { QuestCredit = true } : m).ToArray() };
                     MarkProcessed(r);
                 }
                 else StopAll(r);
@@ -443,10 +442,11 @@ public sealed partial class Realm : IDisposable
             var (r, c) = Access(token, id); Need(r.Saved.Host == c.Id, 403, "Only the host can close.");
             if (r.Game is not null)
             {
-                bool victory = r.Game.World is not null ? r.Game.QuestState == QuestStage.Completed :
-                    r.Game.Entities.ToArray().Where(e => e.Kind == EntityKind.Monster).All(e => !e.IsAlive);
+                // Arena: the room's monsters are all dead. World: each member's own quest is completed (quests are personal).
+                bool arenaVictory = r.Game.World is null && r.Game.Entities.ToArray().Where(e => e.Kind == EntityKind.Monster).All(e => !e.IsAlive);
                 foreach (var m in r.Saved.Members)
                 {
+                    bool victory = r.Game.World is not null ? r.Game.GetQuest(new(m.Actor)) == QuestStage.Completed : arenaVictory;
                     int i = characters.FindIndex(x => x.Id == m.Character);
                     characters[i] = characters[i] with { Victories = checked(characters[i].Victories + (victory ? 1 : 0)),
                         Inventory = r.Game.CaptureCarriedItems(new(m.Actor)).Select(item => item with { Owner = new(1) }).ToArray(),

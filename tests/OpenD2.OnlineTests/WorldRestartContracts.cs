@@ -162,10 +162,16 @@ internal static class WorldRestartContracts
         }
         void Complete(Realm realm, string[] tokens)
         {
-            var view = View(realm, tokens[0], room);
-            Check(view.World!.Quest.Stage == QuestStage.ReadyToTurnIn, "the quest awaits turn-in");
-            realm.Input(tokens[0], room, Input(view, CommandKind.Interact, target: 300)); realm.Tick();
-            Check(View(realm, tokens[0], room).World!.Quest.Stage == QuestStage.Completed, "the quest completes");
+            // Quests are personal: the two living members each hand in their own; the dead third cannot.
+            for (int i = 0; i < 2; i++)
+            {
+                var view = View(realm, tokens[i], room);
+                Check(view.World!.Quest.Stage == QuestStage.ReadyToTurnIn, "the quest awaits turn-in");
+                realm.Input(tokens[i], room, Input(view, CommandKind.Interact, target: 300));
+            }
+            realm.Tick();
+            Check(View(realm, tokens[0], room).World!.Quest.Stage == QuestStage.Completed && View(realm, tokens[1], room).World!.Quest.Stage == QuestStage.Completed,
+                "both quests complete");
         }
         using (var realm = new Realm(folder, time, mode)) // completes, then is killed before any save
         {
