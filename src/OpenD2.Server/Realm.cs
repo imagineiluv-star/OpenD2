@@ -107,24 +107,45 @@ public sealed partial class Realm : IDisposable
         Need(sessions.TryGetValue(token, out var s) && s.Until > clock.GetUtcNow(), 401, "Login required."); return s.Account;
     }
     private Character Owned(Guid account, Guid id) => characters.FirstOrDefault(c => c.Id == id && c.Account == account) ?? throw new Rejected(404, "Character not found.");
+    // Test seam, null in production: runs just before a login password hash is computed, never while the realm lock is held.
+    internal Action? BeforeHashing;
     public LoginResult Login(Credentials input, bool register)
     {
         string name = Name(input.Username).ToLowerInvariant();
         Need(input.Password is not null && input.Password.Length is >= 12 and <= 128, 401, "Invalid credentials.");
+        // PBKDF2 (600,000 iterations) takes tens to hundreds of milliseconds. It must not run under the lock that Tick, input
+        // and stream reads share, or every room stalls for the duration of each login. Only cheap lookups happen under the
+        // lock; the hash runs between two short lock sections, and the second section re-checks everything the first assumed.
+        (string Salt, string Hash) secret = ("", ""); bool valid = false;
+        if (register)
+        {
+            lock (gate)
+            {
+                Need(!failed, 503, "Storage unavailable.");
+                Need(!accounts.Any(a => a.Name == name), 409, "Account unavailable."); Need(accounts.Count < 256, 409, "Realm account limit reached.");
+            }
+            BeforeHashing?.Invoke();
+            secret = Secret(input.Password!);
+        }
+        else
+        {
+            Account? known;
+            lock (gate) { Need(!failed, 503, "Storage unavailable."); known = accounts.FirstOrDefault(a => a.Name == name); }
+            BeforeHashing?.Invoke();
+            // An unknown name hashes against a dummy value so that existence is not revealed by response time.
+            valid = Matches(input.Password!, known?.Salt ?? new string('0', 32), known?.Hash ?? new string('0', 64));
+        }
         lock (gate)
         {
             Need(!failed, 503, "Storage unavailable.");
             var account = accounts.FirstOrDefault(a => a.Name == name);
             if (register)
             {
+                // Another registration of this name may have finished while this one was hashing.
                 Need(account is null, 409, "Account unavailable."); Need(accounts.Count < 256, 409, "Realm account limit reached.");
-                var secret = Secret(input.Password!); account = new(Guid.NewGuid(), name, secret.Salt, secret.Hash); accounts.Add(account); Save();
+                account = new(Guid.NewGuid(), name, secret.Salt, secret.Hash); accounts.Add(account); Save();
             }
-            else
-            {
-                bool valid = Matches(input.Password!, account?.Salt ?? new string('0', 32), account?.Hash ?? new string('0', 64));
-                Need(account is not null && valid, 401, "Invalid credentials.");
-            }
+            else Need(account is not null && valid, 401, "Invalid credentials.");
             foreach (var key in sessions.Where(p => p.Value.Account == account!.Id || p.Value.Until <= clock.GetUtcNow()).Select(p => p.Key).ToArray()) { sessions.Remove(key); foreach (var r in rooms.Values) r.WorldSessions.Remove(key); }
             string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)); sessions.Add(token, (account!.Id, clock.GetUtcNow().AddHours(8)));
             return new(token, name);
