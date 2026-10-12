@@ -65,7 +65,7 @@ QA-09 자료 준비는 `LEGACY_PLAY_SETUP.md`를 따른다. 개발자가 `--chec
   각 항목에 기대 결과·관찰 결과·증거 파일 상대 경로를 기록한다. 미실행 항목은 PASS 금지.
 - `action-log.txt`: UTC 시각, 키/마우스 입력, 관찰 결과와 재시도 여부.
 - `screenshots/`, 가능하면 짧은 영상, `logs/`: 실제 파일을 함께 첨부한다.
-- schema 2의 `status_scope=synthetic_preview`를 유지한다. 필수 QA-01~06/08/11~14 전부 PASS이고
+- schema 3의 `status_scope=synthetic_preview`를 유지한다. 필수 QA-01~06/08/11~14 전부 PASS이고
   증거가 있을 때만 `status=PASS`다. 실패가 있으면 FAIL, 환경에 막혔으면 BLOCKED, 미완료면 NOT_RUN이다.
 - `legacy_scene_qa.status`는 QA-09와 같은 결과이며 해당 ContentId의 장면에만 적용한다.
   `two_hour_soak.status`는 QA-10과 같은 결과이며 실제 시간/증거를 별도로 기록한다.
@@ -134,7 +134,8 @@ HP +40 / MP +30 및 상한 clamp, 이미 가득 찼을 때 물약 보존, 빈 �
 ## PLAY-17 필수 기능 인수
 
 `FEATURE_QA.md`의 QA-11~14를 같은 버전·커밋·프로필에서 실제 창으로 수행한다.
-`qa_plan=PLAY-17`과 manifest의 `required_case_ids`를 기준으로 누락 항목을 NOT_RUN으로 남긴다.
+`qa_plan=RC5`와 manifest의 `required_case_ids`를 기준으로 누락 항목을 NOT_RUN으로 남긴다.
+온라인 서버 시험 QA-15~18은 필수 목록이 아니며 두 번째 PC가 필요한 항목은 PC가 없으면 PASS가 아니라 BLOCKED다. `online_qa_status`로 따로 기록하고 데스크톱 GUI 결과와 합치지 않는다.
 이전 QA-01~10 결과만으로 새 후보 전체 PASS를 기록하지 않는다. 회차별 20분 제한은 그대로 유지한다.
 이전 회차 결과를 이어받을 때 버전·커밋·플랫폼·패키지 해시가 전부 같아야 한다. 다른 빌드의 PASS는 합치지 않는다.
 

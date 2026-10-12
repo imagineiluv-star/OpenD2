@@ -20,9 +20,9 @@ Windows는 ZIP, macOS는 Godot ZIP 원본 바이트를 사용한다.
 최종 handoff 아티팩트는 30일 보관하며 공개 Release 파일은 이 만료와 별개다.
 
 `release-manifest.json`은 버전·소스 SHA·빌드 URL·파일 해시/크기를 기록한다.
-PLAY-07부터 manifest/result는 schema 2이며 기본 `synthetic_preview` GUI, 원본 scene GUI,
-2시간 soak 상태를 분리한다. 개별 package 메타데이터는 schema 1을 유지한다.
-기존 결과 수집기가 있다면 schema 2를 읽도록 수정하고 누락 상태를 통과로 추정하지 않는다.
+PLAY-07부터 manifest/result는 기본 `synthetic_preview` GUI, 원본 scene GUI, 2시간 soak 상태를 분리한다.
+**rc.5부터 schema 3**이며 온라인 서버 패키지(`server_packages`)와 별도의 `online_qa_status`/`online_case_ids`(QA-15~18)를 추가한다.
+개별 package 메타데이터는 schema 1을 유지한다. 기존 결과 수집기가 있다면 schema 3을 읽도록 수정하고 누락 상태를 통과로 추정하지 않는다.
 `LEGACY_PLAY_SETUP.md`에 scene JSON·아트 방향·좌표·사전검사 방법을 함께 첨부한다.
 `SHA256SUMS`는 패키지와 지침/메타데이터를 포함한다. GUI QA는 `NOT_RUN`으로 시작한다.
 CI에는 SDK가 설치되어 있으므로 검색 경로를 제한한 검사를 'SDK 없는 실제 사용자 PC' 시험으로 간주하지 않는다.
@@ -133,6 +133,16 @@ Grok Bot/실제 원본 데이터 GUI 시험은 아직 수행하지 않았다.
 - [GITHUB_TOKEN 이벤트 동작](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
 - [GitHub CLI release create](https://cli.github.com/manual/gh_release_create)
 
+
+### rc.5 준비 — 서버 패키지와 온라인 QA 계획
+
+릴리스에 **self-contained 온라인 서버**가 `OpenD2-<버전>-server-<runtime>.zip`(linux-x64, win-x64, osx-arm64)으로 포함된다. 서버 압축은 CI의 `validate`가
+압축을 푼 서버를 실제로 실행해 TLS, 두 패키지 클라이언트의 게임플레이·재접속, 협동 월드, 네트워크 장애, 32개 스트림(Arena·월드) 검사를 통과한 뒤에만
+아티팩트가 되며, `release.py prepare`가 **같은 커밋의 출처, 체크섬, 필수 PASS 항목**을 다시 확인한다(어느 하나라도 틀리면 handoff 실패).
+확인한 압축은 같은 바이트의 버전 이름으로 바뀌고 `server-package-<OS>.json`과 `release-manifest.json`의 `server_packages`에 검증 결과가 남는다.
+`physical_multi_pc`, `wan`, `packet_loss`, `maximum_server_capacity`, `gui`가 `NOT_RUN`이 아닌 서버 메타데이터는 과장으로 보고 거부한다.
+`qa_plan=RC5`이고 `FEATURE_QA.md`는 [RC5_QA](RC5_QA.md)다. 필수 목록(QA-01~06/08/11~14)은 그대로이고 온라인 QA-15~18은 선택 항목이며 `online_qa_status`로 따로 기록한다.
+이 변경은 릴리스를 **발행하지 않는다**. `publish=false`(기본)인 수동 실행은 Actions 아티팩트만 만든다.
 
 ### rc.4 준비 — PLAY-17 QA 계획
 
