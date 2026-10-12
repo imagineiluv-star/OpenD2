@@ -75,7 +75,8 @@ with tempfile.TemporaryDirectory(prefix='opend2-server-package-') as temporary:
         'realm_invite_to_gameplay': 'PASS', 'open_invite_to_gameplay': 'PASS', 'host_and_guest_reconnect': 'PASS',
         'network_relay_realm': 'PASS', 'network_relay_open': 'PASS', 'packet_loss': 'NOT_RUN',
         'silent_stream_realm': 'PASS', 'silent_stream_open': 'PASS',
-        'realm_32_stream_admission': 'PASS', 'open_32_stream_admission': 'PASS', 'maximum_server_capacity': 'NOT_RUN',
+        'realm_32_stream_admission': 'PASS', 'open_32_stream_admission': 'PASS',
+        'world_realm_32_stream_admission': 'PASS', 'world_open_32_stream_admission': 'PASS', 'maximum_server_capacity': 'NOT_RUN',
         'physical_multi_pc': 'NOT_RUN', 'wan': 'NOT_RUN', 'clipboard_gestures': 'NOT_RUN',
         'room_stream_contracts': 'PASS', 'room_stream_transport': 'WSS',
         'rendered_gameplay': 'PASS' if rendered else 'NOT_RUN', 'gui': 'NOT_RUN'}, indent=2)+'\n')
