@@ -48,7 +48,15 @@ def main():
                     or evidence.get('sampled_seconds', 0) < args.seconds
                     or any(evidence.get(key) != 'NOT_RUN' for key in ('physical_multi_pc', 'wan', 'packet_loss', 'manual_gui', 'capacity', 'long_duration'))):
                 raise ValueError('Incomplete network evidence: ' + mode)
-            report['modes'][mode] = evidence
+            world = json.loads((destination / ('network-world-' + mode + '.json')).read_text())
+            silent = world.get('silent_stream') or {}
+            if (world.get('result') != 'PASS' or world.get('mode') != mode or len(world.get('checks', [])) != 8
+                    or world.get('recoveries') != 2 or world.get('matched_states', 0) < 2
+                    or silent.get('Result') != 'PASS' or silent.get('ConflictResponses', 0) < 1
+                    or not 0 < silent.get('EvictionMs', 0) < 20000
+                    or any(world.get(key) != 'NOT_RUN' for key in ('physical_multi_pc', 'wan', 'packet_loss', 'manual_gui', 'capacity', 'long_duration'))):
+                raise ValueError('Incomplete cooperative world network evidence: ' + mode)
+            report['modes'][mode] = dict(evidence, cooperative_world=world)
         report['result'] = 'PASS'
     finally:
         report['finished_utc'] = datetime.now(timezone.utc).isoformat()
