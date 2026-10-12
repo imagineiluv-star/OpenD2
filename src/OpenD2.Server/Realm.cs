@@ -31,7 +31,13 @@ public sealed partial class Realm : IDisposable
     private readonly List<Character> characters;
     private readonly Dictionary<Guid, Room> rooms;
     private readonly Dictionary<string, (Guid Account, DateTimeOffset Until)> sessions = new();
-    private bool failed;
+    private volatile bool failed;
+    // Writes reach the disk in snapshot order. Lock order is always gate -> persistGate; Persist never takes gate.
+    private readonly object persistGate = new();
+    private long saveSequence, persistedSequence;
+    // Test seams, null in production. Between: after the snapshot was taken and the gate released, before the write.
+    // Before: inside the write gate, right before the temporary file is created.
+    internal Action? BetweenSnapshotAndPersist, BeforePersist;
     private long snapshotBuilds;
     internal long SnapshotBuilds { get { lock (gate) return snapshotBuilds; } }
     public string Mode { get; }
@@ -429,22 +435,55 @@ public sealed partial class Realm : IDisposable
             rooms.Remove(id); Save(); return new { ok = true };
         }
     }
-    public void Checkpoint() { lock (gate) Save(); }
+    // The periodic checkpoint (every 25 ticks, and at shutdown) takes its snapshot under the lock but writes it outside:
+    // serializing is about a millisecond, whereas fsync can take longer than the 40 ms tick on a slow disk and must not stall
+    // Tick, input and stream reads. The call still returns only after its snapshot (or a newer one) is on disk.
+    public void Checkpoint()
+    {
+        (byte[] Bytes, long Sequence) snapshot;
+        lock (gate) { Need(!failed, 503, "Storage unavailable."); snapshot = Snapshot(); }
+        BetweenSnapshotAndPersist?.Invoke();
+        Persist(snapshot.Bytes, snapshot.Sequence);
+    }
+    // Mutations (accounts, characters, room lifecycle) stay synchronous under the lock: the caller's reply means durable.
     private void Save()
     {
-        Need(!failed, 503, "Storage unavailable."); string temporary = file + ".tmp";
+        Need(!failed, 503, "Storage unavailable.");
+        var snapshot = Snapshot();
+        Persist(snapshot.Bytes, snapshot.Sequence);
+    }
+    // Caller holds gate.
+    private (byte[] Bytes, long Sequence) Snapshot()
+    {
         try
         {
             var db = new Database(rooms.Values.Any(r => r.Saved.World is not null) ? 3 : 2, GameSimulation.RulesVersion, accounts.ToArray(), characters.ToArray(), rooms.Values.Select(r => r.Saved with { Game = r.Game is null ? null : SavedGame.Capture(r.Game) }).ToArray(), Mode);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(db);
             if (bytes.Length > 16 * 1024 * 1024) throw new IOException("Realm exceeds storage budget.");
-            var options = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write, Share = FileShare.None };
-            if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-            using (var output = new FileStream(temporary, options)) { output.Write(bytes); output.Flush(true); }
-            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            File.Move(temporary, file, true);
+            return (bytes, ++saveSequence);
         }
         catch { failed = true; throw; }
     }
-    public void Dispose() => writerLock.Dispose();
+    private void Persist(byte[] bytes, long sequence)
+    {
+        lock (persistGate)
+        {
+            // A newer snapshot already reached the disk (a mutation saved while this one waited): never write back older state.
+            if (sequence <= persistedSequence) return;
+            string temporary = file + ".tmp";
+            try
+            {
+                BeforePersist?.Invoke();
+                var options = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write, Share = FileShare.None };
+                if (!OperatingSystem.IsWindows()) options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+                using (var output = new FileStream(temporary, options)) { output.Write(bytes); output.Flush(true); }
+                if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                File.Move(temporary, file, true);
+                persistedSequence = sequence;
+            }
+            catch { failed = true; throw; }
+        }
+    }
+    // An in-flight checkpoint write finishes before the data directory lock is released.
+    public void Dispose() { lock (persistGate) writerLock.Dispose(); }
 }
