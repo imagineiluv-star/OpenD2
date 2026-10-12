@@ -10,6 +10,14 @@ public sealed record NameRequest(string Name);
 // Per-character count of finished shared world quests, keyed by world content ID (never by hash).
 // Quests is omitted from the wire until a character has a record, so earlier clients see the same JSON.
 public sealed record QuestRecord(string World, int Completions);
+// One rule set for realm.json and Open character files, so a record that loads in one place loads in the other.
+public static class QuestRecords
+{
+    public const int MaxRecords = 8, MaxCompletions = 1_000_000;
+    public static bool IsValid(QuestRecord[]? quests) => quests is not null && quests.Length <= MaxRecords &&
+        quests.All(q => q is not null && q.World is not null && System.Text.RegularExpressions.Regex.IsMatch(q.World, "\\A[a-z0-9-]{1,64}\\z") && q.Completions is >= 1 and <= MaxCompletions) &&
+        quests.Select(q => q.World).Distinct().Count() == quests.Length;
+}
 public sealed record CharacterInfo(Guid Id, string Name, int Victories,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] QuestRecord[]? Quests = null);
 public sealed record WorldContent(string Id, string Hash);

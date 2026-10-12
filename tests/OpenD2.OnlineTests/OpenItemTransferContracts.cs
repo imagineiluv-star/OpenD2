@@ -35,14 +35,14 @@ internal static class OpenItemTransferContracts
                 string old = $$"""{"version":1,"rules":{{rules}},"mode":"open","name":"OldHero","victories":3}""";
                 File.WriteAllText(legacy, old);
                 var upgraded = OpenCharacterFile.Load(legacy);
-                if (upgraded.Version != 2 || upgraded.Inventory is not { Length: 0 } || upgraded.Victories != 3 || File.ReadAllText(legacy) != old)
+                if (upgraded.Version != 3 || upgraded.Inventory is not { Length: 0 } || upgraded.Quests is not { Length: 0 } || upgraded.Victories != 3 || File.ReadAllText(legacy) != old)
                     throw new Exception("Legacy upgrade lost data or modified source.");
             }
             foreach (string invalid in new[] {
                 json.Replace("\"slot\":0", "\"slot\":null"), json.Replace(",\"slot\":0", ""),
                 json.Replace("\"slot\":0}", "\"definition\":2}"), // duplicate property / missing slot
                 json.Replace("\"slot\":0", "\"owner\":2,\"slot\":0"),
-                json.Replace("\"version\":2", "\"version\":1"), new string(' ', OpenCharacterFile.MaximumBytes + 1) })
+                json.Replace("\"version\":3", "\"version\":1"), json.Replace("\"version\":3", "\"version\":2"), new string(' ', OpenCharacterFile.MaximumBytes + 1) })
             {
                 string bad = Path.Combine(root, "bad.json"); File.WriteAllText(bad, invalid);
                 try { OpenCharacterFile.Load(bad); throw new Exception("Malformed item file accepted."); }
