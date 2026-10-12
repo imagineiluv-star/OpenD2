@@ -303,7 +303,8 @@ public sealed partial class Realm : IDisposable
             snapshot?.Tick ?? 0, snapshot?.Hash ?? "", room.Saved.Members.Select(m => new MemberInfo(m.Character, characters.Single(c => c.Id == m.Character).Name, m.Actor)).ToArray(),
             snapshot is null ? [] : shared ? snapshot.Entities : (EntityState[])snapshot.Entities.Clone(),
             snapshot is null ? [] : shared ? snapshot.Items : (ItemState[])snapshot.Items.Clone(),
-            World: room.Saved.World is { } content ? new(content, room.Game?.GetQuestProgress(new(member.Actor)) ?? new(QuestStage.Available, 0, CooperativeWorld.Definition.QuestTargets.Length), member.RegionEpoch) : null);
+            World: room.Saved.World is { } content ? new(content, room.Game?.GetQuestProgress(new(member.Actor)) ?? new(QuestStage.Available, 0, CooperativeWorld.Definition.QuestTargets.Length), member.RegionEpoch) : null,
+            Experience: character.Progress is null ? null : member.Experience);
         return view;
     }
     public RoomView Start(string token, Guid id)
