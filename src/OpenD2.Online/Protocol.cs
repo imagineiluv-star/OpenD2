@@ -56,7 +56,10 @@ public sealed record InputReceipt(Guid Room, uint Actor, long NextSequence, long
 public sealed record RoomView(Guid Id, string Name, bool Started, bool Host, uint Actor, long NextSequence,
     long Tick, string StateHash, MemberInfo[] Members, EntityState[] Entities, ItemState[] Items,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] long? ProcessedSequence = null,
-    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] RoomWorldState? World = null);
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] RoomWorldState? World = null,
+    // The recipient's own experience earned in this room so far (settled into the character when the host closes it). Null for a
+    // character without a class, so legacy frames keep their shape. Never carries another member's value.
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] uint? Experience = null);
 public sealed record ApiError(string Error);
 
 public static class Arena

@@ -36,7 +36,11 @@ internal static class RoomFrameContracts
             if (sequence == 60) current = current with { Items = [.. current.Items, new(new(101), ItemDefinition.ManaPotion, ItemLocation.Ground, default, -1, new(1), default)] };
             if (sequence == 80) current = current with { Items = current.Items.Where(i => i.Id.Value != 101).ToArray() };
             if (sequence == 100) current = current with { Members = [current.Members[0] with { Name = "Renamed" }, current.Members[1]] };
+            if (sequence == 150) current = current with { Experience = 60 };
+            if (sequence == 250) current = current with { Experience = 160 };
             var frame = RoomFrames.Create(current, previous, sequence);
+            if (sequence is 150 or 250 && frame.State is null) throw new Exception("A change of room experience must send a full frame.");
+            if (sequence is 151 or 252 && frame.Delta is null) throw new Exception("Unchanged room experience must not force a full frame.");
             if ((sequence - 1) % RoomFrames.FullInterval == 0 && frame.State is null) throw new Exception("Periodic full refresh missing.");
             byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(frame, json);
             frame = JsonSerializer.Deserialize<RoomFrame>(bytes, json)!;

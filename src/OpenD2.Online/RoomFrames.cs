@@ -28,7 +28,7 @@ public static class RoomFrames
         if (sequence <= 0) throw new ArgumentOutOfRangeException(nameof(sequence));
         if (previous is null || (sequence - 1) % FullInterval == 0 ||
             current.Id != previous.Id || current.Name != previous.Name || current.Started != previous.Started ||
-            current.World != previous.World || current.Host != previous.Host || current.Actor != previous.Actor || !current.Members.SequenceEqual(previous.Members) ||
+            current.World != previous.World || current.Experience != previous.Experience || current.Host != previous.Host || current.Actor != previous.Actor || !current.Members.SequenceEqual(previous.Members) ||
             !current.Entities.Select(e => e.Id).SequenceEqual(previous.Entities.Select(e => e.Id)) ||
             !current.Items.Select(i => i.Id).SequenceEqual(previous.Items.Select(i => i.Id))) return new(sequence, State: current);
         var entities = Enumerable.Range(0, current.Entities.Length).Where(i => current.Entities[i] != previous.Entities[i])

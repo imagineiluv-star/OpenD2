@@ -176,6 +176,7 @@ public partial class OnlinePanel : VBoxContainer
         {
             var me = next.Entities.First(e => e.Id.Value == next.Actor);
             details.Text += $" | HP {me.Health}/{me.MaxHealth} | Mana {me.Mana}/{me.MaxMana}";
+            if (next.Experience is { } earned) details.Text += $" | Room experience {earned:N0} (added when the host closes the room)";
             if (next.World is { } world) details.Text += $"\n{RegionName(me)} | Quest: {world.Quest.Stage} ({world.Quest.Defeated}/{world.Quest.Required})";
             if (monsterList.Length > 0 && MonsterLabels.Describe(next, next.World is null ? Arena.Roster : CooperativeWorld.Roster, monsterList) is { Length: > 0 } monsters)
                 details.Text += "\nMonsters here: " + monsters;

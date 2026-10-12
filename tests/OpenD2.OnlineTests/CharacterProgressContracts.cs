@@ -95,6 +95,7 @@ internal static class CharacterProgressContracts
                 var pool = Progression.Resources(Tables, Progression.Create(Tables, cls)); var entity = Actor(view, (uint)index + 1);
                 Check(entity.Health == pool.Life && entity.MaxHealth == pool.Life && entity.Mana == pool.Mana && entity.MaxMana == pool.Mana, $"{cls} starts with its derived life and mana");
             }
+            Check(new[] { 0, 1, 3 }.All(i => realm.StreamState(tokens[i], room, world: true).Experience == 0) && realm.StreamState(tokens[2], room, world: true).Experience is null, "a classed member starts the room with 0 experience and a character without a class has none to show");
             var plain = Actor(view, 3); Check(plain.MaxHealth == 100 && plain.MaxMana == 60, "a character without a class keeps the default pool");
             Check(Actor(view, 2).MaxMana == 35 && Actor(view, 1).MaxMana == 15, "mana follows the class energy");
             realm.Checkpoint(tokens[0], room);
@@ -133,6 +134,10 @@ internal static class CharacterProgressContracts
                 realm.Tick();
             }
             Check(!Actor(realm.StreamState(tokens[0], room, world: true), 101).IsAlive, "the second monster died");
+            // Each member sees only their own room experience, as it grows: A earned both kills, B stood in the Camp, C has no class, D was dead.
+            var seen = Enumerable.Range(0, 4).Select(i => realm.StreamState(tokens[i], room, world: true).Experience).ToArray();
+            Check(seen[0] == 160 && seen[1] == 0 && seen[2] is null && seen[3] == 0, $"each member sees only their own room experience: {string.Join(",", seen.Select(x => x?.ToString() ?? "null"))}");
+            Check(realm.State(tokens[0], room).Experience == 160 && JsonSerializer.Serialize(realm.StreamState(tokens[2], room, world: true), Web).Contains("experience") == false, "the HTTP view matches and a legacy character's frames keep their old shape");
             realm.Checkpoint(tokens[0], room);
             Check(realm.Characters(tokens[0]).Single().Progress!.Experience == 480, "experience is room state until the host closes the room");
         }

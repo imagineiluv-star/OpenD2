@@ -237,7 +237,9 @@ The HUD shows health, mana, region and play/pause state.
 Features since rc.4: the online preview. A self-contained **server** is now part of this release
 (`OpenD2-<version>-server-<runtime>.zip` for linux-x64, win-x64 and osx-arm64). Realm (operator-run) and Open
 (personal or LAN host) modes, accounts, characters, rooms with invites and reconnect, WSS streams, Open character
-files, and a synthetic cooperative Camp/Field world with personal quests. Server hardening: login hashing and
+files, and a synthetic cooperative Camp/Field world with personal quests. Characters can have one of seven classes with
+levels 1-99, attribute and skill points and monster kinds with levels and kill experience (Open file format 4); the
+tables are built-in previews and are NOT Diablo II data, and the client shows them in a developer panel only. Server hardening: login hashing and
 checkpoint writes no longer stall rooms, and restart, network-fault and 32-stream capacity behaviour are
 covered by contract tests (see the server package's documentation).
 Carried over from rc.4: scene creation and artwork configuration (PLAY-08–13), 10x4 grid inventory, Power strike
