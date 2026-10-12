@@ -7,7 +7,9 @@ namespace OpenD2.Online;
 
 // A portable Open profile, not a room snapshot or a trusted Realm character.
 public sealed record OpenItem(ItemDefinition Definition, ItemLocation Location, int Slot);
-public sealed record OpenCharacter(int Version, int Rules, string Mode, string Name, int Victories, OpenItem[]? Inventory = null, QuestRecord[]? Quests = null);
+// Progress is format 4: class, level, attributes and skills. The receiving server validates it against its own rules.
+public sealed record OpenCharacter(int Version, int Rules, string Mode, string Name, int Victories, OpenItem[]? Inventory = null, QuestRecord[]? Quests = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] CharacterProgress? Progress = null);
 
 public static class OpenCharacterFile
 {
@@ -22,12 +24,15 @@ public static class OpenCharacterFile
     };
     public static void Validate(OpenCharacter? value)
     {
-        if (value is null || value.Version is not (1 or 2 or 3) || value.Mode != "open" ||
+        if (value is null || value.Version is not (1 or 2 or 3 or 4) || value.Mode != "open" ||
             value.Name is null || !Regex.IsMatch(value.Name, "\\A[a-zA-Z0-9_-]{3,24}\\z") || value.Victories is < 0 or > 1_000_000 ||
             (value.Version == 1 && (value.Rules is not (7 or GameSimulation.RulesVersion) || value.Inventory is not null)) ||
             (value.Version >= 2 && (value.Rules != GameSimulation.RulesVersion || value.Inventory is null)) ||
             // Format 3 is the first to carry quest completions; earlier formats must not smuggle the field in.
-            (value.Version < 3 ? value.Quests is not null : !QuestRecords.IsValid(value.Quests)))
+            (value.Version < 3 ? value.Quests is not null : !QuestRecords.IsValid(value.Quests)) ||
+            // Format 4 is the first to carry progression; earlier formats must not smuggle it in, and the shape is bounded here
+            // (the point accounting itself needs a server's tables and is checked there).
+            (value.Version < 4 ? value.Progress is not null : value.Progress is not null && !ShapeIsBounded(value.Progress)))
             throw new InvalidDataException("Invalid Open character file, version or game rules.");
         if (value.Inventory is { } items)
         {
@@ -38,10 +43,13 @@ public static class OpenCharacterFile
             Arena.Create(1).WithCarriedItems(items.Select(i => new CarriedItem(new(1), i.Definition, i.Location, i.Slot)).ToArray());
         }
     }
+    private static bool ShapeIsBounded(CharacterProgress p) => Enum.IsDefined(p.Class) && p.Skills is { Length: <= 64 } &&
+        p.Level is >= 1 and <= 99 && p.StatPoints is >= 0 and <= 1000 && p.SkillPoints is >= 0 and <= 1000 &&
+        new[] { p.Strength, p.Dexterity, p.Vitality, p.Energy }.All(v => v is >= 1 and <= 2000);
     public static OpenCharacter Upgrade(OpenCharacter value)
     {
         Validate(value);
-        return value with { Version = 3, Rules = GameSimulation.RulesVersion, Inventory = value.Inventory?.ToArray() ?? [], Quests = value.Quests?.ToArray() ?? [] };
+        return value with { Version = 4, Rules = GameSimulation.RulesVersion, Inventory = value.Inventory?.ToArray() ?? [], Quests = value.Quests?.ToArray() ?? [] };
     }
     public static OpenCharacter Load(string path)
     {
