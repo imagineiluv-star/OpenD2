@@ -93,9 +93,18 @@ internal static class TlsContracts
                 if (capacityOnly)
                 {
                     string mode = name == "open" ? "open" : "realm";
-                    await StreamCapacityContracts.Run(url, ca, mode,
-                        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "capacity-" + mode + ".json"), capacitySeconds, process);
-                    Pass(mode + " 32 WSS streams, admission limit, slot recovery and room isolation");
+                    var sharedClients = new List<OnlineClient>(); var sharedCharacters = new List<Guid>();
+                    try
+                    {
+                        string folder = Path.GetDirectoryName(Path.GetFullPath(output))!;
+                        await StreamCapacityContracts.Run(url, ca, mode, Path.Combine(folder, "capacity-" + mode + ".json"), capacitySeconds, process,
+                            world: false, sharedClients, sharedCharacters);
+                        Pass(mode + " 32 WSS streams, admission limit, slot recovery and room isolation");
+                        await StreamCapacityContracts.Run(url, ca, mode, Path.Combine(folder, "capacity-world-" + mode + ".json"), capacitySeconds, process,
+                            world: true, sharedClients, sharedCharacters);
+                        Pass(mode + " 32 cooperative world v5 streams, admission limit, slot recovery and room isolation");
+                    }
+                    finally { foreach (var client in sharedClients) client.Dispose(); }
                 }
                 else if (worldOnly)
                 {
