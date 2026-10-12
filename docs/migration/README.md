@@ -1,6 +1,6 @@
 # OpenD2 C# / Godot 마이그레이션
 
-갱신일: 2026-10-09. 상태: M0 및 M1-01~07 기본 코드·합성 검증, M2-01~03 시뮬레이션·전투·마을/던전 이동·NPC 퀘스트 구현. 게임 검증은 [M2_05_RESULTS](M2_05_RESULTS.md), 선택형 NPC 모델 검증은 [NPC_02_RESULTS](NPC_02_RESULTS.md), M1 실데이터 인수 잔건은 [M1_07_RESULTS](M1_07_RESULTS.md) 참조.
+갱신일: 2026-10-12. 아래 요약보다 [WORK_PLAN](WORK_PLAN.md)의 체크박스가 최신이다. 상태: M0 및 M1-01~07 기본 코드·합성 검증, M2-01~03 시뮬레이션·전투·마을/던전 이동·NPC 퀘스트 구현. 게임 검증은 [M2_05_RESULTS](M2_05_RESULTS.md), 선택형 NPC 모델 검증은 [NPC_02_RESULTS](NPC_02_RESULTS.md), M1 실데이터 인수 잔건은 [M1_07_RESULTS](M1_07_RESULTS.md) 참조.
 
 ## 목표와 완료의 의미
 
@@ -35,7 +35,7 @@ Godot .NET 클라이언트와 엔진 독립 C# 게임 코어로 이전한다. �
 
 M1-07은 TXT/명시적 1.10f 맵 BIN, 맵 테이블 참조 검사·DT1 경로 해결·예산 기반 타일 캐시까지 구현했다. M2-01~04는 25Hz 코어·입력·난수·재생, 충돌·전투·AI 및 합성 마을/던전·지역 상태 보존·NPC 퀘스트·드롭·습득·인벤토리·장비·기본 능력치까지 구현했다. M2-05 자체 파일 저장·복원·손상 복구와 원본 세이브 헤더 사전검사도 구현했다. 원본 세이브 본문 변환은 미완료이며 다음은 해당 인수와 M2-06이다. M1 실제 데이터 인수와 미지원 형식 확대도 병행한다. 실제 파일을 받기 전에는 synthetic fixture 기반 검사만 수행한다.
 
-현재 Core가 사용자 PC에서 판정하므로 중앙 게임 서버가 필요 없다. M5에서는 방장 호스트 또는 그래픽 없는 `OpenD2.Server` .NET 호스트가 같은 규칙을 실행하고 참가자의 입력을 검증한다. 네트워크·다중 플레이어·인증/세션·재접속 구현은 아직 없다. 상세는 [서버 구성과 확장 조건](ARCHITECTURE.md#adr-002-로컬-우선-선택적-협동-세션)에 기록한다.
+현재 Core가 사용자 PC에서 판정하므로 중앙 게임 서버가 필요 없다. M5에서는 방장 호스트 또는 그래픽 없는 `OpenD2.Server` .NET 호스트가 같은 규칙을 실행하고 참가자의 입력을 검증한다. 그래픽 없는 `OpenD2.Server` 호스트(Realm = 운영자 서버, Open = 개인·LAN 호스트)와 계정·캐릭터·방·초대·재접속, 최대 4인 방은 구현되어 있다([ONLINE_PLAY](ONLINE_PLAY.md), [ONLINE_MODES](ONLINE_MODES.md)). 합성 Camp/Field 협동 월드(지역별 플레이·공유 퀘스트·캐릭터별 완료 기록)와 그 재시작 정책·네트워크 장애 복구·측정은 [COOPERATIVE_WORLD](COOPERATIVE_WORLD.md), [NETWORK_ACCEPTANCE](NETWORK_ACCEPTANCE.md), [STREAM_CAPACITY](STREAM_CAPACITY.md)에 있다. 원본 MPQ 월드, 실제 두 PC·WAN, 수동 GUI 인수는 남아 있다. 상세는 [서버 구성과 확장 조건](ARCHITECTURE.md#adr-002-로컬-우선-선택적-협동-세션)에 기록한다.
 
 ## 조사 기준
 
