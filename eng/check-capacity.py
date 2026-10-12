@@ -16,6 +16,19 @@ NOT_RUN = ('physical_multi_pc', 'wan', 'packet_loss', 'manual_gui', 'sustained_c
            'server_backpressure_saturation')
 
 
+def check_metrics(evidence, name):
+    # CPU/memory of the real server process during the 32-stream window. UNAVAILABLE (restricted process
+    # inspection) must carry no numbers; PASS must carry plausible ones.
+    metrics = evidence.get('server_process_metrics')
+    if metrics == 'PASS':
+        if (not isinstance(evidence.get('server_cpu_ms'), (int, float)) or evidence['server_cpu_ms'] < 0
+                or not isinstance(evidence.get('server_peak_sampled_working_set_bytes'), int)
+                or evidence['server_peak_sampled_working_set_bytes'] <= 0):
+            raise ValueError('Implausible server process metrics: ' + name)
+    elif metrics != 'UNAVAILABLE' or evidence.get('server_cpu_ms') is not None:
+        raise ValueError('Server process metrics missing: ' + name)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--server-exe', type=Path, required=True)
@@ -55,17 +68,20 @@ def main():
                     or evidence.get('sampled_seconds', 0) < args.seconds
                     or any(evidence.get(key) != 'NOT_RUN' for key in NOT_RUN)):
                 raise ValueError('Incomplete capacity evidence: ' + mode)
-            # CPU/memory of the real server process during the 32-stream window. UNAVAILABLE (restricted process
-            # inspection) must carry no numbers; PASS must carry plausible ones.
-            metrics = evidence.get('server_process_metrics')
-            if metrics == 'PASS':
-                if (not isinstance(evidence.get('server_cpu_ms'), (int, float)) or evidence['server_cpu_ms'] < 0
-                        or not isinstance(evidence.get('server_peak_sampled_working_set_bytes'), int)
-                        or evidence['server_peak_sampled_working_set_bytes'] <= 0):
-                    raise ValueError('Implausible server process metrics: ' + mode)
-            elif metrics != 'UNAVAILABLE' or evidence.get('server_cpu_ms') is not None:
-                raise ValueError('Server process metrics missing: ' + mode)
-            report['modes'][mode] = evidence
+            check_metrics(evidence, mode)
+            # The same eight four-player rooms as cooperative world rooms (v5), on the same logged-in clients.
+            world = json.loads((destination / ('capacity-world-' + mode + '.json')).read_text())
+            if (world.get('result') != 'PASS' or world.get('mode') != mode or world.get('room_kind') != 'cooperative-world'
+                    or len(world.get('checks', [])) != 6 or world.get('simultaneous_streams') != 32
+                    or world.get('active_rooms') != 8 or world.get('rounds', 0) < 1
+                    or world.get('room_interest') != 'v5' or world.get('room_input_progress') != 'v5'
+                    or world.get('inputs') != world.get('rounds', 0) * 32
+                    or world.get('matched_room_rounds') != world.get('rounds', 0) * 8
+                    or world.get('sampled_seconds', 0) < args.seconds
+                    or any(world.get(key) != 'NOT_RUN' for key in NOT_RUN)):
+                raise ValueError('Incomplete world capacity evidence: ' + mode)
+            check_metrics(world, 'world ' + mode)
+            report['modes'][mode] = dict(evidence, cooperative_world=world)
         report['result'] = 'PASS'
     finally:
         report['finished_utc'] = datetime.now(timezone.utc).isoformat()

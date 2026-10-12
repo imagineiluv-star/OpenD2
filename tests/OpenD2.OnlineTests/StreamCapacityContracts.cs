@@ -11,14 +11,19 @@ using OpenD2.Online;
 internal static class StreamCapacityContracts
 {
     // 'server' (optional) is the real server process: its CPU time and working set are sampled during the steady-state window.
-    internal static async Task Run(string url, string ca, string mode, string output, int seconds, Process? server = null)
+    // 'world' runs the same eight four-player rooms as cooperative world rooms (v5). 'shared'/'sharedCharacters' let a second
+    // pass reuse the first pass's 33 logged-in clients, so registration and the production admission budget are paid once;
+    // the caller then owns and disposes them.
+    internal static async Task Run(string url, string ca, string mode, string output, int seconds, Process? server = null,
+        bool world = false, List<OnlineClient>? shared = null, List<Guid>? sharedCharacters = null)
     {
+        var content = CooperativeWorld.Content; string label = world ? "world " + mode : mode;
         if (seconds is < 1 or > 3600) throw new ArgumentOutOfRangeException(nameof(seconds));
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(seconds + 240));
         var stop = deadline.Token;
-        var clients = new List<OnlineClient>();
+        var clients = shared ?? new List<OnlineClient>();
         var rooms = new List<Guid>();
-        var characters = new List<Guid>();
+        var characters = sharedCharacters ?? new List<Guid>();
         var feeds = new List<Feed>();
         var checks = new List<string>();
         var responses = new Queue<double>(); // Bounded percentile window, not a capacity/SLA claim.
@@ -28,7 +33,7 @@ internal static class StreamCapacityContracts
         double sampled = 0, recovery = 0;
         double? serverCpuMs = null; long? peakWorkingSet = null; bool metricsAvailable = false;
         var elapsed = Stopwatch.StartNew();
-        void Pass(string name) { checks.Add(name); Console.WriteLine("CAPACITY PASS " + mode + " " + name); }
+        void Pass(string name) { checks.Add(name); Console.WriteLine("CAPACITY PASS " + label + " " + name); }
         // The production password budget covers registration AND room admission (60/min).
         // Retry only explicit 429 rejections before mutation. Never retry uncertain inputs.
         async Task<T> Admit<T>(Func<Task<T>> action)
@@ -37,7 +42,7 @@ internal static class StreamCapacityContracts
             catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.TooManyRequests)
             {
                 throttles++;
-                Console.WriteLine("CAPACITY WAIT " + mode + " production admission budget; waiting 61 seconds");
+                Console.WriteLine("CAPACITY WAIT " + label + " production admission budget; waiting 61 seconds");
                 await Task.Delay(TimeSpan.FromSeconds(61), stop);
                 return await action();
             }
@@ -46,7 +51,7 @@ internal static class StreamCapacityContracts
         {
             int group = index / 4;
             var feed = new Feed(clients[index], rooms[group], (uint)(index % 4 + 1),
-                characters.Skip(group * 4).Take(Math.Min(4, characters.Count - group * 4)).ToArray(), stop);
+                characters.Skip(group * 4).Take(Math.Min(4, characters.Count - group * 4)).ToArray(), stop, world ? content : null);
             feeds.Add(feed); return feed;
         }
         try
@@ -55,23 +60,28 @@ internal static class StreamCapacityContracts
             string password = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
             for (int i = 0; i < 33; i++)
             {
-                var client = new OnlineClient(url, ca, mode); clients.Add(client);
-                await Admit(async () => { await client.Login(new("load-" + suffix + "-" + i, password), true, stop); return true; });
-                var character = await client.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest("Load" + i), stop);
-                characters.Add(character.Id);
+                if (clients.Count <= i)
+                {
+                    var created = new OnlineClient(url, ca, mode); clients.Add(created);
+                    await Admit(async () => { await created.Login(new("load-" + suffix + "-" + i, password), true, stop); return true; });
+                    var registered = await created.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest("Load" + i), stop);
+                    characters.Add(registered.Id);
+                }
+                var client = clients[i]; var characterId = characters[i];
                 if (i % 4 == 0)
-                    rooms.Add((await Admit(() => client.Send<RoomView>(HttpMethod.Post, "v1/rooms", new RoomRequest(character.Id, "Load" + i, ""), stop))).Id);
+                    rooms.Add((await Admit(() => client.Send<RoomView>(HttpMethod.Post, "v1/rooms", new RoomRequest(characterId, "Load" + i, "", world ? content : null), stop))).Id);
                 else
-                    await Admit(() => client.Send<RoomView>(HttpMethod.Post, $"v1/rooms/{rooms[^1]}/join", new JoinRequest(character.Id, ""), stop));
+                    await Admit(() => client.Send<RoomView>(HttpMethod.Post, $"v1/rooms/{rooms[^1]}/join", new JoinRequest(characterId, "", World: world ? content : null), stop));
             }
-            if (clients.Any(c => !c.SupportsRoomInterest || !c.SupportsRoomInputProgress)) throw new Exception("Capacity server must negotiate the current v4 input progress protocol.");
+            if (clients.Any(c => !c.SupportsRoomInterest || !c.SupportsRoomInputProgress || (world && !c.SupportsWorldRooms)))
+                throw new Exception("Capacity server must negotiate the current v4 input progress protocol (v5 for world rooms).");
             // Exercise ordinary gameplay to remove the nearby attacker before transport sampling.
             // Starting each room only when ready avoids a passive survival race during setup.
             for (int group = 0; group < 8; group++)
             {
                 var host = clients[group * 4]; string path = $"v1/rooms/{rooms[group]}";
                 var view = await host.Send<RoomView>(HttpMethod.Post, path + "/start", cancellation: stop);
-                while (view.Entities.Single(e => e.Id.Value == 100).IsAlive)
+                while (!world && view.Entities.Single(e => e.Id.Value == 100).IsAlive)
                 {
                     var actor = view.Entities.Single(e => e.Id.Value == view.Actor);
                     if (!actor.IsAlive) throw new Exception("Capacity setup actor died.");
@@ -89,6 +99,7 @@ internal static class StreamCapacityContracts
             Pass("33rd stream rejected with 429 while all 32 slots are occupied");
 
             var sequence = feeds.Select(f => f.Latest!.NextSequence).ToArray();
+            var deltasBefore = clients.Take(32).Select(c => c.RoomDeltaFrames).ToArray();
             var cpuStart = server is null ? null : NetworkResilienceContracts.ProcessSample(server);
             metricsAvailable = cpuStart.HasValue;
             var sample = Stopwatch.StartNew();
@@ -100,7 +111,7 @@ internal static class StreamCapacityContracts
                     await Task.WhenAll(Enumerable.Range(start, 4).Select(async i =>
                     {
                         var watch = Stopwatch.StartNew();
-                        var ack = await clients[i].SendInput(rooms[i / 4], new(sequence[i], CommandKind.SetMove), stop);
+                        var ack = await clients[i].SendInput(rooms[i / 4], new(sequence[i], CommandKind.SetMove, Region: world ? 1u : null, RegionEpoch: world ? 0L : null), stop);
                         if (ack.NextSequence != sequence[i] + 1) throw new Exception("Input cursor advanced incorrectly.");
                         receipts[i] = ack; sequence[i] = ack.NextSequence;
                         lock (responses) { responses.Enqueue(watch.Elapsed.TotalMilliseconds); if (responses.Count > 4096) responses.Dequeue(); }
@@ -149,7 +160,7 @@ internal static class StreamCapacityContracts
             metricsAvailable &= cpuEnd.HasValue;
             if (metricsAvailable) serverCpuMs = (cpuEnd!.Value.Cpu - cpuStart!.Value.Cpu).TotalMilliseconds;
             else peakWorkingSet = null; // Restricted process inspection reports UNAVAILABLE, never invented zeros.
-            if (clients.Take(32).Any(c => c.RoomDeltaFrames == 0)) throw new Exception("Not every stream received deltas.");
+            if (clients.Take(32).Where((c, i) => c.RoomDeltaFrames <= deltasBefore[i]).Any()) throw new Exception("Not every stream received deltas.");
             Pass("eight active rooms keep matching peer hashes and exact input cursors while HTTP stays live");
 
             var reopen = Stopwatch.StartNew();
@@ -212,15 +223,16 @@ internal static class StreamCapacityContracts
             catch { result = "FAIL"; throw; }
             finally
             {
-                foreach (var client in clients) client.Dispose();
+                if (shared is null) foreach (var client in clients) client.Dispose();
                 var sorted = responses.Order().ToArray();
                 double? Percentile(double fraction) => sorted.Length == 0 ? null : sorted[(int)Math.Ceiling(sorted.Length * fraction) - 1];
                 Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
                 File.WriteAllText(output, JsonSerializer.Serialize(new { result, mode, checks,
                     scope = "loopback-32-production-dotnet-clients-eight-four-player-rooms-plus-admission-probe",
                     active_rooms = 8, simultaneous_streams = 32, admission_probe_clients = 1,
-                    room_input_progress = clients.Count == 33 && clients.All(c => c.SupportsRoomInputProgress) ? "v4" : "NOT_VERIFIED",
-                    room_interest = clients.Count == 33 && clients.All(c => c.SupportsRoomInterest) ? "v3" : "NOT_VERIFIED",
+                    room_kind = world ? "cooperative-world" : "arena",
+                    room_input_progress = clients.Count == 33 && clients.All(c => c.SupportsRoomInputProgress) ? (world ? "v5" : "v4") : "NOT_VERIFIED",
+                    room_interest = clients.Count == 33 && clients.All(c => c.SupportsRoomInterest) ? (world ? "v5" : "v3") : "NOT_VERIFIED",
                     requested_seconds = seconds, sampled_seconds = sampled, elapsed_seconds = elapsed.Elapsed.TotalSeconds,
                     rounds, inputs, matched_room_rounds = matches, frames, slot_recovery_ms = recovery, setup_throttle_waits = throttles,
                     server_process_metrics = server is null ? "NOT_RUN" : metricsAvailable ? "PASS" : "UNAVAILABLE",
@@ -263,7 +275,7 @@ internal static class StreamCapacityContracts
         public Exception? Error { get; private set; }
         public bool Finished => read.IsCompleted;
         public bool Disposed { get; private set; }
-        public Feed(OnlineClient client, Guid room, uint actor, Guid[] members, CancellationToken cancellation)
+        public Feed(OnlineClient client, Guid room, uint actor, Guid[] members, CancellationToken cancellation, WorldContent? world = null)
         {
             long fullBefore = client.RoomFullFrames;
             stop = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
@@ -272,7 +284,7 @@ internal static class StreamCapacityContracts
             {
                 try
                 {
-                    await foreach (var view in client.WatchRoom(room, stop.Token))
+                    await foreach (var view in client.WatchRoom(room, stop.Token, world))
                     {
                         if (Latest is null && client.RoomFullFrames != fullBefore + 1)
                             throw new InvalidDataException("First stream frame is not a fresh full baseline.");

@@ -102,8 +102,9 @@ NOT_RUN 항목을 확인하며 어긋나면 FAIL이다. `silent_stream.EvictionM
 시간 제한(120초)과 단계 누락은 실패다. 유효한 보류는 **이미 열린 HTTP 연결**을 재사용해야 하므로 시험은
 보류 직전에 연결을 데운다(새 TLS 핸드셰이크는 보류된 하향 경로에서 멈춰 서버에 입력이 닿지 않는다).
 
-범위 밖: 호스트 종료·재시작 중 포탈 입력, 월드 방의 32개 스트림 용량(`STREAM_CAPACITY`는 Arena), 실제 OS 송신 버퍼 포화,
-pong에는 응답하지만 느리게 소비하는 수신자, IP 패킷 손실·재정렬·WAN, 두 PC, 수동 GUI는 **NOT_RUN**이다.
+범위 밖: 실제 OS 송신 버퍼 포화, pong에는 응답하지만 느리게 소비하는 수신자, IP 패킷 손실·재정렬·WAN, 두 PC, 수동 GUI는 **NOT_RUN**이다.
+월드 방의 재시작·강제 종료 중 포탈 입력은 [COOPERATIVE_WORLD](COOPERATIVE_WORLD.md#재시작과-강제-종료-정책--m5-02c)의 정책 계약이, 월드 방의
+32개 스트림 용량은 [STREAM_CAPACITY](STREAM_CAPACITY.md)의 월드 절이 다룬다.
 
 ## 송신 제한 계약과 미검증 항목
 
