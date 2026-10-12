@@ -20,6 +20,7 @@ public sealed partial class OnlineClient : IDisposable
     public bool SupportsInputReceipts { get; private set; }
     public bool SupportsRoomDeltas { get; private set; }
     public bool SupportsRoomInterest { get; private set; }
+    public bool SupportsRoomInputProgress { get; private set; }
     public bool SupportsInputBatches { get; private set; }
     private long inputBatchRequests;
     public long InputBatchRequests => Interlocked.Read(ref inputBatchRequests);
@@ -95,6 +96,7 @@ public sealed partial class OnlineClient : IDisposable
         SupportsInputReceipts = health.InputReceipt == 1;
         SupportsRoomDeltas = health.RoomDelta == 1;
         SupportsRoomInterest = health.RoomInterest == 1 && SupportsRoomDeltas;
+        SupportsRoomInputProgress = health.RoomInputProgress == 1 && SupportsRoomInterest;
         SupportsInputBatches = health.InputBatch == 1;
     }
     public async Task<InputReceipt> SendInput(Guid room, InputRequest input, CancellationToken cancellation = default)
@@ -147,7 +149,8 @@ public sealed partial class OnlineClient : IDisposable
         if (token is null) throw new InvalidOperationException("Login first.");
         using var socket = new ClientWebSocket();
         bool delta = SupportsRoomDeltas;
-        string protocol = SupportsRoomInterest ? RoomInterest.Protocol : delta ? RoomFrames.Protocol : "opend2.room.v1";
+        bool inputProgress = SupportsRoomInputProgress;
+        string protocol = inputProgress ? RoomFrames.InputProgressProtocol : SupportsRoomInterest ? RoomInterest.Protocol : delta ? RoomFrames.Protocol : "opend2.room.v1";
         socket.Options.AddSubProtocol(protocol);
         socket.Options.CollectHttpResponseDetails = true;
         socket.Options.SetRequestHeader("Authorization", "Bearer " + token);
@@ -190,6 +193,7 @@ public sealed partial class OnlineClient : IDisposable
             {
                 var frame = JsonSerializer.Deserialize<RoomFrame>(buffer.AsSpan(0, length), json) ?? throw new InvalidDataException("Empty room frame.");
                 state = RoomFrames.Apply(frame, previous, sequence, room);
+                if (inputProgress != state.ProcessedSequence.HasValue) throw new InvalidDataException("Room input progress capability changed.");
                 sequence = frame.Sequence; previous = state; patched = frame.Delta is not null;
             }
             else

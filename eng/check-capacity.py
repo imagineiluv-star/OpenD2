@@ -49,6 +49,7 @@ def main():
                     or len(evidence.get('checks', [])) != 6 or evidence.get('simultaneous_streams') != 32
                     or evidence.get('active_rooms') != 8 or evidence.get('rounds', 0) < 1
                     or evidence.get('room_interest') != 'v3'
+                    or evidence.get('room_input_progress') != 'v4'
                     or evidence.get('inputs') != evidence.get('rounds', 0) * 32
                     or evidence.get('matched_room_rounds') != evidence.get('rounds', 0) * 8
                     or evidence.get('sampled_seconds', 0) < args.seconds

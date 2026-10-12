@@ -38,7 +38,11 @@ public sealed class RoomPrediction(CollisionGrid grid)
         int previousX = pending ? moveX : self.MoveX, previousY = pending ? moveY : self.MoveY;
         if (!continuous) { pending = false; queuedTick = -1; }
         if (!continuous || state is null || next.Tick > state.Tick) suspended = !continuous;
-        if (pending && next.NextSequence > sequence)
+        if (pending && next.ProcessedSequence is { } processed)
+        {
+            if (processed >= sequence) pending = false;
+        }
+        else if (pending && next.NextSequence > sequence)
         {
             if (queuedTick >= 0 && next.Tick > queuedTick) pending = false;
             else if (queuedTick < 0) queuedTick = next.Tick;
@@ -74,7 +78,8 @@ public sealed class RoomPrediction(CollisionGrid grid)
         if (!pending || state is null || receipt.Room != state.Id || receipt.Actor != state.Actor || receipt.NextSequence != sequence + 1) return;
         // A WSS snapshot may already have applied the command before HTTP returns.
         queuedTick = receipt.Tick;
-        if (state.NextSequence >= receipt.NextSequence && state.Tick > receipt.Tick) pending = false;
+        if (state.ProcessedSequence is { } processed ? processed >= sequence :
+            state.NextSequence >= receipt.NextSequence && state.Tick > receipt.Tick) pending = false;
     }
     public void Cancel() { pending = false; suspended = true; queuedTick = -1; correction = default; }
     private bool CanMove => self.Id.Value != 0 && self.IsAlive && self.HitStun == 0 && self.AttackCooldown == 0 && self.Region == grid.Region;

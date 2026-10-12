@@ -6,7 +6,8 @@ namespace OpenD2.Online;
 
 public sealed record EntityChange(int Index, EntityState Value);
 public sealed record ItemChange(int Index, ItemState Value);
-public sealed record RoomDelta(Guid Room, long Tick, long NextSequence, string StateHash, EntityChange[] Entities, ItemChange[] Items);
+public sealed record RoomDelta(Guid Room, long Tick, long NextSequence, string StateHash, EntityChange[] Entities, ItemChange[] Items,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? ProcessedSequence = null);
 public sealed record RoomFrame(long Sequence, long BaseSequence = 0,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RoomView? State = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RoomDelta? Delta = null,
@@ -17,6 +18,7 @@ public sealed record RoomFrame(long Sequence, long BaseSequence = 0,
 public static class RoomFrames
 {
     public const string Protocol = "opend2.room.v2";
+    public const string InputProgressProtocol = "opend2.room.v4";
     public const int FullInterval = 125; // At most 124 dependent frames between full snapshots.
     public const int MaxItems = 2 * GameSimulation.MaxEntities + GameSimulation.MaxCarriedItems;
 
@@ -36,7 +38,7 @@ public static class RoomFrames
         int records = current.Entities.Length + current.Items.Length;
         if (records == 0 || (entities.Length + items.Length) * 2 > records)
             return new(sequence, State: current);
-        return new(sequence, sequence - 1, Delta: new(current.Id, current.Tick, current.NextSequence, current.StateHash, entities, items));
+        return new(sequence, sequence - 1, Delta: new(current.Id, current.Tick, current.NextSequence, current.StateHash, entities, items, current.ProcessedSequence));
     }
 
     public static RoomView Apply(RoomFrame frame, RoomView? previous, long previousSequence, Guid room)
@@ -71,18 +73,19 @@ public static class RoomFrames
                     throw new InvalidDataException("Invalid item patch index or identity.");
                 items[last = change.Index] = change.Value;
             }
-            next = previous with { Tick = delta.Tick, NextSequence = delta.NextSequence, StateHash = delta.StateHash, Entities = entities, Items = items };
+            next = previous with { Tick = delta.Tick, NextSequence = delta.NextSequence, StateHash = delta.StateHash, ProcessedSequence = delta.ProcessedSequence, Entities = entities, Items = items };
         }
         else throw new InvalidDataException("Room delta has no matching full baseline. Reconnect to the room.");
         Validate(next, room);
-        if (previous is not null && (next.Tick < previous.Tick || next.NextSequence < previous.NextSequence || (previous.Started && !next.Started)))
+        if (previous is not null && (next.Tick < previous.Tick || next.NextSequence < previous.NextSequence || (previous.Started && !next.Started) ||
+            next.ProcessedSequence.HasValue != previous.ProcessedSequence.HasValue || next.ProcessedSequence < previous.ProcessedSequence))
             throw new InvalidDataException("Room state moved backwards.");
         return next;
     }
 
     private static void Validate(RoomView state, Guid room)
     {
-        if (state.Id != room || state.Actor == 0 || state.Tick < 0 || state.NextSequence <= 0 || state.Name is not { Length: <= 128 } ||
+        if (state.Id != room || state.Actor == 0 || state.Tick < 0 || state.NextSequence <= 0 || state.ProcessedSequence < 0 || state.ProcessedSequence >= state.NextSequence || state.Name is not { Length: <= 128 } ||
             state.Members is not { Length: >= 1 and <= 4 } || state.Entities is null || state.Entities.Length > GameSimulation.MaxEntities ||
             state.Items is null || state.Items.Length > MaxItems || state.StateHash is null ||
             (state.Started ? state.StateHash.Length != 64 || !state.StateHash.All(char.IsAsciiHexDigit) : state.StateHash.Length != 0) ||

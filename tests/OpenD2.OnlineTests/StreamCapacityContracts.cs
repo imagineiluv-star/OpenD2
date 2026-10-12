@@ -61,7 +61,7 @@ internal static class StreamCapacityContracts
                 else
                     await Admit(() => client.Send<RoomView>(HttpMethod.Post, $"v1/rooms/{rooms[^1]}/join", new JoinRequest(character.Id, ""), stop));
             }
-            if (clients.Any(c => !c.SupportsRoomInterest)) throw new Exception("Capacity server must negotiate the current v3 interest protocol.");
+            if (clients.Any(c => !c.SupportsRoomInterest || !c.SupportsRoomInputProgress)) throw new Exception("Capacity server must negotiate the current v4 input progress protocol.");
             // Exercise ordinary gameplay to remove the nearby attacker before transport sampling.
             // Starting each room only when ready avoids a passive survival race during setup.
             for (int group = 0; group < 8; group++)
@@ -204,6 +204,7 @@ internal static class StreamCapacityContracts
                 File.WriteAllText(output, JsonSerializer.Serialize(new { result, mode, checks,
                     scope = "loopback-32-production-dotnet-clients-eight-four-player-rooms-plus-admission-probe",
                     active_rooms = 8, simultaneous_streams = 32, admission_probe_clients = 1,
+                    room_input_progress = clients.Count == 33 && clients.All(c => c.SupportsRoomInputProgress) ? "v4" : "NOT_VERIFIED",
                     room_interest = clients.Count == 33 && clients.All(c => c.SupportsRoomInterest) ? "v3" : "NOT_VERIFIED",
                     requested_seconds = seconds, sampled_seconds = sampled, elapsed_seconds = elapsed.Elapsed.TotalSeconds,
                     rounds, inputs, matched_room_rounds = matches, frames, slot_recovery_ms = recovery, setup_throttle_waits = throttles,

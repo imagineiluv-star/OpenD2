@@ -22,7 +22,7 @@ internal static class StreamContracts
         await host.Login(credentials, true, stop);
         await guest.Login(new("stream-guest", password), true, stop);
         await outsider.Login(new("stream-outsider", password), true, stop);
-        if (!host.SupportsRoomInterest || !guest.SupportsRoomInterest) throw new Exception("Interest capability missing.");
+        if (!host.SupportsRoomInterest || !guest.SupportsRoomInterest || !host.SupportsRoomInputProgress || !guest.SupportsRoomInputProgress) throw new Exception("Interest capability missing.");
         var a = await host.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest("StreamHost"), stop);
         var b = await guest.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest("StreamGuest"), stop);
         var room = await host.Send<RoomView>(HttpMethod.Post, "v1/rooms", new RoomRequest(a.Id, "StreamRoom", ""), stop);
@@ -92,10 +92,12 @@ internal static class StreamContracts
             }
             finally { drainStop.Cancel(); await drain; }
         }
+        if (first.Current.ProcessedSequence is not > 0 || first.Current.ProcessedSequence < sequence)
+            throw new Exception("v4 never consumed the measured input commands.");
         Pass("100 compact HTTP input receipts; owned movement is pushed to the peer over WSS");
         if (!host.SupportsRoomDeltas || !guest.SupportsRoomDeltas || host.RoomFullFrames < 2 || guest.RoomFullFrames < 2 || host.RoomDeltaFrames == 0 || guest.RoomDeltaFrames == 0)
             throw new Exception("Missing negotiated delta stream or periodic full refresh.");
-        Pass("v3 deltas and periodic full refresh reach both authenticated clients");
+        Pass("v4 deltas and periodic full refresh reach both authenticated clients");
         await using (var duplicate = host.WatchRoom(room.Id, stop).GetAsyncEnumerator()) await Rejected(duplicate, 409);
         Pass("duplicate stream for the same session rejected");
         await using (var denied = outsider.WatchRoom(room.Id, stop).GetAsyncEnumerator()) await Rejected(denied, 403);
@@ -170,7 +172,7 @@ internal static class StreamContracts
             RevocationMode = X509RevocationMode.NoCheck, CustomTrustStore = { root } };
         using var http = new HttpClient(handler);
         var uri = new UriBuilder(new Uri(new Uri(url), path + "/stream")) { Scheme = "wss" }.Uri;
-        foreach (var (expected, protocol) in new[] { (400, ""), (403, "opend2.room.v1"), (403, RoomFrames.Protocol), (403, RoomInterest.Protocol), (0, "opend2.room.v1"), (0, RoomFrames.Protocol), (0, RoomInterest.Protocol) })
+        foreach (var (expected, protocol) in new[] { (400, ""), (403, "opend2.room.v1"), (403, RoomFrames.Protocol), (403, RoomInterest.Protocol), (403, RoomFrames.InputProgressProtocol), (0, "opend2.room.v1"), (0, RoomFrames.Protocol), (0, RoomInterest.Protocol), (0, RoomFrames.InputProgressProtocol) })
         {
             if (expected == 0 && protocol != "opend2.room.v1")
                 session = await member.Send<LoginResult>(HttpMethod.Post, "v1/login", credentials, stop);
@@ -192,6 +194,8 @@ internal static class StreamContracts
                     : JsonSerializer.Deserialize<RoomFrame>(legacyBytes.AsSpan(0, length), json)?.State;
                 if (socket.SubProtocol != protocol || view is null || path != $"v1/rooms/{view.Id}")
                     throw new Exception("Stream protocol or initial full-state contract changed.");
+                if ((protocol == RoomFrames.InputProgressProtocol) != view.ProcessedSequence.HasValue)
+                    throw new Exception("Processed cursor leaked into an old protocol or was omitted from v4.");
                 Console.WriteLine("STREAM PROTOCOL PASS " + protocol + " initial full-state response");
                 await socket.SendAsync("{}"u8.ToArray().AsMemory(), WebSocketMessageType.Text, true, stop);
                 using var closed = CancellationTokenSource.CreateLinkedTokenSource(stop); closed.CancelAfter(TimeSpan.FromSeconds(5));
