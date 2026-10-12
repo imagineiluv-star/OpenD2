@@ -245,6 +245,7 @@ def main():
                     text = (evidence/f'godot-{role}.log').read_text(encoding='utf-8')
                     assert 'ERROR:' not in text and 'SCRIPT ERROR:' not in text, role
                     assert 'OPEND2_CONNECTION_GUIDANCE_UI_PASS' in text, role
+                    assert 'OPEND2_PROGRESS_UI_PASS' in text, 'Character progress panel binding missing: ' + role
                     assert 'OPEND2_WORLD_VIEW_PASS' in text and 'OPEND2_WORLD_GAMEPLAY_PASS ' + role in text, role
                     if args.tls_fixtures:
                         assert 'OPEND2_PUBLISHED_CATALOG_UI_PASS ' + role in text, 'Published catalog download and selection missing'

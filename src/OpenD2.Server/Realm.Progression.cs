@@ -20,6 +20,15 @@ public sealed partial class Realm
         Need(!InRoom(id), 409, "Leave or close the room before spending points.");
         return (c, characters.IndexOf(c));
     }
+    // The server's skill table, so a client never has to assume which tables the server runs on.
+    public SkillInfo[] Skills(string token)
+    {
+        lock (gate)
+        {
+            Authorize(token);
+            return SkillTree.All.OrderBy(s => s.Id).Select(s => new SkillInfo(s.Id, s.Name, s.Class.ToString(), s.RequiredLevel, s.MaxLevel, s.Requires.ToArray())).ToArray();
+        }
+    }
     public CharacterInfo SpendStat(string token, Guid id, StatRequest request)
     {
         Need(request?.Stat is { Length: >= 1 and <= 16 } name && name.All(char.IsAsciiLetter) && Enum.TryParse<CharacterStat>(name, true, out var stat) && Enum.IsDefined(stat), 400, "Unknown attribute.");

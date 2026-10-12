@@ -11,6 +11,8 @@ public sealed record NameRequest(string Name,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? Class = null);
 public sealed record StatRequest(string Stat);
 public sealed record SkillRequest(int Skill);
+// One entry of the server's skill table (all classes). Requires lists skill IDs that need at least one point first.
+public sealed record SkillInfo(int Id, string Name, string Class, int RequiredLevel, int MaxLevel, int[] Requires);
 // Per-character count of finished shared world quests, keyed by world content ID (never by hash).
 // Quests is omitted from the wire until a character has a record, so earlier clients see the same JSON.
 public sealed record QuestRecord(string World, int Completions);

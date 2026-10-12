@@ -71,6 +71,12 @@ internal static class CharacterProgressContracts
                 if (created.Progress is { } p) Check(p == Progression.Create(Tables, Enum.Parse<CharacterClass>(Classes[i]!, true)), "a new character starts at level 1");
             }
             Check(realm.Characters(tokens[0]).Single().Progress!.Class == CharacterClass.Amazon && realm.Characters(tokens[1]).Single().Progress!.Class == CharacterClass.Sorceress, "class names are case-insensitive");
+            // The client learns the skill table from the server instead of assuming it.
+            var table = realm.Skills(tokens[0]);
+            Check(table.Length == SkillTable.Preview.All.Count && table.Select(s => s.Id).SequenceEqual(table.Select(s => s.Id).Order()), "the skill table lists every skill in ID order");
+            var second = table.Single(s => s.Id == 102);
+            Check(second.Class == "Amazon" && second.RequiredLevel == 6 && second.MaxLevel == 20 && second.Requires.SequenceEqual([101]) && table.Single(s => s.Id == 201).Class == "Sorceress", "a skill entry carries class, requirements and prerequisites");
+            Reject(401, "listing skills without a login", () => realm.Skills("nope"));
         }
         // The Amazon is 20 experience short of level 2 (fixture written through the production document format).
         Edit(file, db => db with { Characters = db.Characters.Select(c => c.Id == characters[0] ? c with { Progress = Progression.Gain(Tables, c.Progress!, 480).Progress } : c).ToArray() });

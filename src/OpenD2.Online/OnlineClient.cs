@@ -141,6 +141,11 @@ public sealed partial class OnlineClient : IDisposable
         if (characterClass is not null && !SupportsCharacterProgress) throw new NotSupportedException("Server does not support character classes.");
         return await Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest(name, characterClass?.ToString()), cancellation);
     }
+    public async Task<SkillInfo[]> ListSkills(CancellationToken cancellation = default)
+    {
+        if (!SupportsCharacterProgress) throw new NotSupportedException("Server does not support character progression.");
+        return await Send<SkillInfo[]>(HttpMethod.Get, "v1/skills", cancellation: cancellation);
+    }
     public async Task<CharacterInfo> SpendStat(Guid id, OpenD2.Core.CharacterStat stat, CancellationToken cancellation = default)
     {
         if (!SupportsCharacterProgress) throw new NotSupportedException("Server does not support character progression.");
