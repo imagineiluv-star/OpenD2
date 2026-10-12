@@ -92,6 +92,16 @@ internal static class RoomPredictionContracts
         {
             try { prediction.Position(entity, time); throw new Exception("Invalid clock accepted."); } catch (ArgumentOutOfRangeException) { }
         }
+        // v4 gives a consumed cursor even when the HTTP response is lost or arrives late.
+        var tracked = first with { ProcessedSequence = 0 };
+        Start(tracked); prediction.Push(tracked with { NextSequence = 2 }, 1.02);
+        prediction.Push(tracked with { Tick = 1, NextSequence = 2 }, 1.04);
+        prediction.Accept(new(first.Id, 1, 2, 0));
+        Check(prediction.Position(entity, 1.06).X > entity.Position.X, "v4 cursor overrides tick/receipt inference");
+        prediction.Push(tracked with { Tick = 1, NextSequence = 2, ProcessedSequence = 1 }, 1.08);
+        Check(prediction.Position(entity, 1.10) == Exact(entity), "same-tick consumed cursor retires movement without HTTP");
+        prediction.Accept(new(first.Id, 1, 2, 0));
+        Check(prediction.Position(entity, 1.12) == Exact(entity), "late receipt cannot restore consumed intent");
         Corrections(first);
         Console.WriteLine($"ROOM PREDICTION PASS movement-parity={comparisons} pending/receipt/WSS-order/stop/cancel/silence/reset/collision/immutability");
     }

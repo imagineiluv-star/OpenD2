@@ -31,6 +31,7 @@ await StreamSendDeadlineContracts.Run();
 RoomPresentationContracts.Run();
 RoomPredictionContracts.Run();
 RoomSnapshotContracts.Run();
+InputProgressContracts.Run();
 RoomInterestContracts.Run();
 await InputReceiptContracts.Run();
 await InputBatchContracts.Run();

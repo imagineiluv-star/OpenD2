@@ -29,7 +29,7 @@ internal static class RoomFrameContracts
         var current = start;
         for (long sequence = 1; sequence <= 400; sequence++)
         {
-            current = current with { Tick = sequence, NextSequence = sequence, StateHash = sequence.ToString("x64"),
+            current = current with { Tick = sequence, NextSequence = sequence, ProcessedSequence = sequence - 1, StateHash = sequence.ToString("x64"),
                 Entities = current.Entities.Select((e, i) => i == 0 ? e with { Position = new((int)(768 + sequence), 768), Health = 90, Mana = (int)(sequence % 60) } : e).ToArray() };
             if (sequence % 30 == 0) current = current with { Items = current.Items.Select((item, i) => i == 0 ? item with { Location = item.Location == ItemLocation.Inventory ? ItemLocation.Equipped : ItemLocation.Inventory } : item).ToArray() };
             if (sequence % 40 == 0) current = current with { Items = current.Items.Reverse().ToArray() };
@@ -62,6 +62,17 @@ internal static class RoomFrameContracts
         Reject(patch with { Delta = patch.Delta! with { Room = Guid.NewGuid() } });
         Reject(patch with { Delta = patch.Delta! with { Tick = -1 } });
         Reject(patch with { Delta = patch.Delta! with { NextSequence = 0 } });
+        var progress = start with { NextSequence = 3, ProcessedSequence = 1 };
+        Reject(new(2, State: progress with { ProcessedSequence = -1 }), progress);
+        Reject(new(2, State: progress with { ProcessedSequence = 3 }), progress);
+        Reject(new(2, State: progress with { ProcessedSequence = 0 }), progress);
+        Reject(new(2, State: progress with { ProcessedSequence = null }), progress);
+        Reject(new(2, State: progress), start);
+        Reject(new(2, 1, Delta: new(start.Id, 1, 3, start.StateHash, [], [], 0)), progress);
+        var advanced = progress with { ProcessedSequence = 2 };
+        var metadata = RoomFrames.Create(advanced, progress, 2);
+        if (metadata.Delta is null || !Same(advanced, RoomFrames.Apply(metadata, progress, 1, start.Id)))
+            throw new Exception("Same-tick processed cursor lost in empty delta.");
         Reject(patch with { Delta = patch.Delta! with { Entities = [new(-1, start.Entities[0])] } });
         Reject(patch with { Delta = patch.Delta! with { Entities = [new(start.Entities.Length, start.Entities[0])] } });
         Reject(patch with { Delta = patch.Delta! with { Entities = [new(0, start.Entities[1])] } });
@@ -84,14 +95,14 @@ internal static class RoomFrameContracts
         var builder = WebApplication.CreateSlimBuilder(); builder.Logging.ClearProviders();
         builder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, 0));
         await using var app = builder.Build(); app.UseWebSockets();
-        int version = 1, interest = 0; string[] messages = []; string? selected = null;
+        int version = 1, interest = 0, progress = 0; string[] messages = []; string? selected = null;
         app.MapGet("/health", () => version == 0
             ? (object)new { protocol = 1, rules = GameSimulation.RulesVersion, roomStream = 1, mode = "realm" }
-            : new ServerInfo(1, GameSimulation.RulesVersion, 1, "realm", 2, 1, version, RoomInterest: interest));
+            : new ServerInfo(1, GameSimulation.RulesVersion, 1, "realm", 2, 1, version, RoomInterest: interest, RoomInputProgress: progress));
         app.MapPost("/v1/login", () => new LoginResult("fixture-token", "fixture"));
         app.Map("/v1/rooms/{id:guid}/stream", async context =>
         {
-            selected = version == 1 ? interest == 1 ? RoomInterest.Protocol : RoomFrames.Protocol : "opend2.room.v1";
+            selected = version == 1 ? interest == 1 ? progress == 1 ? RoomFrames.InputProgressProtocol : RoomInterest.Protocol : RoomFrames.Protocol : "opend2.room.v1";
             var data = messages;
             using var socket = await context.WebSockets.AcceptWebSocketAsync(selected);
             try
@@ -111,18 +122,33 @@ internal static class RoomFrameContracts
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
-            foreach (var capability in new[] { (0, 0), (2, 1), (1, 0), (1, 2), (1, 1) })
+            foreach (var capability in new[] { (0, 0, 1), (2, 1, 1), (1, 0, 1), (1, 2, 1), (1, 1, 0), (1, 1, 2), (1, 1, 1) })
             {
-                version = capability.Item1; interest = capability.Item2;
-                messages = version == 1 ? [full, delta] : [JsonSerializer.Serialize(new RoomUpdate(start), json), JsonSerializer.Serialize(new RoomUpdate(changed), json)];
+                version = capability.Item1; interest = capability.Item2; progress = capability.Item3;
+                bool tracked = version == 1 && interest == 1 && progress == 1;
+                var expectedStart = tracked ? start with { ProcessedSequence = 0 } : start;
+                var expectedChanged = tracked ? changed with { ProcessedSequence = 0 } : changed;
+                string fullWire = JsonSerializer.Serialize(new RoomFrame(1, State: expectedStart), json);
+                string deltaWire = JsonSerializer.Serialize(RoomFrames.Create(expectedChanged, expectedStart, 2), json);
+                messages = version == 1 ? [fullWire, deltaWire] : [JsonSerializer.Serialize(new RoomUpdate(start), json), JsonSerializer.Serialize(new RoomUpdate(changed), json)];
                 using var client = new OnlineClient(app.Urls.Single()); await client.Login(new("fixture", "fixture-password"), false, deadline.Token);
                 await using var feed = client.WatchRoom(start.Id, deadline.Token).GetAsyncEnumerator();
-                if (!await feed.MoveNextAsync() || !Same(start, feed.Current) || !await feed.MoveNextAsync() || !Same(changed, feed.Current) ||
+                if (!await feed.MoveNextAsync() || !Same(expectedStart, feed.Current) || !await feed.MoveNextAsync() || !Same(expectedChanged, feed.Current) ||
                     client.RoomPayloadBytes != messages.Sum(m => Encoding.UTF8.GetByteCount(m)) || client.RoomDeltaFrames != (version == 1 ? 1 : 0) ||
-                    client.SupportsRoomInterest != (version == 1 && interest == 1) ||
-                    selected != (version == 1 ? interest == 1 ? RoomInterest.Protocol : RoomFrames.Protocol : "opend2.room.v1")) throw new Exception("Fragmented v1/v2/v3 negotiation or reconstruction failed.");
+                    client.SupportsRoomInterest != (version == 1 && interest == 1) || client.SupportsRoomInputProgress != tracked ||
+                    selected != (version == 1 ? interest == 1 ? tracked ? RoomFrames.InputProgressProtocol : RoomInterest.Protocol : RoomFrames.Protocol : "opend2.room.v1")) throw new Exception("Fragmented v1/v2/v3 negotiation or reconstruction failed.");
             }
-            version = 1;
+            version = interest = progress = 1;
+            foreach (var invalid in new[] { start, start with { ProcessedSequence = -1 }, start with { ProcessedSequence = 1 } })
+            {
+                messages = [JsonSerializer.Serialize(new RoomFrame(1, State: invalid), json)];
+                using var client = new OnlineClient(app.Urls.Single()); await client.Login(new("fixture", "fixture-password"), false, deadline.Token);
+                await using var feed = client.WatchRoom(start.Id, deadline.Token).GetAsyncEnumerator();
+                try { await feed.MoveNextAsync(); }
+                catch (InvalidDataException) { continue; }
+                throw new Exception("Missing or invalid negotiated progress accepted.");
+            }
+            progress = 0;
             foreach (RoomFrame bad in new[] { patch with { BaseSequence = 0 }, patch with { Sequence = 1 }, patch with { Sequence = 3 } })
             {
                 messages = [full, JsonSerializer.Serialize(bad, json)];
@@ -144,7 +170,7 @@ internal static class RoomFrameContracts
                 catch (Exception error) when (error is InvalidDataException or JsonException) { continue; }
                 throw new Exception("Malformed/unbased/oversized wire frame accepted.");
             }
-            Console.WriteLine("ROOM DELTA WIRE PASS fragmented-v1-v2-v3/unknown-interest-and-legacy-negotiation/actual-payload-bytes/strict-json/no-baseline/size");
+            Console.WriteLine("ROOM DELTA WIRE PASS fragmented-v1-v2-v3-v4/unknown-capability-and-legacy-negotiation/processed-cursor/actual-payload-bytes/strict-json/no-baseline/size");
         }
         finally { await app.StopAsync(); }
     }

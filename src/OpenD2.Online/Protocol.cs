@@ -2,7 +2,7 @@ using OpenD2.Core;
 
 namespace OpenD2.Online;
 
-public sealed record ServerInfo(int Protocol, int Rules, int RoomStream = 0, string Mode = "realm", int CharacterFileVersion = 0, int InputReceipt = 0, int RoomDelta = 0, int InputBatch = 0, int RoomInterest = 0);
+public sealed record ServerInfo(int Protocol, int Rules, int RoomStream = 0, string Mode = "realm", int CharacterFileVersion = 0, int InputReceipt = 0, int RoomDelta = 0, int InputBatch = 0, int RoomInterest = 0, int RoomInputProgress = 0);
 public sealed record RoomUpdate(RoomView? State, int Status = 200, string? Error = null);
 public sealed record Credentials(string Username, string Password);
 public sealed record LoginResult(string Token, string Username);
@@ -23,8 +23,11 @@ public sealed record InputRequest(long Sequence, CommandKind Kind, int X = 0, in
 public sealed record InputBatchRequest(InputRequest[] Inputs);
 // Acceptance queues a command for a later tick; it is not a simulation result.
 public sealed record InputReceipt(Guid Room, uint Actor, long NextSequence, long Tick);
+// ProcessedSequence is v4-only: commands at or below it were consumed or discarded,
+// not necessarily successful. Null means this connection has no explicit progress cursor.
 public sealed record RoomView(Guid Id, string Name, bool Started, bool Host, uint Actor, long NextSequence,
-    long Tick, string StateHash, MemberInfo[] Members, EntityState[] Entities, ItemState[] Items);
+    long Tick, string StateHash, MemberInfo[] Members, EntityState[] Entities, ItemState[] Items,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] long? ProcessedSequence = null);
 public sealed record ApiError(string Error);
 
 public static class Arena

@@ -18,6 +18,7 @@ public sealed partial class Realm : IDisposable
         public SavedRoom Saved = saved;
         public GameSimulation? Game = saved.Game?.Restore(rules);
         public RoomSnapshot? Snapshot;
+        public readonly Dictionary<uint, long> Processed = new();
         public readonly Dictionary<Guid, DateTimeOffset> Seen = new();
         public readonly Dictionary<Guid, DateTimeOffset> Moved = new();
     }
@@ -194,10 +195,14 @@ public sealed partial class Realm : IDisposable
     public RoomView State(string token, Guid id) { lock (gate) { var (r, c) = Access(token, id); return View(r, c); } }
     // Only internal serialization may borrow these arrays. Authorization and recipient metadata
     // are evaluated on every read, even when the simulation snapshot is reused.
-    internal RoomView StreamState(string token, Guid id, bool interest = false, RoomView? previous = null)
+    internal RoomView StreamState(string token, Guid id, bool interest = false, RoomView? previous = null, bool inputProgress = false)
     {
         RoomView view;
-        lock (gate) { var (r, c) = Access(token, id); view = View(r, c, shared: true); }
+        lock (gate)
+        {
+            var (r, c) = Access(token, id); view = View(r, c, shared: true);
+            if (inputProgress) view = view with { ProcessedSequence = r.Processed.GetValueOrDefault(view.Actor) };
+        }
         // Filtering is connection-specific; immutable full snapshots remain shared.
         return interest ? RoomInterest.Project(view, previous) : view;
     }
@@ -302,11 +307,19 @@ public sealed partial class Realm : IDisposable
         if (game.Submit(new(game.Tick + 1, cursor.Sequence + 1, e.Id, e.Region, CommandKind.SetMove)) != CommandResult.Accepted) throw new InvalidDataException("Cannot stop disconnected actor.");
         r.Snapshot = null;
     }
+    // Every accepted client command targets the next tick. Once that tick is stepped,
+    // or its pending commands are deliberately discarded, none may be replayed.
+    // This is a consumed cursor, not proof that an attack/move succeeded.
+    private static void MarkProcessed(Room r)
+    {
+        foreach (var member in r.Saved.Members) r.Processed[member.Actor] = member.ClientSequence;
+    }
     private static void StopAll(Room r)
     {
         r.Snapshot = null;
         var s = r.Game!.CaptureSnapshot();
         r.Game = GameSimulation.Restore(s with { PendingCommands = [], Entities = s.Entities.Select(e => e with { MoveX = 0, MoveY = 0 }).ToArray() });
+        MarkProcessed(r);
     }
     public void Tick()
     {
@@ -316,7 +329,7 @@ public sealed partial class Realm : IDisposable
             foreach (var r in rooms.Values.Where(r => r.Game is not null))
             {
                 foreach (var m in r.Saved.Members) if (!r.Moved.TryGetValue(m.Character, out var moved) || clock.GetUtcNow() - moved > TimeSpan.FromMilliseconds(500)) Stop(r, m);
-                if (r.Seen.Values.Any(t => clock.GetUtcNow() - t < TimeSpan.FromSeconds(15))) r.Game!.Step();
+                if (r.Seen.Values.Any(t => clock.GetUtcNow() - t < TimeSpan.FromSeconds(15))) { r.Game!.Step(); MarkProcessed(r); }
                 else StopAll(r);
             }
         }
