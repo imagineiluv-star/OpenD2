@@ -7,7 +7,11 @@ public sealed record RoomUpdate(RoomView? State, int Status = 200, string? Error
 public sealed record Credentials(string Username, string Password);
 public sealed record LoginResult(string Token, string Username);
 public sealed record NameRequest(string Name);
-public sealed record CharacterInfo(Guid Id, string Name, int Victories);
+// Per-character count of finished shared world quests, keyed by world content ID (never by hash).
+// Quests is omitted from the wire until a character has a record, so earlier clients see the same JSON.
+public sealed record QuestRecord(string World, int Completions);
+public sealed record CharacterInfo(Guid Id, string Name, int Victories,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] QuestRecord[]? Quests = null);
 public sealed record WorldContent(string Id, string Hash);
 public sealed record RoomWorldState(WorldContent Content, QuestProgress Quest, long RegionEpoch);
 public sealed record RoomRequest(Guid Character, string Name, string Password,
