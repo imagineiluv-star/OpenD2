@@ -41,6 +41,7 @@ WorldRestartContracts.Run();
 RoomInterestContracts.Run();
 await InputReceiptContracts.Run();
 await InputBatchContracts.Run();
+await PasswordHashingContracts.Run();
 ServerCatalogContracts.Run();
 TimedInviteContracts.Run();
 ConnectionInviteContracts.Run();
