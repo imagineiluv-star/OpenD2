@@ -30,6 +30,7 @@ internal static class CooperativeNetworkContracts
         var proxy = new TcpFaultProxy(url);
         var content = CooperativeWorld.Content;
         long matchedStates = 0, recoveries = 0;
+        SilentStreamContracts.Evidence? silentStream = null;
         void Pass(string name) { checks.Add(name); Console.WriteLine("WORLD NETWORK PASS " + mode + " " + name); }
         try
         {
@@ -132,6 +133,19 @@ internal static class CooperativeNetworkContracts
             if (!survivorFeed.Latest!.Entities.Any(e => e.Kind == EntityKind.Monster) || hostFeed.Latest!.Entities.Any(e => e.Kind == EntityKind.Monster))
                 throw new Exception("Region interest filtering differs from the split party.");
             Pass("fresh input after recovery reaches the split party with region-filtered, hash-identical frames");
+
+            // A receiver that never reads: the server must retire it while the host's WSS and HTTP stay live, and the same
+            // session must reopen a full v5 baseline that still carries the guest's region and visit epoch.
+            var settled = survivorFeed.Latest!;
+            var session = await survivor.Send<LoginResult>(HttpMethod.Post, "v1/login", credentials, stop);
+            await NetworkResilienceContracts.Wait(() => survivorFeed.Finished, stop);
+            silentStream = await SilentStreamContracts.Run(url, ca, session, room.Id, guestActor, b.Id, settled.NextSequence,
+                async () =>
+                {
+                    long tick = hostFeed.Latest!.Tick;
+                    await hostFeed.Until(v => v.Tick >= tick + 10, stop);
+                    await host.Send<CharacterInfo[]>(HttpMethod.Get, "v1/characters", cancellation: stop);
+                }, Pass, stop, (content, Actor(settled, guestActor).Region.Value, settled.World!.RegionEpoch));
             await host.Send<object>(HttpMethod.Post, path + "/close", cancellation: stop);
             result = "PASS";
         }
@@ -145,7 +159,7 @@ internal static class CooperativeNetworkContracts
                 File.WriteAllText(output, JsonSerializer.Serialize(new { result, mode, checks,
                     scope = "loopback-two-production-clients-byte-relay-cooperative-world-v5",
                     impairment = "5/10/15ms-per-chunk-max1024bytes-downstream-hold-and-TCP-cut",
-                    recoveries, matched_states = matchedStates,
+                    recoveries, matched_states = matchedStates, silent_stream = silentStream,
                     proxy.DelayedWrites, proxy.BlockedPumps, proxy.CutConnections, proxy.ForwardedBytes, proxy.Writes,
                     physical_multi_pc = "NOT_RUN", wan = "NOT_RUN", packet_loss = "NOT_RUN", manual_gui = "NOT_RUN",
                     capacity = "NOT_RUN", long_duration = "NOT_RUN" },

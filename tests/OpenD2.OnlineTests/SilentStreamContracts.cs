@@ -16,8 +16,9 @@ internal static class SilentStreamContracts
 
     internal static async Task<Evidence> Run(string url, string ca, LoginResult session,
         Guid room, uint actor, Guid character, long sequence, Func<Task> healthyPeer,
-        Action<string> pass, CancellationToken stop)
+        Action<string> pass, CancellationToken stop, (WorldContent Content, uint Region, long Epoch)? world = null)
     {
+        string protocol = world is null ? RoomInterest.Protocol : RoomFrames.WorldProtocol;
         using var root = X509Certificate2.CreateFromPem(File.ReadAllText(ca));
         using var handler = new SocketsHttpHandler { AllowAutoRedirect = false };
         handler.SslOptions.CertificateChainPolicy = new()
@@ -32,11 +33,17 @@ internal static class SilentStreamContracts
         ClientWebSocket Socket()
         {
             var socket = new ClientWebSocket();
-            socket.Options.AddSubProtocol(RoomInterest.Protocol);
+            socket.Options.AddSubProtocol(protocol);
             socket.Options.SetRequestHeader("Authorization", "Bearer " + session.Token);
             socket.Options.CollectHttpResponseDetails = true;
             socket.Options.KeepAliveInterval = Timeout.InfiniteTimeSpan;
             return socket;
+        }
+        // A fresh login revokes the previous world session; the new token must state the world content again.
+        if (world is { } joined)
+        {
+            using var join = await http.PostAsJsonAsync($"v1/rooms/{room}/join", new JoinRequest(character, "", World: joined.Content), stop);
+            join.EnsureSuccessStatusCode();
         }
         using var silent = Socket();
         await silent.ConnectAsync(uri, http, stop);
@@ -67,12 +74,15 @@ internal static class SilentStreamContracts
             pass("server retires a non-reading TLS stream while peer WSS ticks and HTTP remain live");
             var frame = await Read(replacement, stop);
             var state = RoomFrames.Apply(frame, null, 0, room);
-            if (replacement.SubProtocol != RoomInterest.Protocol || frame.State is null ||
+            if (replacement.SubProtocol != protocol || frame.State is null ||
                 state.Actor != actor || state.NextSequence != sequence || !state.Started || state.Host ||
                 !state.Members.Any(m => m.Character == character && m.Actor == actor))
                 throw new Exception("Same-session recovery lost its baseline, identity or input cursor.");
+            if (world is { } expected && (state.World is null || state.World.Content != expected.Content || state.World.RegionEpoch != expected.Epoch ||
+                state.Entities.Single(e => e.Id.Value == actor).Region.Value != expected.Region))
+                throw new Exception("Same-session world recovery lost its content, region or visit epoch.");
             using var response = await http.PostAsJsonAsync($"v1/rooms/{room}/input/ack",
-                new InputRequest(sequence, CommandKind.SetMove), stop);
+                new InputRequest(sequence, CommandKind.SetMove, Region: world?.Region, RegionEpoch: world?.Epoch), stop);
             response.EnsureSuccessStatusCode();
             var receipt = await response.Content.ReadFromJsonAsync<InputReceipt>(stop)
                 ?? throw new Exception("Missing recovered input receipt.");
@@ -86,7 +96,8 @@ internal static class SilentStreamContracts
                 state = RoomFrames.Apply(next, state, frame.Sequence, room); frame = next;
             }
             await healthyPeer();
-            pass("same token reopens a full v3 baseline and observes exactly one fresh input without relogin");
+            pass(world is null ? "same token reopens a full v3 baseline and observes exactly one fresh input without relogin"
+                : "same token reopens a full v5 world baseline (content, region, visit epoch) and observes exactly one fresh input");
             return new("PASS", eviction, conflicts, state.NextSequence);
         }
         finally { replacement?.Dispose(); }
