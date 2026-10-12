@@ -219,14 +219,14 @@ public partial class OnlinePanel
         }, new JsonSerializerOptions { WriteIndented = true }));
         GD.Print("OPEND2_ONLINE_GAMEPLAY_PASS " + role + " MANUAL_GUI_NOT_RUN");
     }
-    private static (int X, int Y) GameplayDirection(EntityState[] entities, uint actor, GamePosition target)
+    private static (int X, int Y) GameplayDirection(EntityState[] entities, uint actor, GamePosition target, CollisionGrid? collision = null)
     {
         var me = entities.Single(e => e.Id.Value == actor);
         var directions = new (int X, int Y)[] { (1, 0), (0, 1), (-1, 0), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1) };
-        var grid = Arena.Grid();
+        var grid = collision ?? Arena.Grid();
         // Three-tick lookahead avoids live bodies using the same collision bounds.
         var candidates = directions.Select(d => (Direction: d, Position: new GamePosition(me.Position.X + d.X * 96, me.Position.Y + d.Y * 96)))
-            .Where(c => grid.CanOccupy(c.Position) && !entities.Any(e => e.IsAlive && e.Id != me.Id &&
+            .Where(c => grid.CanOccupy(c.Position) && !entities.Any(e => e.IsAlive && e.Id != me.Id && e.Region == me.Region &&
                 Math.Abs(e.Position.X - c.Position.X) < CollisionGrid.BodyRadius * 2 && Math.Abs(e.Position.Y - c.Position.Y) < CollisionGrid.BodyRadius * 2))
             .OrderBy(c => Distance(c.Position, target)).ToArray();
         if (candidates.Length == 0) throw new InvalidDataException("Test movement has no collision-free direction.");

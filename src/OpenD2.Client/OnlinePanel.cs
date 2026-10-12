@@ -37,7 +37,7 @@ public partial class OnlinePanel : VBoxContainer
     private int moveX, moveY;
     public override void _Ready()
     {
-        AddChild(new Label { Text = "Online — account → character → room → cooperative arena", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+        AddChild(new Label { Text = "Online — account → character → room", AutowrapMode = TextServer.AutowrapMode.WordSmart });
         serverMode.AddItem("Realm — server characters");
         serverMode.AddItem("Open — personal profiles (preview)");
         AddChild(serverMode);
@@ -60,17 +60,18 @@ public partial class OnlinePanel : VBoxContainer
         Button(chars, "Create character", async () => { RequireLogin(); await client!.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest(characterName.Text), lifetime.Token); await Refresh(); });
         Confirm(chars, "Delete selected", "Delete this character permanently?", async () => { RequireLogin(); await client!.Send<object>(HttpMethod.Delete, "v1/characters/" + SelectedCharacter(), cancellation: lifetime.Token); await Refresh(); });
         AddProfileControls();
+        worldChoice.AddItem("Arena"); AddChild(worldChoice);
         var lobby = new HFlowContainer(); AddChild(lobby); lobby.AddChild(roomName); lobby.AddChild(roomPassword); lobby.AddChild(rooms);
         Button(lobby, "Refresh", Refresh);
-        Button(lobby, "Create room", async () => { RequireLogin(); Apply(await client!.Send<RoomView>(HttpMethod.Post, "v1/rooms", new RoomRequest(SelectedCharacter(), roomName.Text, roomPassword.Text), lifetime.Token)); });
-        Button(lobby, "Join / reconnect", async () => { RequireLogin(); if (rooms.Selected < 0 || rooms.Selected >= roomList.Length) throw new InvalidOperationException("Select a room."); Apply(await client!.Send<RoomView>(HttpMethod.Post, $"v1/rooms/{roomList[rooms.Selected].Id}/join", new JoinRequest(SelectedCharacter(), roomPassword.Text), lifetime.Token)); });
+        Button(lobby, "Create room", CreateRoom);
+        Button(lobby, "Join / reconnect", JoinSelectedRoom);
         var actions = new HFlowContainer(); AddChild(actions);
         Button(actions, "Start (host)", async () => Apply(await Room<RoomView>("start")));
         Button(actions, "Save server progress", async () => { await Room<object>("save"); status.Text = "Server checkpoint saved."; });
         Button(actions, "Leave lobby", async () => { await Room<object>("leave"); ClearRoom(); await Refresh(); });
         Confirm(actions, "Close room (host)", "Close this room for everyone? Owned bag, equipment and belt items carry to new rooms; ground items are left behind.", async () => { await Room<object>("close"); ClearRoom(); await Refresh(); });
         AddChild(status); AddChild(details); AddChild(arena);
-        AddChild(new Label { Text = "Click arena to focus. WASD/arrows: move; Space: attack; Q: skill; F: pick up. Server judges all actions.\nFour-player preview arena. Original campaign/art is not connected to online play yet.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
+        AddChild(new Label { Text = "Click the map to focus. WASD/arrows: move; Space: attack; Q: skill; F: pick up; E: nearby scout / portal.\nUp to four players. Camp / Field is a synthetic world preview; original campaign/art is not connected yet.", AutowrapMode = TextServer.AutowrapMode.WordSmart });
         if (OS.GetCmdlineUserArgs().Contains("--smoke-test")) GD.Print("OPEND2_ONLINE_UI_READY");
     }
     private void Button(Node parent, string text, Func<Task> action)
@@ -86,12 +87,12 @@ public partial class OnlinePanel : VBoxContainer
     }
     private void UserAction(Func<Task> action)
     {
-        var connection = client; var room = state?.Id;
+        var connection = client; var room = state?.Id; var visit = state?.World?.RegionEpoch;
         Guid? character = characters.Selected >= 0 && characters.Selected < characterList.Length ? characterList[characters.Selected].Id : null;
         _ = Run(async () =>
         {
             Guid? current = characters.Selected >= 0 && characters.Selected < characterList.Length ? characterList[characters.Selected].Id : null;
-            if (client != connection || state?.Id != room || character != current) throw new InvalidOperationException("Selection changed; retry the action.");
+            if (client != connection || state?.Id != room || character != current || state?.World?.RegionEpoch != visit) throw new InvalidOperationException("Selection changed; retry the action.");
             await action();
         }, true);
     }
@@ -136,10 +137,13 @@ public partial class OnlinePanel : VBoxContainer
     {
         RequireLogin(); var selected = characters.Selected >= 0 && characters.Selected < characterList.Length ? characterList[characters.Selected].Id : Guid.Empty;
         characterList = await client!.Send<CharacterInfo[]>(HttpMethod.Get, "v1/characters", cancellation: lifetime.Token);
-        roomList = await client.Send<RoomInfo[]>(HttpMethod.Get, "v1/rooms", cancellation: lifetime.Token);
+        await RefreshWorlds();
+        Guid selectedRoom = rooms.Selected >= 0 && rooms.Selected < roomList.Length ? roomList[rooms.Selected].Id : Guid.Empty;
+        roomList = await client.Send<RoomInfo[]>(HttpMethod.Get, RoomsPath, cancellation: lifetime.Token);
         characters.Clear(); foreach (var c in characterList) characters.AddItem($"{c.Name} ({c.Victories} victories)");
         int index = Array.FindIndex(characterList, c => c.Id == selected); if (index >= 0) characters.Select(index);
-        rooms.Clear(); foreach (var r in roomList) rooms.AddItem($"{r.Name} {r.Players}/4 {(r.Started ? "playing" : "lobby")} {(r.Locked ? "locked" : "")}");
+        rooms.Clear(); foreach (var r in roomList) rooms.AddItem($"{r.Name} [{WorldTitle(r.World)}] {r.Players}/4 {(r.Started ? "playing" : "lobby")} {(r.Locked ? "locked" : "")}");
+        int roomIndex = Array.FindIndex(roomList, r => r.Id == selectedRoom); if (roomIndex >= 0) rooms.Select(roomIndex);
     }
     private Task<T> Room<T>(string action)
     {
@@ -152,10 +156,24 @@ public partial class OnlinePanel : VBoxContainer
         // HTTP command replies and pushed states use independent connections.
         // Never roll an input cursor or a running simulation back to an older view.
         if (!changedRoom && state is { } previous && (next.Tick < previous.Tick || next.NextSequence < previous.NextSequence || (previous.Started && !next.Started))) return;
+        ValidateWorld(next.World?.Content);
+        if (!changedRoom && state is { } current && next.World?.Content != current.World?.Content)
+            throw new InvalidDataException("Room content changed. Reconnect with a matching build.");
+        if (!changedRoom && next.World?.RegionEpoch < state?.World?.RegionEpoch) return;
+        bool changedVisit = changedRoom || state?.World?.RegionEpoch != next.World?.RegionEpoch;
+        if (changedVisit) { moveX = moveY = 0; poll = 0; }
+        arena.State = next;
         nextInputSequence = changedRoom ? next.NextSequence : Math.Max(nextInputSequence, next.NextSequence);
-        state = next; arena.State = next; arena.QueueRedraw();
-        details.Text = $"{next.Name} | {(next.Started ? "Playing" : "Lobby")} | tick {next.Tick} | actor {next.Actor} | {client?.RoomTransport}\n" + string.Join(" / ", next.Members.Select(m => m.Name));
-        if (next.Started) { var me = next.Entities.First(e => e.Id.Value == next.Actor); details.Text += $" | HP {me.Health}/{me.MaxHealth} | Mana {me.Mana}/{me.MaxMana}"; }
+        state = next; worldChoice.Disabled = true;
+        if (worldChoice.ItemCount > 1) worldChoice.Select(next.World is null ? 0 : 1);
+        arena.QueueRedraw();
+        details.Text = $"{next.Name} | {(next.Started ? "Playing" : "Lobby")} | tick {next.Tick} | actor {next.Actor} | {client?.RoomTransport}\n" + string.Join(" / ", next.Members.Select(m => m.Name + (next.World is not null && next.Started ? " (" + RegionName(next.Entities.Single(e => e.Id.Value == m.Actor)) + ")" : "")));
+        if (next.Started)
+        {
+            var me = next.Entities.First(e => e.Id.Value == next.Actor);
+            details.Text += $" | HP {me.Health}/{me.MaxHealth} | Mana {me.Mana}/{me.MaxMana}";
+            if (next.World is { } world) details.Text += $"\n{RegionName(me)} | Shared quest: {world.Quest.Stage} ({world.Quest.Defeated}/{world.Quest.Required})";
+        }
         if (changedRoom) StartRoomStream(next.Id);
     }
     private void StartRoomStream(Guid id)
@@ -163,13 +181,13 @@ public partial class OnlinePanel : VBoxContainer
         StopRoomStream();
         var source = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         roomStream = source;
-        _ = ReadRoomStream(client!, id, source);
+        _ = ReadRoomStream(client!, id, source, state?.World?.Content);
     }
-    private async Task ReadRoomStream(OnlineClient owner, Guid id, CancellationTokenSource source)
+    private async Task ReadRoomStream(OnlineClient owner, Guid id, CancellationTokenSource source, WorldContent? world)
     {
         try
         {
-            await foreach (var update in owner.WatchRoom(id, source.Token))
+            await foreach (var update in owner.WatchRoom(id, source.Token, world))
             {
                 if (source.IsCancellationRequested || roomStream != source || client != owner || state?.Id != id) return;
                 ApplyStream(update);
@@ -189,7 +207,7 @@ public partial class OnlinePanel : VBoxContainer
         {
             try { previous.Cancel(); } catch (ObjectDisposedException) { }
         }
-        streamError = null; streamFrames = 0; arena.CancelPrediction();
+        streamError = null; streamFrames = 0; arena.ResetMotion();
     }
     private void ApplyStream(RoomView update)
     {
@@ -209,8 +227,8 @@ public partial class OnlinePanel : VBoxContainer
         }
         throw new TimeoutException("Room stream did not deliver a fresh state.");
     }
-    private void ClearRoom() { StopRoomStream(); state = null; nextInputSequence = 0; arena.State = null; arena.QueueRedraw(); details.Text = ""; moveX = moveY = 0; }
-    private void Reset() { requests.Clear(); signedIn = false; connectedAddress = null; serverMode.Disabled = false; client?.Dispose(); client = null; ClearRoom(); characters.Clear(); rooms.Clear(); }
+    private void ClearRoom() { StopRoomStream(); state = null; nextInputSequence = 0; arena.State = null; arena.QueueRedraw(); details.Text = ""; moveX = moveY = 0; worldChoice.Disabled = !signedIn; }
+    private void Reset() { requests.Clear(); signedIn = false; connectedAddress = null; serverMode.Disabled = false; client?.Dispose(); client = null; ClearRoom(); characters.Clear(); rooms.Clear(); worldChoice.Clear(); worldChoice.AddItem("Arena"); worldChoice.Disabled = true; }
     public override void _Process(double delta)
     {
         UpdateHostStatus();
@@ -227,19 +245,23 @@ public partial class OnlinePanel : VBoxContainer
         _ = Run(async () =>
         {
             if (state!.Started && state.Entities.First(e => e.Id.Value == state.Actor).IsAlive && (x != 0 || y != 0 || x != moveX || y != moveY))
-            { await InputCommand(CommandKind.SetMove, x, y); moveX = x; moveY = y; }
+            { await InputCommand(CommandKind.SetMove, x, y); }
         });
     }
     private async Task InputCommand(CommandKind kind, int x = 0, int y = 0, uint target = 0, ulong item = 0)
     {
         if (state is null) return;
-        var owner = client!;
+        var owner = client!; var sentView = state;
         if (kind == CommandKind.SetMove) arena.PredictMove(nextInputSequence, x, y);
         else arena.CancelPrediction();
         try
         {
-            var receipt = await owner.SendInput(state.Id, new InputRequest(nextInputSequence, kind, x, y, target, item), lifetime.Token);
-            if (client == owner) ApplyInputReceipt(receipt);
+            var receipt = await owner.SendInput(sentView.Id, MakeInput(sentView, nextInputSequence, kind, x, y, target, item), lifetime.Token);
+            if (client == owner)
+            {
+                ApplyInputReceipt(receipt);
+                if (kind == CommandKind.SetMove && state?.Id == sentView.Id && state.World?.RegionEpoch == sentView.World?.RegionEpoch) { moveX = x; moveY = y; }
+            }
         }
         catch { if (client == owner) arena.CancelPrediction(); throw; }
     }
@@ -258,20 +280,21 @@ public partial class OnlinePanel : VBoxContainer
     private async Task InputWithMovement(CommandKind kind, int x = 0, int y = 0, uint target = 0, ulong item = 0)
     {
         if (state is null) return;
-        var owner = client!;
+        var owner = client!; var sentView = state;
         if (owner.SupportsInputBatches)
         {
             arena.CancelPrediction();
-            var receipt = await owner.SendInputs(state.Id,
-                [new(nextInputSequence, CommandKind.SetMove, x, y), new(checked(nextInputSequence + 1), kind, Target: target, Item: item)], lifetime.Token);
+            var receipt = await owner.SendInputs(sentView.Id,
+                [MakeInput(sentView, nextInputSequence, CommandKind.SetMove, x, y), MakeInput(sentView, checked(nextInputSequence + 1), kind, target: target, item: item)], lifetime.Token);
             if (client == owner) ApplyInputReceipt(receipt);
         }
         else
         {
             await InputCommand(CommandKind.SetMove, x, y);
+            if (state?.Id != sentView.Id || state.World?.RegionEpoch != sentView.World?.RegionEpoch) return;
             await InputCommand(kind, target: target, item: item);
         }
-        if (client == owner) { moveX = x; moveY = y; }
+        if (client == owner && state?.Id == sentView.Id && state.World?.RegionEpoch == sentView.World?.RegionEpoch) { moveX = x; moveY = y; }
     }
     private void ApplyInputReceipt(InputReceipt receipt)
     {
@@ -289,67 +312,18 @@ public partial class OnlinePanel : VBoxContainer
         if (key.Keycode is Key.Space or Key.Q)
         {
             var me = state.Entities.First(e => e.Id.Value == state.Actor);
-            var target = state.Entities.Where(e => e.Kind == EntityKind.Monster && e.IsAlive).OrderBy(e => Math.Abs(e.Position.X - me.Position.X) + Math.Abs(e.Position.Y - me.Position.Y)).FirstOrDefault();
+            var target = state.Entities.Where(e => e.Kind == EntityKind.Monster && e.IsAlive && e.Region == me.Region).OrderBy(e => Math.Abs(e.Position.X - me.Position.X) + Math.Abs(e.Position.Y - me.Position.Y)).FirstOrDefault();
             if (target.Id.Value != 0) UserAction(() => InputAction(key.Keycode == Key.Q ? CommandKind.CastSkill : CommandKind.Attack, target: target.Id.Value));
         }
         else if (key.Keycode == Key.F)
         {
             var me = state.Entities.First(e => e.Id.Value == state.Actor);
-            var item = state.Items.Where(i => i.Location == ItemLocation.Ground).OrderBy(i => Math.Abs(i.Position.X - me.Position.X) + Math.Abs(i.Position.Y - me.Position.Y)).FirstOrDefault();
+            var item = state.Items.Where(i => i.Location == ItemLocation.Ground && i.Region == me.Region).OrderBy(i => Math.Abs(i.Position.X - me.Position.X) + Math.Abs(i.Position.Y - me.Position.Y)).FirstOrDefault();
             if (item.Id.Value != 0) UserAction(() => InputAction(CommandKind.Pickup, item: item.Id.Value));
         }
+        else if (key.Keycode == Key.E && state.World is not null) UserAction(InteractNearby);
         else return;
         GetViewport().SetInputAsHandled();
     }
     public override void _ExitTree() { StopRoomStream(); lifetime.Cancel(); client?.Dispose(); personalHost.Dispose(); lifetime.Dispose(); }
-}
-
-public partial class OnlineArena : Control
-{
-    private static readonly CollisionGrid grid = Arena.Grid();
-    private readonly RoomPresentation presentation = new();
-    private readonly RoomPrediction prediction = new(grid);
-    private RoomView? state;
-    private bool wasAnimating;
-    private static double Now => Time.GetTicksUsec() / 1_000_000.0;
-    public RoomView? State { get => state; set => SetState(value, Now); }
-    internal long PresentationTransitions => presentation.Transitions;
-    internal void SetState(RoomView? value, double now)
-    {
-        if (value is null) { presentation.Reset(); prediction.Reset(); state = null; wasAnimating = false; }
-        else if (presentation.Push(value, now)) { prediction.Push(value, now); state = value; }
-        QueueRedraw();
-    }
-    internal void PredictMove(long sequence, int x, int y, double? now = null) => prediction.Move(sequence, x, y, now ?? Now);
-    internal long PredictionStarts => prediction.Predictions;
-    internal void AcceptInput(InputReceipt receipt) => prediction.Accept(receipt);
-    internal void CancelPrediction() { prediction.Cancel(); QueueRedraw(); }
-    internal DisplayPosition Display(EntityState entity, double now) => entity.Id.Value == state?.Actor
-        ? prediction.Position(entity, now) : presentation.Position(entity, now);
-    public override void _Process(double delta)
-    {
-        bool animating = presentation.IsAnimating(Now) || prediction.IsAnimating(Now);
-        if (animating || wasAnimating) QueueRedraw();
-        wasAnimating = animating;
-    }
-    public override void _GuiInput(InputEvent @event)
-    {
-        if (@event is InputEventMouseButton { Pressed: true }) GrabFocus();
-        if (@event is InputEventKey key && key.PhysicalKeycode is Key.W or Key.A or Key.S or Key.D or Key.Up or Key.Down or Key.Left or Key.Right) AcceptEvent();
-    }
-    public override void _Draw()
-    {
-        float scale = Math.Min(Size.X / Arena.Width, Size.Y / Arena.Height);
-        for (int y = 0; y < Arena.Height; y++) for (int x = 0; x < Arena.Width; x++) DrawRect(new(x * scale, y * scale, scale - 1, scale - 1), grid.At(x, y) == CollisionCell.Open ? new Color(0.12f, 0.19f, 0.14f) : new Color(0.28f, 0.28f, 0.3f));
-        if (State is not { } state) return;
-        double now = Now;
-        foreach (var item in state.Items.Where(i => i.Location == ItemLocation.Ground)) DrawCircle(new Vector2(item.Position.X, item.Position.Y) / 256 * scale, scale * 0.13f, Colors.Gold);
-        foreach (var e in state.Entities)
-        {
-            var display = Display(e, now);
-            var p = new Vector2((float)display.X, (float)display.Y) / 256 * scale;
-            DrawCircle(p, scale * 0.28f, !e.IsAlive ? Colors.Gray : e.Kind == EntityKind.Monster ? Colors.IndianRed : e.Id.Value == state.Actor ? Colors.Cyan : Colors.CornflowerBlue);
-            DrawString(ThemeDB.FallbackFont, p + new Vector2(-10, -12), $"{e.Id.Value}:{e.Health}", fontSize: 13);
-        }
-    }
 }

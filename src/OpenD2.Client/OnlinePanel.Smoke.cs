@@ -18,6 +18,7 @@ public partial class OnlinePanel
         CheckInputReceiptOrdering();
         CheckRoomPresentation();
         CheckRoomPrediction();
+        await CheckWorldView();
         busy = true;
         try
         {
@@ -132,6 +133,7 @@ public partial class OnlinePanel
             busy = true;
             GD.Print("OPEND2_ONLINE_TRANSPORT_PASS " + role + " GUI_NOT_RUN");
             await CheckGameplay(role, secret, character.Id, evidence);
+            await CheckWorldGameplay(role, secret, character.Id, run, evidence);
             GD.Print("OPEND2_INPUT_RECEIPT_GAMEPLAY_PASS " + role);
             if (mode == "open" && role == "host" && System.Environment.GetEnvironmentVariable("OPEND2_TEST_HOST_EXE") is { Length: > 0 } hostExe)
             {
