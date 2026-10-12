@@ -54,6 +54,21 @@ public partial class OnlinePanel
         arena.CancelPrediction();
         if (arena.Display(moving.Entities[0], 3.13).X != 784) throw new Exception("Cancelled correction retained an offset.");
         arena.State = null;
+        var tracked = view with { ProcessedSequence = 0 };
+        arena.SetState(tracked, 4); arena.PredictMove(1, 1, 0, 4); arena.PredictMove(2, 0, 1, 4.04);
+        var prefix = tracked with { Tick = 1, NextSequence = 3, ProcessedSequence = 1,
+            Entities = [me with { Position = new(800, 768), MoveX = 1 }] };
+        arena.SetState(prefix, 4.08);
+        if (arena.Display(prefix.Entities[0], 4.08) != new DisplayPosition(800, 800) || !ReferenceEquals(arena.State, prefix))
+            throw new Exception("Movement history did not replay unconsumed turn from authority.");
+        arena.PredictMove(3, 0, 0, 4.08);
+        if (arena.Display(prefix.Entities[0], 4.12) != new DisplayPosition(800, 800))
+            throw new Exception("Movement history stop did not freeze the replayed path.");
+        arena.CancelPrediction();
+        if (arena.Display(prefix.Entities[0], 4.12) != new DisplayPosition(800, 768))
+            throw new Exception("Movement history survived uncertain input cancellation.");
+        arena.State = null;
+        Godot.GD.Print("OPEND2_MOVEMENT_HISTORY_UI_PASS");
         Godot.GD.Print("OPEND2_ROOM_CORRECTION_UI_PASS");
         Godot.GD.Print("OPEND2_ROOM_PREDICTION_UI_PASS");
     }
