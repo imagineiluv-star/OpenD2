@@ -46,6 +46,7 @@ ConnectionFailureContracts.Run();
 ModeContracts.Run();
 CharacterTransferContracts.Run();
 OpenItemTransferContracts.Run();
+WorldHostLoadContracts.Run();
 InventoryContracts.Run();
 
 static void Check(bool yes, string message) { if (!yes) throw new Exception(message); Console.WriteLine("PASS " + message); }
