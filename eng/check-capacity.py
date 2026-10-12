@@ -55,6 +55,16 @@ def main():
                     or evidence.get('sampled_seconds', 0) < args.seconds
                     or any(evidence.get(key) != 'NOT_RUN' for key in NOT_RUN)):
                 raise ValueError('Incomplete capacity evidence: ' + mode)
+            # CPU/memory of the real server process during the 32-stream window. UNAVAILABLE (restricted process
+            # inspection) must carry no numbers; PASS must carry plausible ones.
+            metrics = evidence.get('server_process_metrics')
+            if metrics == 'PASS':
+                if (not isinstance(evidence.get('server_cpu_ms'), (int, float)) or evidence['server_cpu_ms'] < 0
+                        or not isinstance(evidence.get('server_peak_sampled_working_set_bytes'), int)
+                        or evidence['server_peak_sampled_working_set_bytes'] <= 0):
+                    raise ValueError('Implausible server process metrics: ' + mode)
+            elif metrics != 'UNAVAILABLE' or evidence.get('server_cpu_ms') is not None:
+                raise ValueError('Server process metrics missing: ' + mode)
             report['modes'][mode] = evidence
         report['result'] = 'PASS'
     finally:

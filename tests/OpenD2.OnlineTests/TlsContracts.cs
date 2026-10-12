@@ -94,7 +94,7 @@ internal static class TlsContracts
                 {
                     string mode = name == "open" ? "open" : "realm";
                     await StreamCapacityContracts.Run(url, ca, mode,
-                        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "capacity-" + mode + ".json"), capacitySeconds);
+                        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(output))!, "capacity-" + mode + ".json"), capacitySeconds, process);
                     Pass(mode + " 32 WSS streams, admission limit, slot recovery and room isolation");
                 }
                 else if (worldOnly)
