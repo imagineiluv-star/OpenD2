@@ -12,7 +12,7 @@ internal static class PersonalQuestContracts
 
     // Real server output with one controlled change: both monsters are dead and the quest awaits turn-in,
     // members 1 and 2 stand beside the Guide, member 3 is dead. The state hash is computed by Core, not forged.
-    private static JsonNode ReadyGame()
+    internal static JsonNode ReadyGame()
     {
         var snapshot = CooperativeWorld.Create(3).CaptureSnapshot();
         var entities = snapshot.Entities.Select(e =>

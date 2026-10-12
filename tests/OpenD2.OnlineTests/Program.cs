@@ -36,6 +36,7 @@ RoomSnapshotContracts.Run();
 InputProgressContracts.Run();
 CooperativeRoomContracts.Run();
 PersonalQuestContracts.Run();
+WorldRestartContracts.Run();
 RoomInterestContracts.Run();
 await InputReceiptContracts.Run();
 await InputBatchContracts.Run();
