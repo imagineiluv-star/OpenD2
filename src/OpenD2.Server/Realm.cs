@@ -69,13 +69,31 @@ public sealed partial class Realm : IDisposable
                     (room.Game is not null && !room.Game.Entities.ToArray().Where(e => e.Kind == EntityKind.Player).Select(e => e.Id.Value).Order().SequenceEqual(room.Saved.Members.Select(m => m.Actor).Order())))
                     throw new InvalidDataException("Invalid room members.");
             foreach (var character in characters)
+            {
                 if (character.Inventory is { } inventory) Arena.Create(1).WithCarriedItems(inventory);
+                if (character.Quests is { } quests && !ValidQuests(quests)) throw new InvalidDataException("Invalid character quest records.");
+            }
+            // A credit exists only while the completed shared quest that earned it is still part of the saved room.
+            foreach (var room in rooms.Values)
+                if (room.Saved.Members.Any(m => m.QuestCredit) && (room.Saved.World is null || room.Game?.QuestState != QuestStage.Completed))
+                    throw new InvalidDataException("Quest credit requires a completed world quest.");
             // Restarts never replay held movement. Preserve combat/items and command cursors.
             foreach (var room in rooms.Values.Where(r => r.Game is not null)) StopAll(room);
         }
         catch { writerLock.Dispose(); throw; }
     }
     private static void Need(bool condition, int status, string message) { if (!condition) throw new Rejected(status, message); }
+    private const int MaxQuestRecords = 8, MaxQuestCompletions = 1_000_000;
+    private static bool ValidQuests(QuestRecord[] quests) =>
+        quests.Length <= MaxQuestRecords && quests.All(q => q is not null && q.World is not null && Regex.IsMatch(q.World, "\\A[a-z0-9-]{1,64}\\z") && q.Completions is >= 1 and <= MaxQuestCompletions) &&
+        quests.Select(q => q.World).Distinct().Count() == quests.Length;
+    // Saturating: Close() must not throw after it has begun updating characters.
+    private static QuestRecord[] WithCompletion(QuestRecord[]? records, string world)
+    {
+        var list = (records ?? []).ToList(); int at = list.FindIndex(q => q.World == world);
+        if (at < 0) list.Add(new(world, 1)); else list[at] = list[at] with { Completions = Math.Min(MaxQuestCompletions, list[at].Completions + 1) };
+        return list.ToArray();
+    }
     private static string Name(string value)
     {
         Need(value is not null && Regex.IsMatch(value, "\\A[a-zA-Z0-9_-]{3,24}\\z"), 400, "Name requires 3–24 ASCII letters, digits, _ or -."); return value!;
@@ -117,7 +135,7 @@ public sealed partial class Realm : IDisposable
         }
     }
     public object Logout(string token) { lock (gate) { Authorize(token); sessions.Remove(token); foreach (var r in rooms.Values) r.WorldSessions.Remove(token); return new { ok = true }; } }
-    public CharacterInfo[] Characters(string token) { lock (gate) { var account = Authorize(token); return characters.Where(c => c.Account == account).Select(c => new CharacterInfo(c.Id, c.Name, c.Victories)).ToArray(); } }
+    public CharacterInfo[] Characters(string token) { lock (gate) { var account = Authorize(token); return characters.Where(c => c.Account == account).Select(c => new CharacterInfo(c.Id, c.Name, c.Victories, c.Quests is { Length: > 0 } quests ? quests.ToArray() : null)).ToArray(); } }
     public CharacterInfo CreateCharacter(string token, string name)
     {
         name = Name(name);
@@ -362,6 +380,7 @@ public sealed partial class Realm : IDisposable
                 if (r.Seen.Values.Any(t => clock.GetUtcNow() - t < TimeSpan.FromSeconds(15)))
                 {
                     r.Game!.Step();
+                    bool questCompleted = false;
                     foreach (var change in r.Game.Events)
                         if (change.Kind == SimulationEventKind.RegionChanged)
                         {
@@ -369,6 +388,11 @@ public sealed partial class Realm : IDisposable
                             r.Moved.Remove(member.Character); // A lease never follows an actor through a portal.
                             r.Saved = r.Saved with { Members = r.Saved.Members.Select(m => m == member ? m with { RegionEpoch = r.Game.Tick } : m).ToArray() };
                         }
+                        else if (change.Kind == SimulationEventKind.QuestChanged && change.Value == (int)QuestStage.Completed) questCompleted = true;
+                    // Completion happens once per room. Credit follows the Core reward rule: living participants only,
+                    // judged at the end of the completing tick. Dead members are never revived, so they never qualify later.
+                    if (questCompleted && r.Saved.World is not null)
+                        r.Saved = r.Saved with { Members = r.Saved.Members.Select(m => r.Game.GetEntity(new(m.Actor)).IsAlive ? m with { QuestCredit = true } : m).ToArray() };
                     MarkProcessed(r);
                 }
                 else StopAll(r);
@@ -401,7 +425,8 @@ public sealed partial class Realm : IDisposable
                 {
                     int i = characters.FindIndex(x => x.Id == m.Character);
                     characters[i] = characters[i] with { Victories = checked(characters[i].Victories + (victory ? 1 : 0)),
-                        Inventory = r.Game.CaptureCarriedItems(new(m.Actor)).Select(item => item with { Owner = new(1) }).ToArray() };
+                        Inventory = r.Game.CaptureCarriedItems(new(m.Actor)).Select(item => item with { Owner = new(1) }).ToArray(),
+                        Quests = m.QuestCredit && r.Saved.World is { } world ? WithCompletion(characters[i].Quests, world.Id) : characters[i].Quests };
                 }
             }
             rooms.Remove(id); Save(); return new { ok = true };

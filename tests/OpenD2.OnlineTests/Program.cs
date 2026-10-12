@@ -35,6 +35,7 @@ MovementHistoryContracts.Run();
 RoomSnapshotContracts.Run();
 InputProgressContracts.Run();
 CooperativeRoomContracts.Run();
+PersonalQuestContracts.Run();
 RoomInterestContracts.Run();
 await InputReceiptContracts.Run();
 await InputBatchContracts.Run();
