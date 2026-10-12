@@ -28,6 +28,7 @@ if (args is ["--host-server", var hostServer])
 if (args.Length != 0) throw new ArgumentException("Unknown online test arguments.");
 await RoomFrameContracts.Run();
 await StreamSendDeadlineContracts.Run();
+await CheckpointContracts.Run();
 RoomPresentationContracts.Run();
 AdaptivePresentationContracts.Run();
 RoomPredictionContracts.Run();
