@@ -139,6 +139,14 @@ internal static class TlsContracts
                         throw new Exception("TLS room ownership.");
                     await client.Send<object>(HttpMethod.Post, "v1/rooms/" + room.Id + "/close");
                     Pass("trusted TLS health, login, character and room via production OnlineClient");
+                    if (!client.SupportsCharacterProgress) throw new Exception("Realm server did not advertise character progression.");
+                    var classed = await client.CreateCharacter("TLSAmazon", OpenD2.Core.CharacterClass.Amazon);
+                    if (classed.Progress is not { Class: OpenD2.Core.CharacterClass.Amazon, Level: 1, StatPoints: 0 }) throw new Exception("Realm server did not create a level 1 Amazon.");
+                    try { await client.SpendSkill(classed.Id, 101); throw new Exception("Spent a skill point that was never earned."); }
+                    catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.Conflict) { }
+                    try { await client.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest("TLSBadClass", "Wizard")); throw new Exception("Unknown class accepted."); }
+                    catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.BadRequest) { }
+                    Pass("character class creation and point-spending refusals over TLS via production OnlineClient");
                     try { await client.Send<OpenCharacter>(HttpMethod.Get, $"v1/characters/{character.Id}/export"); throw new Exception("Realm export accepted."); }
                     catch (HttpRequestException error) when (error.StatusCode == HttpStatusCode.Forbidden) { }
                     try { await client.Send<CharacterInfo>(HttpMethod.Post, "v1/characters/import", new OpenCharacter(1, OpenD2.Core.GameSimulation.RulesVersion, "open", "ForeignHero", 1)); throw new Exception("Realm import accepted."); }

@@ -22,6 +22,8 @@ public sealed partial class OnlineClient : IDisposable
     public bool SupportsRoomInterest { get; private set; }
     public bool SupportsRoomInputProgress { get; private set; }
     public bool SupportsWorldRooms { get; private set; }
+    // Characters can have a class, earn experience and spend attribute and skill points on this server.
+    public bool SupportsCharacterProgress { get; private set; }
     public bool SupportsInputBatches { get; private set; }
     private long inputBatchRequests;
     public long InputBatchRequests => Interlocked.Read(ref inputBatchRequests);
@@ -91,7 +93,7 @@ public sealed partial class OnlineClient : IDisposable
         var health = await Send<ServerInfo>(HttpMethod.Get, "health", cancellation: cancellation);
         if (health.Protocol != 1 || health.Rules != OpenD2.Core.GameSimulation.RulesVersion || health.RoomStream != 1)
             throw new InvalidDataException("Server protocol or game rules do not match this client.");
-        if (Mode == "open" && health.CharacterFileVersion != 3)
+        if (Mode == "open" && health.CharacterFileVersion != 4)
             throw new InvalidDataException("Open character file support does not match. Use the same client/server build.");
         if (health.Mode != Mode) throw new InvalidDataException("Server mode does not match the selected character mode.");
         SupportsInputReceipts = health.InputReceipt == 1;
@@ -100,6 +102,7 @@ public sealed partial class OnlineClient : IDisposable
         SupportsRoomInputProgress = health.RoomInputProgress == 1 && SupportsRoomInterest;
         SupportsInputBatches = health.InputBatch == 1;
         SupportsWorldRooms = health.RoomWorld == 1 && SupportsRoomInputProgress;
+        SupportsCharacterProgress = health.CharacterProgress == 1;
     }
     public async Task<InputReceipt> SendInput(Guid room, InputRequest input, CancellationToken cancellation = default)
     {
@@ -132,6 +135,21 @@ public sealed partial class OnlineClient : IDisposable
             throw new InvalidDataException("Invalid batch receipt. Reconnect to recover the input sequence.");
         Interlocked.Increment(ref inputBatchRequests);
         return receipt;
+    }
+    public async Task<CharacterInfo> CreateCharacter(string name, OpenD2.Core.CharacterClass? characterClass = null, CancellationToken cancellation = default)
+    {
+        if (characterClass is not null && !SupportsCharacterProgress) throw new NotSupportedException("Server does not support character classes.");
+        return await Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new NameRequest(name, characterClass?.ToString()), cancellation);
+    }
+    public async Task<CharacterInfo> SpendStat(Guid id, OpenD2.Core.CharacterStat stat, CancellationToken cancellation = default)
+    {
+        if (!SupportsCharacterProgress) throw new NotSupportedException("Server does not support character progression.");
+        return await Send<CharacterInfo>(HttpMethod.Post, $"v1/characters/{id}/stats", new StatRequest(stat.ToString()), cancellation);
+    }
+    public async Task<CharacterInfo> SpendSkill(Guid id, int skill, CancellationToken cancellation = default)
+    {
+        if (!SupportsCharacterProgress) throw new NotSupportedException("Server does not support character progression.");
+        return await Send<CharacterInfo>(HttpMethod.Post, $"v1/characters/{id}/skills", new SkillRequest(skill), cancellation);
     }
     public async Task ExportCharacter(Guid id, string path, CancellationToken cancellation = default)
     {

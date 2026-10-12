@@ -41,10 +41,13 @@ public sealed partial class Realm : IDisposable
     private long snapshotBuilds;
     internal long SnapshotBuilds { get { lock (gate) return snapshotBuilds; } }
     public string Mode { get; }
-    public Realm(string directory, TimeProvider? time = null, string mode = "realm")
+    // The rules every character's progression is checked against, on load and on every change. Preview unless the operator supplies others.
+    internal ProgressionTables Tables { get; }
+    internal SkillTable SkillTree { get; }
+    public Realm(string directory, TimeProvider? time = null, string mode = "realm", ProgressionTables? tables = null, SkillTable? skills = null)
     {
         if (mode is not ("realm" or "open")) throw new ArgumentException("Unknown online mode.", nameof(mode));
-        Mode = mode;
+        Mode = mode; Tables = tables ?? ProgressionTables.Preview; SkillTree = skills ?? SkillTable.Preview;
         clock = time ?? TimeProvider.System;
         Directory.CreateDirectory(directory);
         file = Path.Combine(directory, "realm.json");
@@ -78,7 +81,12 @@ public sealed partial class Realm : IDisposable
             {
                 if (character.Inventory is { } inventory) Arena.Create(1).WithCarriedItems(inventory);
                 if (character.Quests is { } quests && !QuestRecords.IsValid(quests)) throw new InvalidDataException("Invalid character quest records.");
+                if (character.Progress is { } progress) Progression.Validate(Tables, SkillTree, progress);
             }
+            // Experience belongs to a started room and to a character that has a class to spend it on.
+            foreach (var room in rooms.Values)
+                if (room.Saved.Members.Any(m => m.Experience > 0 && (room.Game is null || characters.Single(c => c.Id == m.Character).Progress is null)))
+                    throw new InvalidDataException("Room experience requires a started room and a character with a class.");
             // A credit exists only while the completed shared quest that earned it is still part of the saved room.
             foreach (var room in rooms.Values)
                 if (room.Saved.Members.Any(m => m.QuestCredit && (room.Saved.World is null || room.Game is null || room.Game.GetQuest(new(m.Actor)) != QuestStage.Completed)))
@@ -158,15 +166,17 @@ public sealed partial class Realm : IDisposable
         }
     }
     public object Logout(string token) { lock (gate) { Authorize(token); sessions.Remove(token); foreach (var r in rooms.Values) r.WorldSessions.Remove(token); return new { ok = true }; } }
-    public CharacterInfo[] Characters(string token) { lock (gate) { var account = Authorize(token); return characters.Where(c => c.Account == account).Select(c => new CharacterInfo(c.Id, c.Name, c.Victories, c.Quests is { Length: > 0 } quests ? quests.ToArray() : null)).ToArray(); } }
-    public CharacterInfo CreateCharacter(string token, string name)
+    public CharacterInfo[] Characters(string token) { lock (gate) { var account = Authorize(token); return characters.Where(c => c.Account == account).Select(Info).ToArray(); } }
+    private static CharacterInfo Info(Character c) => new(c.Id, c.Name, c.Victories, c.Quests is { Length: > 0 } quests ? quests.ToArray() : null, c.Progress is { } progress ? progress with { Skills = progress.Skills.ToArray() } : null);
+    public CharacterInfo CreateCharacter(string token, string name, string? characterClass = null)
     {
         name = Name(name);
+        var progress = characterClass is null ? null : Progression.Create(Tables, ParseClass(characterClass));
         lock (gate)
         {
             var account = Authorize(token); Need(characters.Count(c => c.Account == account) < 4, 409, "Four characters per account.");
             Need(!characters.Any(c => c.Account == account && c.Name.Equals(name, StringComparison.OrdinalIgnoreCase)), 409, "Character name already exists.");
-            var character = new Character(Guid.NewGuid(), account, name); characters.Add(character); Save(); return new(character.Id, name, 0);
+            var character = new Character(Guid.NewGuid(), account, name, Progress: progress); characters.Add(character); Save(); return Info(character);
         }
     }
     public OpenCharacter ExportCharacter(string token, Guid id)
@@ -177,8 +187,8 @@ public sealed partial class Realm : IDisposable
             Need(Mode == "open", 403, "Personal characters are only available in Open mode.");
             var c = Owned(account, id);
             Need(!rooms.Values.Any(r => r.Saved.Members.Any(m => m.Character == id)), 409, "Leave or close the room before exporting.");
-            return new(3, GameSimulation.RulesVersion, "open", c.Name, c.Victories,
-                (c.Inventory ?? []).Select(i => new OpenItem(i.Definition, i.Location, i.Slot)).ToArray(), c.Quests?.ToArray() ?? []);
+            return new(4, GameSimulation.RulesVersion, "open", c.Name, c.Victories,
+                (c.Inventory ?? []).Select(i => new OpenItem(i.Definition, i.Location, i.Slot)).ToArray(), c.Quests?.ToArray() ?? [], c.Progress);
         }
     }
     public CharacterInfo ImportCharacter(string token, OpenCharacter input)
@@ -189,12 +199,16 @@ public sealed partial class Realm : IDisposable
             Need(Mode == "open", 403, "Personal characters are only available in Open mode.");
             try { input = OpenCharacterFile.Upgrade(input); }
             catch (InvalidDataException error) { throw new Rejected(400, error.Message); }
+            // The file is checked against this server's rules, not the exporting server's.
+            if (input.Progress is { } imported)
+                try { Progression.Validate(Tables, SkillTree, imported); }
+                catch (InvalidDataException error) { throw new Rejected(400, "Character progress does not match this server's rules: " + error.Message); }
             Need(characters.Count(c => c.Account == account) < 4, 409, "Four characters per account.");
             Need(!characters.Any(c => c.Account == account && c.Name.Equals(input.Name, StringComparison.OrdinalIgnoreCase)), 409, "Character name already exists; import never overwrites.");
             var character = new Character(Guid.NewGuid(), account, input.Name, input.Victories,
                 input.Inventory!.Select(i => new CarriedItem(new(1), i.Definition, i.Location, i.Slot)).ToArray(),
-                input.Quests!.Length == 0 ? null : input.Quests.ToArray());
-            characters.Add(character); Save(); return new(character.Id, character.Name, character.Victories, character.Quests?.ToArray());
+                input.Quests!.Length == 0 ? null : input.Quests.ToArray(), input.Progress);
+            characters.Add(character); Save(); return Info(character);
         }
     }
     public object DeleteCharacter(string token, Guid id)
@@ -295,7 +309,11 @@ public sealed partial class Realm : IDisposable
             var (r, c) = Access(token, id); Need(r.Saved.Host == c.Id, 403, "Only the host can start."); Need(r.Game is null, 409, "Already started.");
             r.Saved = r.Saved with { Members = r.Saved.Members.Select((m, i) => m with { Actor = (uint)i + 1 }).ToArray() };
             r.InviteHash = null;
-            r.Game = (r.Saved.World is null ? Arena.Create(r.Saved.Members.Length) : CooperativeWorld.Create(r.Saved.Members.Length)).WithCarriedItems(r.Saved.Members.SelectMany(m =>
+            var start = r.Saved.World is null ? Arena.Create(r.Saved.Members.Length) : CooperativeWorld.Create(r.Saved.Members.Length);
+            // Characters with a class start with the life and mana their level and attributes give; the rest keep the default pool.
+            var pools = r.Saved.Members.Select(m => (m, c: characters.Single(x => x.Id == m.Character))).Where(t => t.c.Progress is not null)
+                .Select(t => { var pool = Progression.Resources(Tables, t.c.Progress!); return (new EntityId(t.m.Actor), pool.Life, pool.Mana); }).ToArray();
+            r.Game = (pools.Length == 0 ? start : start.WithPlayerResources(pools)).WithCarriedItems(r.Saved.Members.SelectMany(m =>
                 (characters.Single(x => x.Id == m.Character).Inventory ?? []).Select(item => item with { Owner = new(m.Actor) })).ToArray());
             Save(); return View(r, c);
         }
@@ -413,6 +431,7 @@ public sealed partial class Realm : IDisposable
                             r.Saved = r.Saved with { Members = r.Saved.Members.Select(m => m == member ? m with { RegionEpoch = r.Game.Tick } : m).ToArray() };
                         }
                         else if (change.Kind == SimulationEventKind.QuestChanged && change.Value == (int)QuestStage.Completed) completed.Add(change.Actor.Value);
+                        else if (change.Kind == SimulationEventKind.Died) AwardExperience(r, change);
                     // Quests are personal: only the members whose own turn-in completed on this tick are credited.
                     if (completed.Count > 0 && r.Saved.World is not null)
                         r.Saved = r.Saved with { Members = r.Saved.Members.Select(m => completed.Contains(m.Actor) ? m with { QuestCredit = true } : m).ToArray() };
@@ -450,7 +469,8 @@ public sealed partial class Realm : IDisposable
                     int i = characters.FindIndex(x => x.Id == m.Character);
                     characters[i] = characters[i] with { Victories = checked(characters[i].Victories + (victory ? 1 : 0)),
                         Inventory = r.Game.CaptureCarriedItems(new(m.Actor)).Select(item => item with { Owner = new(1) }).ToArray(),
-                        Quests = m.QuestCredit && r.Saved.World is { } world ? WithCompletion(characters[i].Quests, world.Id) : characters[i].Quests };
+                        Quests = m.QuestCredit && r.Saved.World is { } world ? WithCompletion(characters[i].Quests, world.Id) : characters[i].Quests,
+                        Progress = m.Experience > 0 && characters[i].Progress is { } progress ? Progression.Gain(Tables, progress, m.Experience).Progress : characters[i].Progress };
                 }
             }
             rooms.Remove(id); Save(); return new { ok = true };

@@ -140,6 +140,35 @@ internal static class ModeContracts
                 Console.WriteLine("TLS OPEN ITEMS PASS full 46-item request, room admission and invalid HTTP rejection");
             }
             finally { if (File.Exists(fullFile)) File.Delete(fullFile); }
+            // Character progression through the same production client and the real server process.
+            if (!client.SupportsCharacterProgress) throw new Exception("Open server did not advertise character progression.");
+            var hero = await client.CreateCharacter("ClassHero", OpenD2.Core.CharacterClass.Barbarian);
+            if (hero.Progress is not { Class: OpenD2.Core.CharacterClass.Barbarian, Level: 1, Experience: 0, StatPoints: 0, SkillPoints: 0 } start || start.Strength != 30)
+                throw new Exception("Open server did not create a level 1 Barbarian.");
+            try { await client.SpendStat(hero.Id, OpenD2.Core.CharacterStat.Strength); throw new Exception("Spent a point that was never earned."); }
+            catch (HttpRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.Conflict) { }
+            try { await client.Send<CharacterInfo>(HttpMethod.Post, "v1/characters", new { name = "BadClass", @class = "Wizard" }); throw new Exception("Unknown class accepted."); }
+            catch (HttpRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.BadRequest) { }
+            string classFile = file + ".class.json";
+            try
+            {
+                await client.ExportCharacter(hero.Id, classFile);
+                var exported = OpenCharacterFile.Load(classFile);
+                if (exported.Version != 4 || exported.Progress is not { Class: OpenD2.Core.CharacterClass.Barbarian, Level: 1 }) throw new Exception("Export lost the character progress.");
+                using var classPeer = new OnlineClient(url, ca, "open");
+                await classPeer.Login(new("open-class-peer", Guid.NewGuid().ToString("N")), true);
+                var copy = await classPeer.ImportCharacter(classFile);
+                if (copy.Id == hero.Id || copy.Progress != hero.Progress) throw new Exception("Import changed the character progress.");
+                // A forged file passes the file format but not the server's rules, even when sent straight over HTTP.
+                try
+                {
+                    await classPeer.Send<CharacterInfo>(HttpMethod.Post, "v1/characters/import", exported with { Name = "ForgedHero", Progress = exported.Progress with { StatPoints = 99 } });
+                    throw new Exception("HTTP import accepted forged progress.");
+                }
+                catch (HttpRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.BadRequest) { }
+                Console.WriteLine("TLS OPEN PROGRESS PASS class creation, spending refusal, format 4 transfer and forged-progress rejection");
+            }
+            finally { if (File.Exists(classFile)) File.Delete(classFile); }
         }
         finally { if (File.Exists(file)) File.Delete(file); }
 

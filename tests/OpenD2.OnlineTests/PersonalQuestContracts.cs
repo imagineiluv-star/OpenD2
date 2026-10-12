@@ -102,7 +102,7 @@ internal static class PersonalQuestContracts
                 using var realm = new Realm(folder, time, mode);
                 var token = realm.Login(new(names[0], password), false).Token;
                 var exported = realm.ExportCharacter(token, characters[0]);
-                Check(exported.Version == 3 && exported.Quests!.SequenceEqual([new QuestRecord(content.Id, 2)]), "export carries earned completion records");
+                Check(exported.Version == 4 && exported.Quests!.SequenceEqual([new QuestRecord(content.Id, 2)]), "export carries earned completion records");
                 string path = Path.Combine(folder, "earned.json"); OpenCharacterFile.Save(path, exported);
                 using var destination = new Realm(Path.Combine(folder, "destination"), time, mode);
                 var guest = destination.Login(new("quest-dest", password), true).Token;
@@ -180,17 +180,17 @@ internal static class PersonalQuestContracts
 
             string path = Path.Combine(root, "hero.json"); OpenCharacterFile.Save(path, profile);
             string text = File.ReadAllText(path);
-            Check(text.Contains("\"version\":3") && text.Contains("\"quests\":[{\"world\":\"" + world + "\",\"completions\":3}") &&
+            Check(text.Contains("\"version\":4") && text.Contains("\"quests\":[{\"world\":\"" + world + "\",\"completions\":3}") &&
                 !text.Contains("\"owner\"") && !text.Contains("\"account\""), "format 3 stores only world ID and count");
             OpenItemTransferContracts.Same(profile, OpenCharacterFile.Load(path));
 
             // Earlier formats upgrade in memory without touching the source file, and gain an empty record list.
             string v2 = Path.Combine(root, "v2.json");
-            string v2Text = text.Replace("\"version\":3", "\"version\":2");
+            string v2Text = text.Replace("\"version\":4", "\"version\":2");
             v2Text = v2Text[..v2Text.IndexOf(",\"quests\"", StringComparison.Ordinal)] + "}";
             File.WriteAllText(v2, v2Text);
             var upgraded = OpenCharacterFile.Load(v2);
-            Check(upgraded.Version == 3 && upgraded.Quests is { Length: 0 } && upgraded.Inventory!.Length == 46 && File.ReadAllText(v2) == v2Text, "format 2 file upgrades without records and stays unmodified");
+            Check(upgraded.Version == 4 && upgraded.Quests is { Length: 0 } && upgraded.Inventory!.Length == 46 && File.ReadAllText(v2) == v2Text, "format 2 file upgrades without records and stays unmodified");
 
             // Format 2 cannot carry records, format 3 must state them, and every record obeys the realm.json rules.
             Invalid("format 2 with records", profile with { Version = 2 });

@@ -2,11 +2,15 @@ using OpenD2.Core;
 
 namespace OpenD2.Online;
 
-public sealed record ServerInfo(int Protocol, int Rules, int RoomStream = 0, string Mode = "realm", int CharacterFileVersion = 0, int InputReceipt = 0, int RoomDelta = 0, int InputBatch = 0, int RoomInterest = 0, int RoomInputProgress = 0, int RoomWorld = 0);
+public sealed record ServerInfo(int Protocol, int Rules, int RoomStream = 0, string Mode = "realm", int CharacterFileVersion = 0, int InputReceipt = 0, int RoomDelta = 0, int InputBatch = 0, int RoomInterest = 0, int RoomInputProgress = 0, int RoomWorld = 0, int CharacterProgress = 0);
 public sealed record RoomUpdate(RoomView? State, int Status = 200, string? Error = null);
 public sealed record Credentials(string Username, string Password);
 public sealed record LoginResult(string Token, string Username);
-public sealed record NameRequest(string Name);
+// Class is a CharacterClass name (for example "Amazon"). Omitted: a legacy character without progression.
+public sealed record NameRequest(string Name,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] string? Class = null);
+public sealed record StatRequest(string Stat);
+public sealed record SkillRequest(int Skill);
 // Per-character count of finished shared world quests, keyed by world content ID (never by hash).
 // Quests is omitted from the wire until a character has a record, so earlier clients see the same JSON.
 public sealed record QuestRecord(string World, int Completions);
@@ -19,7 +23,8 @@ public static class QuestRecords
         quests.Select(q => q.World).Distinct().Count() == quests.Length;
 }
 public sealed record CharacterInfo(Guid Id, string Name, int Victories,
-    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] QuestRecord[]? Quests = null);
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] QuestRecord[]? Quests = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] CharacterProgress? Progress = null);
 public sealed record WorldContent(string Id, string Hash);
 public sealed record RoomWorldState(WorldContent Content, QuestProgress Quest, long RegionEpoch);
 public sealed record RoomRequest(Guid Character, string Name, string Password,
