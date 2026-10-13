@@ -57,7 +57,8 @@ public partial class OnlinePanel
 			skillChoice.Disabled = true; return;
 		}
 		var ranks = p.Skills.Select(r => $"{SkillName(r.Skill)} {r.Level}");
-		progressText.Text = $"{p.Class} · level {p.Level} · experience {p.Experience:N0} (room experience is added when the host closes the room)\n" +
+		string tables = client?.TablesAreOriginal == true ? "Tables: the server's own (original)" : "Tables: PREVIEW — stand-in numbers, not Diablo II data";
+		progressText.Text = $"{tables}\n{p.Class} · level {p.Level} · experience {p.Experience:N0} (room experience is added when the host closes the room)\n" +
 			$"To spend: {p.StatPoints} attribute, {p.SkillPoints} skill · Strength {p.Strength} · Dexterity {p.Dexterity} · Vitality {p.Vitality} · Energy {p.Energy}\n" +
 			"Skills: " + (p.Skills.Length == 0 ? "none yet" : string.Join(", ", ranks)) + "\nPoints can be spent between rooms only.";
 		foreach (var skill in skillList.Where(s => s.Class == p.Class.ToString()))

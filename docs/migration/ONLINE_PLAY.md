@@ -28,6 +28,9 @@ macOS 서버는 CI 실행 호스트 아키텍처용이며 클라이언트는 기
 .\OpenD2.Server.exe --urls http://127.0.0.1:5080 --data .\realm-data
 ```
 
+직업·레벨·스킬의 숫자는 기본으로 **내장 미리보기 표**(Diablo II 값이 아님)를 쓴다. 본인 설치본의 표로 서버를 돌리려면 `--tables <폴더>`를 준다
+([방법과 주의](CHARACTER_PROGRESSION.md#원본-표로-서버-실행---tables)).
+
 클라이언트 실행 → **Online** 탭 → 서버 주소 → Register 또는 Login → Create character → 캐릭터 선택.
 첫 PC의 클라이언트는 Create room, 다른 PC의 두 번째 계정은 Refresh → 같은 방 선택 → Join.
 방장이 Start를 누르면 같은 전투장에서 함께 플레이한다. 한 계정은 동시에 방 하나만 점유한다.

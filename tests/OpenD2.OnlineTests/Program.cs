@@ -23,6 +23,7 @@ if (args is ["--tls-server", var networkServer, "--fixtures", var networkFixture
 if (args is ["--host-server", var hostServer])
 {
     await PersonalHostContracts.Run(Path.GetFullPath(hostServer));
+    await TableOptionContracts.Run(Path.GetFullPath(hostServer));
     return;
 }
 if (args.Length != 0) throw new ArgumentException("Unknown online test arguments.");
@@ -39,6 +40,7 @@ CooperativeRoomContracts.Run();
 PersonalQuestContracts.Run();
 CharacterProgressContracts.Run();
 MonsterKindContracts.Run();
+TableDirectoryContracts.Run();
 WorldRestartContracts.Run();
 RoomInterestContracts.Run();
 await InputReceiptContracts.Run();
