@@ -239,7 +239,9 @@ Features since rc.4: the online preview. A self-contained **server** is now part
 (personal or LAN host) modes, accounts, characters, rooms with invites and reconnect, WSS streams, Open character
 files, and a synthetic cooperative Camp/Field world with personal quests. Characters can have one of seven classes with
 levels 1-99, attribute and skill points and monster kinds with levels and kill experience (Open file format 4); the
-tables are built-in previews and are NOT Diablo II data, and the client shows them in a developer panel only. Server hardening: login hashing and
+tables are built-in previews and are NOT Diablo II data, and the client shows them in a developer panel only. Operators can run the
+server on character tables they extracted from their own install with `--tables <folder>` (see CHARACTER_PROGRESSION.md in the server
+package); that path has not been tried with real Diablo II files. Server hardening: login hashing and
 checkpoint writes no longer stall rooms, and restart, network-fault and 32-stream capacity behaviour are
 covered by contract tests (see the server package's documentation).
 Carried over from rc.4: scene creation and artwork configuration (PLAY-08–13), 10x4 grid inventory, Power strike
