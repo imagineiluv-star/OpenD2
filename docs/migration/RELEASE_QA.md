@@ -144,6 +144,8 @@ Grok Bot/실제 원본 데이터 GUI 시험은 아직 수행하지 않았다.
 `qa_plan=RC5`이고 `FEATURE_QA.md`는 [RC5_QA](RC5_QA.md)다. 필수 목록(QA-01~06/08/11~14)은 그대로이고 온라인 QA-15~18은 선택 항목이며 `online_qa_status`로 따로 기록한다.
 이 변경은 릴리스를 **발행하지 않는다**. `publish=false`(기본)인 수동 실행은 Actions 아티팩트만 만든다.
 
+서버 패키지에는 이후 추가된 직업·레벨·스킬, 몬스터 종류, 방 경험치 표시, Open 파일 형식 4가 들어 있고 `/health`에 `characterProgress`·`monsterKinds`·`tables`가 추가됐다. 서버 폴더의 문서에 [CHARACTER_PROGRESSION](CHARACTER_PROGRESSION.md)과 [MONSTER_KINDS](MONSTER_KINDS.md)가 함께 들어가고, 운영자는 `--tables <폴더>`로 본인이 꺼낸 표를 읽게 할 수 있다. 이 숫자들은 모두 미리보기이며 원본 값이 아니다. 시험 지침은 [RC5_QA](RC5_QA.md)의 "rc.4 이후 이 후보에 들어간 것"과 QA-16~18에 있다.
+
 ### rc.4 준비 — PLAY-17 QA 계획
 
 새 후보는 필수 QA-11~14(격자 가방·마나/강타·물약/벨트·선택 줍기)를 포함한다.

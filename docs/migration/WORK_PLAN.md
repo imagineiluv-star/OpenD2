@@ -272,6 +272,7 @@ NPC 다음 작업은 **NPC-02b 품질 개선과 목표 PC 성능/배포 인수**
 - [x] manifest의 `qa_plan`/필수 ID 목록, 결과 템플릿과 배포 FEATURE_QA 문서 일치 및 체크섬 계약 확인.
 - [x] `v0.2.0-rc.4` 발행 확인: 2026-10-09 UTC, source `ace8f37`. 이후 온라인 기능은 해당 릴리스에 미포함.
 - [x] **서버 패키지를 릴리스에 포함**(linux-x64·win-x64·osx-arm64): handoff가 CI에서 검증된 서버 압축을 내려받아 같은 커밋의 출처·체크섬·필수 PASS 23항목을 확인하고 `NOT_RUN`을 과장한 메타데이터를 거부한다. 버전 이름으로 바꿔 `release-manifest.json`(schema 3, `server_packages`)에 넣는다. 온라인 QA-15~18은 별도 일정의 선택 항목(`online_qa_status`)이며 `FEATURE_QA.md`는 [RC5_QA](RC5_QA.md)다. [handoff 설명](RELEASE_QA.md). 발행은 하지 않았다.
+- [x] RC5 안내 문서(RC5_QA·RELEASE_QA·릴리스 노트)를 #95–#101(직업·레벨·스킬, 몬스터 종류, 방 경험치, `--tables`, `/health` 필드) 기준으로 갱신. 직업 진행은 QA-16·17의 선택 확인으로 넣고 필수 목록·`online_case_ids`는 그대로다.
 - [ ] 최신 온라인 기능을 포함한 다음 후보의 세 OS 검증·릴리스 발행.
 - [ ] 실제 GUI 결과 회수·검토. 헤드리스·자료 생성만으로 완료 처리하지 않는다.
 
