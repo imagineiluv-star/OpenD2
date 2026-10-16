@@ -101,8 +101,7 @@ def tests_acceptable(code, text):
         return False, "no test summary line (crashed?)"
     passed, total = map(int, summary.groups())
     failures = re.findall(r"^FAIL\b[^\n]*", text, re.M)
-    unexpected = [line for line in failures if not any(line.rstrip().endswith(known) or f"FAIL {known}" in line
-                                                       for known in KNOWN_FAILURES)]
+    unexpected = [line for line in failures if not any(line.startswith(f"FAIL {known}") for known in KNOWN_FAILURES)]
     if code == 0 and passed == total:
         return True, "all passed"
     if unexpected or len(failures) != total - passed or not failures:
