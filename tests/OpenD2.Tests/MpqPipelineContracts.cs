@@ -167,6 +167,18 @@ internal static class MpqPipelineContracts
 			Check(AssetCache.IsCurrent(cache, "fp", new AssetCacheOptions()) && !AssetCache.Build(new MemorySource(files), "fp", cache).Rebuilt, "uncapped cache stays current");
 		});
 
+		test("--include prefixes match on path-separator boundaries", () =>
+		{
+			foreach (var prefix in new[] { "data", "data\\", "data/" })
+			{
+				var include = AssetCacheOptions.PathPrefix(prefix);
+				Check(include("data\\global\\excel\\levels.txt") && include("data"), "inside " + prefix);
+				Check(!include("database\\x.txt") && !include("dat") && !include("datax"), "sibling " + prefix);
+			}
+			var excel = AssetCacheOptions.PathPrefix("data\\global\\excel\\");
+			Check(excel("data\\global\\excel\\armor.txt") && !excel("data\\global\\excel2\\armor.txt") && !excel("data\\global\\exce"), "nested prefix");
+		});
+
 		test("data and cache paths come from settings or environment and the cache refuses Git checkouts", () =>
 		{
 			string? previous = Environment.GetEnvironmentVariable(D2DataPaths.DataPathVariable);
