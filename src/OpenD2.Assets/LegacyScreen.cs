@@ -17,15 +17,38 @@ public static class LegacyResolutions
 	};
 }
 
-/// <summary>Where the fixed screen lands in a window: the largest whole-number scale that fits, centred; the rest is black.</summary>
-public readonly record struct LetterboxLayout(int Scale, int X, int Y, int Width, int Height, int WindowWidth, int WindowHeight)
+/// <summary>Fit: largest aspect-preserving scale (may be fractional, e.g. 1.8x at 1920x1080). Integer: largest whole-number scale, pixel-perfect.</summary>
+public enum LegacyScaleMode { Fit, Integer }
+/// <summary>
+/// Filter for fractional scales. Sharp (default): nearest upscale by the whole number at or above the target scale
+/// (ceil, e.g. 2x for 1.8x), then a linear resample down to the fitted rect, so pixels stay crisp without uneven
+/// nearest columns. Nearest and Linear sample the 800x600 buffer directly. At whole-number scales all three equal nearest.
+/// </summary>
+public enum LegacyScaleFilter { Sharp, Nearest, Linear }
+
+public static class LegacyScaleOptions
 {
-	public static LetterboxLayout Fit(int windowWidth, int windowHeight, int screenWidth, int screenHeight)
+	public static LegacyScaleMode ParseMode(string text) => text.Trim().ToLowerInvariant() switch
+	{ "fit" => LegacyScaleMode.Fit, "integer" => LegacyScaleMode.Integer, _ => throw new ArgumentException("--scale must be fit or integer.") };
+	public static LegacyScaleFilter ParseFilter(string text) => text.Trim().ToLowerInvariant() switch
+	{ "sharp" => LegacyScaleFilter.Sharp, "nearest" => LegacyScaleFilter.Nearest, "linear" => LegacyScaleFilter.Linear, _ => throw new ArgumentException("--filter must be sharp, nearest or linear.") };
+	/// <summary>The whole-number prescale the Sharp filter uses: ceil(scale), at least 1.</summary>
+	public static int SharpPrescale(double scale) => Math.Max(1, (int)Math.Ceiling(scale - 1e-9));
+}
+
+/// <summary>Where the fixed screen lands in a window, centred; the uncovered pillarbox/letterbox area is pure black.</summary>
+public readonly record struct LetterboxLayout(double Scale, int X, int Y, int Width, int Height, int WindowWidth, int WindowHeight)
+{
+	public bool IsInteger => Scale == Math.Floor(Scale);
+
+	public static LetterboxLayout Fit(int windowWidth, int windowHeight, int screenWidth, int screenHeight, LegacyScaleMode mode = LegacyScaleMode.Fit)
 	{
 		if (windowWidth < 1 || windowHeight < 1 || screenWidth < 1 || screenHeight < 1) throw new ArgumentOutOfRangeException(nameof(windowWidth));
-		// Never below 1: a window smaller than the screen shows the centred 1x image cropped, still unfiltered.
-		int scale = Math.Max(1, Math.Min(windowWidth / screenWidth, windowHeight / screenHeight));
-		int w = screenWidth * scale, h = screenHeight * scale;
+		double scale = mode == LegacyScaleMode.Integer
+			// Never below 1: a window smaller than the screen shows the centred 1x image cropped.
+			? Math.Max(1, Math.Min(windowWidth / screenWidth, windowHeight / screenHeight))
+			: Math.Min((double)windowWidth / screenWidth, (double)windowHeight / screenHeight);
+		int w = Math.Max(1, (int)Math.Round(screenWidth * scale)), h = Math.Max(1, (int)Math.Round(screenHeight * scale));
 		return new(scale, (windowWidth - w) / 2, (windowHeight - h) / 2, w, h, windowWidth, windowHeight);
 	}
 }
@@ -88,26 +111,48 @@ public sealed class LegacyFrameBuffer
 		return rgb;
 	}
 
-	/// <summary>Nearest-neighbour whole-number upscale into a window-sized RGB24 image with black letterbox bars.</summary>
-	public static byte[] Present(ReadOnlySpan<byte> rgb, int width, int height, LetterboxLayout layout)
+	/// <summary>
+	/// Scales into a window-sized RGB24 image with black bars, sampling at window pixel centres like the GPU.
+	/// Nearest: source = floor((offset + 0.5) * size / scaledSize). Linear: bilinear on the source. Sharp: bilinear on the
+	/// source nearest-upscaled by <see cref="LegacyScaleOptions.SharpPrescale"/>. Whole-number scales give nearest for all.
+	/// </summary>
+	public static byte[] Present(ReadOnlySpan<byte> rgb, int width, int height, LetterboxLayout layout, LegacyScaleFilter filter = LegacyScaleFilter.Nearest)
 	{
 		if (rgb.Length != width * height * 3) throw new ArgumentException("RGB size does not match the screen size.");
 		var output = new byte[layout.WindowWidth * layout.WindowHeight * 3];
+		bool exact = layout.Width % width == 0 && layout.Height % height == 0 && layout.Width / width == layout.Height / height;
+		if (exact) filter = LegacyScaleFilter.Nearest;
+		int k = filter == LegacyScaleFilter.Sharp ? LegacyScaleOptions.SharpPrescale((double)layout.Width / width) : 1;
+		int vw = width * k, vh = height * k; // virtual (prescaled) image for Sharp; the source itself for Linear
 		for (int wy = Math.Max(0, layout.Y); wy < Math.Min(layout.WindowHeight, layout.Y + layout.Height); wy++)
 		{
-			int sy = (wy - layout.Y) / layout.Scale;
+			int oy = wy - layout.Y;
 			for (int wx = Math.Max(0, layout.X); wx < Math.Min(layout.WindowWidth, layout.X + layout.Width); wx++)
 			{
-				int sx = (wx - layout.X) / layout.Scale;
-				rgb.Slice((sy * width + sx) * 3, 3).CopyTo(output.AsSpan((wy * layout.WindowWidth + wx) * 3, 3));
+				int ox = wx - layout.X; var dst = output.AsSpan((wy * layout.WindowWidth + wx) * 3, 3);
+				if (filter == LegacyScaleFilter.Nearest)
+				{
+					int sx = (int)((2L * ox + 1) * width / (2L * layout.Width)), sy = (int)((2L * oy + 1) * height / (2L * layout.Height));
+					rgb.Slice((sy * width + sx) * 3, 3).CopyTo(dst); continue;
+				}
+				double u = (ox + 0.5) * vw / layout.Width - 0.5, v = (oy + 0.5) * vh / layout.Height - 0.5;
+				int x0 = (int)Math.Floor(u), y0 = (int)Math.Floor(v); double fx = u - x0, fy = v - y0;
+				int X(int vx) => Math.Clamp(vx, 0, vw - 1) / k; int Y(int vy) => Math.Clamp(vy, 0, vh - 1) / k;
+				for (int c = 0; c < 3; c++)
+				{
+					double p00 = rgb[(Y(y0) * width + X(x0)) * 3 + c], p10 = rgb[(Y(y0) * width + X(x0 + 1)) * 3 + c];
+					double p01 = rgb[(Y(y0 + 1) * width + X(x0)) * 3 + c], p11 = rgb[(Y(y0 + 1) * width + X(x0 + 1)) * 3 + c];
+					double top = p00 + (p10 - p00) * fx, bottom = p01 + (p11 - p01) * fx;
+					dst[c] = (byte)Math.Clamp((int)Math.Round(top + (bottom - top) * fy), 0, 255);
+				}
 			}
 		}
 		return output;
 	}
 }
 
-/// <summary>Capture request: everything that determines the output bytes.</summary>
-public sealed record LegacyCaptureRequest(string Scene, LegacyResolution Resolution, string Palette, int Seed = 0, int Tick = 0, int? WindowWidth = null, int? WindowHeight = null);
+/// <summary>Without a window size the capture is the internal 800x600/640x480 buffer (scale options do not apply); with one it is the presented window.</summary>
+public sealed record LegacyCaptureRequest(string Scene, LegacyResolution Resolution, string Palette, int Seed = 0, int Tick = 0, int? WindowWidth = null, int? WindowHeight = null, LegacyScaleMode ScaleMode = LegacyScaleMode.Fit, LegacyScaleFilter Filter = LegacyScaleFilter.Sharp);
 public sealed record LegacyCapture(int Width, int Height, byte[] Rgb, LetterboxLayout? Layout, IReadOnlyList<string> Sources);
 
 /// <summary>Renders the named original-mode screens for headless capture. Static screens ignore Seed and Tick.</summary>
@@ -130,8 +175,8 @@ public static class LegacyScreenRenderer
 		var rgb = screen.ToRgb(palette);
 		if (request.WindowWidth is { } ww && request.WindowHeight is { } wh)
 		{
-			var layout = LetterboxLayout.Fit(ww, wh, screen.Width, screen.Height);
-			return new(ww, wh, LegacyFrameBuffer.Present(rgb, screen.Width, screen.Height, layout), layout, [path, palettePath]);
+			var layout = LetterboxLayout.Fit(ww, wh, screen.Width, screen.Height, request.ScaleMode);
+			return new(ww, wh, LegacyFrameBuffer.Present(rgb, screen.Width, screen.Height, layout, request.Filter), layout, [path, palettePath]);
 		}
 		return new(screen.Width, screen.Height, rgb, null, [path, palettePath]);
 	}

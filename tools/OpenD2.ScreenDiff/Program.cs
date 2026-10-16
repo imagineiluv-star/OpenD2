@@ -3,9 +3,9 @@ using OpenD2.Assets;
 
 // Headless original-mode capture and screen comparison. Captures are written outside the repository only.
 const string Usage = """
-Usage: OpenD2.ScreenDiff --capture <scene> --out <file.png> [--data <game-data-dir>] [--resolution 800x600|640x480] [--palette units] [--seed N] [--tick N] [--window WxH]
+Usage: OpenD2.ScreenDiff --capture <scene> --out <file.png> [--data <game-data-dir>] [--resolution 800x600|640x480] [--palette units] [--seed N] [--tick N] [--window WxH] [--scale fit|integer] [--filter sharp|nearest|linear]
        OpenD2.ScreenDiff --diff <a.png> <b.png> [--min-match <percent>] [--max-mae <value>] [--min-ssim <value>]
---capture renders on the CPU (no GPU, no window); the same commit, scene and options give byte-identical PNGs.
+--capture renders the internal 800x600/640x480 buffer on the CPU unless --window asks for the presented window (default: fit scale, sharp filter) (no GPU, no window); the same commit, scene and options give byte-identical PNGs.
 Scenes: gameselect, charselect. --data defaults to D2_DATA_PATH. The output must lie outside any Git checkout.
 --diff prints pixel match %, mean absolute error (0-255) and SSIM as JSON. Exit 0: within thresholds; 3: outside; 1: error; 2: usage.
 """;
@@ -27,7 +27,7 @@ try
 			(ww, wh) = (w, h);
 		}
 		var request = new LegacyCaptureRequest(args[1], LegacyResolutions.Parse(Option("--resolution") ?? "800x600"), Option("--palette") ?? "units",
-			int.Parse(Option("--seed") ?? "0"), int.Parse(Option("--tick") ?? "0"), ww, wh);
+			int.Parse(Option("--seed") ?? "0"), int.Parse(Option("--tick") ?? "0"), ww, wh, LegacyScaleOptions.ParseMode(Option("--scale") ?? "fit"), LegacyScaleOptions.ParseFilter(Option("--filter") ?? "sharp"));
 		using var source = new MpqAssetSource(data);
 		byte[] Read(string path) => source.TryRead(path, AssetDecoders.MaxInputBytes, out var bytes) ? bytes : throw new FileNotFoundException("Missing " + path);
 		var capture = LegacyScreenRenderer.Render(request, Read);

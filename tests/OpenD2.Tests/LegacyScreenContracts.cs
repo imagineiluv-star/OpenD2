@@ -8,24 +8,47 @@ internal static class LegacyScreenContracts
 
 	public static void Run(Action<string, Action> test)
 	{
-		test("legacy screen: whole-number letterbox layout, never below 1x", () =>
+		test("legacy screen: default fit scale preserves aspect with black pillarbox; integer mode is optional", () =>
 		{
-			Check(LetterboxLayout.Fit(1920, 1080, 800, 600) == new LetterboxLayout(1, 560, 240, 800, 600, 1920, 1080), "1080p 800x600 is 1x (2x needs 1600x1200)");
-			Check(LetterboxLayout.Fit(1920, 1080, 640, 480) == new LetterboxLayout(2, 320, 60, 1280, 960, 1920, 1080), "1080p 640x480 is 2x");
-			Check(LetterboxLayout.Fit(1600, 1200, 800, 600) is { Scale: 2, X: 0, Y: 0 }, "exact 2x");
-			Check(LetterboxLayout.Fit(2560, 1440, 800, 600) is { Scale: 2, X: 480, Y: 120 }, "1440p");
-			Check(LetterboxLayout.Fit(700, 500, 800, 600) is { Scale: 1, X: -50, Y: -50 }, "small window crops at 1x");
+			Check(LetterboxLayout.Fit(1920, 1080, 800, 600) == new LetterboxLayout(1.8, 240, 0, 1440, 1080, 1920, 1080), "1080p fit is 1.8x = 1440x1080");
+			Check(LetterboxLayout.Fit(1920, 1200, 800, 600) is { Scale: 2, X: 160, Y: 0, Width: 1600, Height: 1200, IsInteger: true }, "1920x1200 fit is exactly 2x");
+			Check(LetterboxLayout.Fit(2560, 1440, 640, 480) is { Scale: 3, Width: 1920, X: 320 }, "1440p 640x480 fit 3x");
+			Check(LetterboxLayout.Fit(800, 900, 800, 600) is { Scale: 1, Y: 150, Height: 600 }, "tall window letterboxes");
+			Check(LetterboxLayout.Fit(700, 500, 800, 600) is { Width: 667, Height: 500, X: 16 }, "fit can shrink below 1x");
+			var integer = LegacyScaleMode.Integer;
+			Check(LetterboxLayout.Fit(1920, 1080, 800, 600, integer) == new LetterboxLayout(1, 560, 240, 800, 600, 1920, 1080), "integer 1080p is 1x");
+			Check(LetterboxLayout.Fit(1920, 1080, 640, 480, integer) == new LetterboxLayout(2, 320, 60, 1280, 960, 1920, 1080), "integer 1080p 640x480 is 2x");
+			Check(LetterboxLayout.Fit(700, 500, 800, 600, integer) is { Scale: 1, X: -50, Y: -50 }, "integer never below 1x");
+			Check(LegacyScaleOptions.ParseMode("Integer") == integer && LegacyScaleOptions.ParseFilter("linear") == LegacyScaleFilter.Linear && LegacyScaleOptions.ParseFilter("SHARP") == LegacyScaleFilter.Sharp, "options");
+			Check(LegacyScaleOptions.SharpPrescale(1.8) == 2 && LegacyScaleOptions.SharpPrescale(2) == 2 && LegacyScaleOptions.SharpPrescale(2.4) == 3 && LegacyScaleOptions.SharpPrescale(0.8) == 1, "sharp prescale is ceil");
+			try { LegacyScaleOptions.ParseMode("stretch"); throw new Exception("bad mode accepted"); } catch (ArgumentException) { }
 			Check(LegacyResolution.R640x480.Size() == (640, 480) && LegacyResolutions.Parse("800X600") == LegacyResolution.R800x600, "resolutions");
 			try { LegacyResolutions.Parse("1024x768"); throw new Exception("odd resolution accepted"); } catch (ArgumentException) { }
 		});
-		test("legacy screen: nearest-neighbour present repeats source pixels and fills bars with pure black", () =>
+		test("legacy screen: nearest present repeats pixels for whole and fractional scales and fills bars with pure black", () =>
 		{
 			byte[] rgb = [10, 20, 30, 40, 50, 60]; // 2x1
-			var layout = LetterboxLayout.Fit(6, 4, 2, 1); // scale 3 (6/2=3, 4/1=4), y = (4-3)/2 = 0
+			var layout = LetterboxLayout.Fit(6, 4, 2, 1, LegacyScaleMode.Integer); // 3x, 6x3 at y=0
 			var window = LegacyFrameBuffer.Present(rgb, 2, 1, layout);
 			Check(layout is { Scale: 3, X: 0, Y: 0, Height: 3 }, "layout");
 			for (int y = 0; y < 3; y++) for (int x = 0; x < 6; x++) Check(window[(y * 6 + x) * 3] == (x < 3 ? 10 : 40), $"pixel {x},{y}");
 			Check(window.AsSpan(3 * 6 * 3).ToArray().All(b => b == 0), "bottom bar black");
+			var frac = LetterboxLayout.Fit(9, 2, 2, 1); // 2x? min(4.5, 2) = 2 -> 4x2 centred at x=2
+			var fw = LegacyFrameBuffer.Present(rgb, 2, 1, frac);
+			Check(frac is { Width: 4, X: 2 } && fw[2 * 3] == 10 && fw[5 * 3] == 40 && fw[0] == 0 && fw[8 * 3] == 0, "pillarbox");
+			var f18 = LetterboxLayout.Fit(18, 10, 10, 1); // 1.8x: 18 wide
+			var src = Enumerable.Range(0, 10).SelectMany(i => new[] { (byte)(i * 10), (byte)0, (byte)0 }).ToArray();
+			var out18 = LegacyFrameBuffer.Present(src, 10, 1, f18);
+			var row = f18.Y; var cols = Enumerable.Range(0, 18).Select(x => out18[(row * 18 + x) * 3] / 10).ToArray();
+			Check(f18.Scale == 1.8 && cols.Distinct().Count() == 10 && cols.SequenceEqual(cols.Order()), "1.8x nearest keeps every source column in order: " + string.Join(",", cols));
+			// Sharp: 2x nearest then linear 0.9x. Stays within the two neighbouring source values, mostly exact,
+			// and is never blurrier than plain linear (more pixels equal a source value).
+			var sharp = LegacyFrameBuffer.Present(src, 10, 1, f18, LegacyScaleFilter.Sharp);
+			var linear = LegacyFrameBuffer.Present(src, 10, 1, f18, LegacyScaleFilter.Linear);
+			int Exact(byte[] img) => Enumerable.Range(0, 18).Count(x => img[(row * 18 + x) * 3] % 10 == 0);
+			Check(Enumerable.Range(0, 18).All(x => sharp[(row * 18 + x) * 3] <= 90) && Exact(sharp) > Exact(linear) && Exact(sharp) >= 9, $"sharp {Exact(sharp)} vs linear {Exact(linear)} exact columns");
+			foreach (var f in new[] { LegacyScaleFilter.Sharp, LegacyScaleFilter.Linear })
+				Check(LegacyFrameBuffer.Present(rgb, 2, 1, layout, f).AsSpan().SequenceEqual(window), $"{f} equals nearest at whole-number scales");
 		});
 		test("legacy screen: frame buffer clips, skips transparent pixels and leaves uncovered pixels black", () =>
 		{
@@ -53,7 +76,11 @@ internal static class LegacyScreenContracts
 			var decoded = PngReader.DecodeRgb(a); Check(decoded.Width == 800 && decoded.Height == 600, "800x600");
 			Check(PngReader.DecodeRgb(LegacyScreenRenderer.EncodePng(LegacyScreenRenderer.Render(request with { Resolution = LegacyResolution.R640x480 }, Read))).Width == 640, "640x480");
 			var windowed = LegacyScreenRenderer.Render(request with { WindowWidth = 1920, WindowHeight = 1080 }, Read);
-			Check(windowed is { Width: 1920, Height: 1080, Layout.Scale: 1, Layout.X: 560 } && windowed.Rgb.AsSpan(0, 560 * 3).ToArray().All(v => v == 0), "windowed letterbox");
+			Check(windowed is { Width: 1920, Height: 1080, Layout.Scale: 1.8, Layout.X: 240, Layout.Width: 1440 } && windowed.Rgb.AsSpan(0, 240 * 3).ToArray().All(v => v == 0), "windowed default fit pillarbox");
+			var integerWindow = LegacyScreenRenderer.Render(request with { WindowWidth = 1920, WindowHeight = 1080, ScaleMode = LegacyScaleMode.Integer }, Read);
+			Check(integerWindow.Layout is { Scale: 1, X: 560, Y: 240 }, "windowed integer letterbox");
+			Check(LegacyScreenRenderer.Render(request with { Filter = LegacyScaleFilter.Linear }, Read).Rgb.AsSpan().SequenceEqual(LegacyScreenRenderer.Render(request, Read).Rgb), "internal capture ignores the filter");
+			Check(LegacyScreenRenderer.Render(request with { ScaleMode = LegacyScaleMode.Integer }, Read).Rgb.AsSpan().SequenceEqual(LegacyScreenRenderer.Render(request, Read).Rgb), "internal capture ignores the scale mode");
 			foreach (var bad in new[] { request with { Scene = "nope" }, request with { Palette = "..\\x" } })
 				try { LegacyScreenRenderer.Render(bad, Read); throw new Exception("bad request accepted"); } catch (ArgumentException) { }
 		});

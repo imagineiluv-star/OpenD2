@@ -83,7 +83,7 @@ public partial class Main : Node3D
 			string? Option(string name) { int i = Array.IndexOf(args, name); return i >= 0 && i + 1 < args.Length ? args[i + 1] : null; }
 			string data = D2DataPaths.ResolveDataPath(string.IsNullOrWhiteSpace(saved.GameDataPath) ? null : saved.GameDataPath) ?? "";
 			var request = new LegacyCaptureRequest(Option("--scene") ?? "gameselect", LegacyResolutions.Parse(Option("--resolution") ?? "800x600"), Option("--palette") ?? "units");
-			var layer = new CanvasLayer(); AddChild(layer); layer.AddChild(new Legacy.LegacyScreen(data, request));
+			var layer = new CanvasLayer(); AddChild(layer); layer.AddChild(new Legacy.LegacyScreen(data, request, LegacyScaleOptions.ParseMode(Option("--scale") ?? "fit"), LegacyScaleOptions.ParseFilter(Option("--filter") ?? "sharp")));
 			return;
 		}
 		BuildScene();

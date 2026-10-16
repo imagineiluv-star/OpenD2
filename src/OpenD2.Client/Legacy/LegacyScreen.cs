@@ -5,19 +5,26 @@ using OpenD2.Core;
 namespace OpenD2.Client.Legacy;
 
 /// <summary>
-/// Original mode: the fixed 800x600 (or 640x480) screen drawn into a SubViewport and shown at the largest whole-number
-/// scale with nearest filtering, centred on pure black. It owns no dev-tool UI; Main builds either this or the dev scene.
+/// Original mode: the fixed 800x600 (or 640x480) screen drawn into a SubViewport and scaled to the window, centred on
+/// pure black. Default: aspect-preserving fit (1920x1080 gives 1.8x, 1440x1080 with pillarbox) with the Sharp filter
+/// (nearest upscale to ceil(scale) in a second SubViewport, then linear down to the rect). Options: whole-number
+/// pixel-perfect scale; plain nearest or linear filters. It owns no dev-tool UI; Main builds either this or the dev scene.
 /// The pixels come from <see cref="LegacyFrameBuffer"/> on the CPU, the same path the headless --capture uses.
 /// </summary>
 public partial class LegacyScreen : Control
 {
 	private readonly LegacyCaptureRequest request;
 	private readonly string dataPath;
+	private readonly LegacyScaleMode scaleMode;
+	private readonly LegacyScaleFilter filter;
 	private SubViewport viewport = null!;
 	private TextureRect presented = null!;
+	private SubViewport? prescale;
+	private TextureRect? prescaled;
 	private Label? error;
 
-	public LegacyScreen(string dataPath, LegacyCaptureRequest request) { this.dataPath = dataPath; this.request = request; }
+	public LegacyScreen(string dataPath, LegacyCaptureRequest request, LegacyScaleMode scaleMode = LegacyScaleMode.Fit, LegacyScaleFilter filter = LegacyScaleFilter.Nearest)
+	{ this.dataPath = dataPath; this.request = request; this.scaleMode = scaleMode; this.filter = filter; }
 
 	public override void _Ready()
 	{
@@ -29,7 +36,16 @@ public partial class LegacyScreen : Control
 		AddChild(viewport);
 		var screen = new TextureRect { TextureFilter = TextureFilterEnum.Nearest, StretchMode = TextureRect.StretchModeEnum.Keep, Size = new Vector2(w, h) };
 		viewport.AddChild(screen);
-		presented = new TextureRect { Texture = viewport.GetTexture(), TextureFilter = TextureFilterEnum.Nearest, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+		Texture2D shown = viewport.GetTexture();
+		if (filter == LegacyScaleFilter.Sharp)
+		{
+			// Second stage: nearest upscale by a whole number; its size follows the window in Layout().
+			prescale = new SubViewport { Size = new Vector2I(w, h), Disable3D = true, TransparentBg = false, RenderTargetUpdateMode = SubViewport.UpdateMode.Always,
+				CanvasItemDefaultTextureFilter = Viewport.DefaultCanvasItemTextureFilter.Nearest };
+			prescaled = new TextureRect { Texture = viewport.GetTexture(), TextureFilter = TextureFilterEnum.Nearest, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale };
+			prescale.AddChild(prescaled); AddChild(prescale); shown = prescale.GetTexture();
+		}
+		presented = new TextureRect { Texture = shown, TextureFilter = filter == LegacyScaleFilter.Nearest ? TextureFilterEnum.Nearest : TextureFilterEnum.Linear, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
 			StretchMode = TextureRect.StretchModeEnum.Scale, MouseFilter = MouseFilterEnum.Ignore };
 		AddChild(presented);
 		try
@@ -50,8 +66,16 @@ public partial class LegacyScreen : Control
 	private void Layout()
 	{
 		var size = GetViewportRect().Size; var (w, h) = request.Resolution.Size();
-		var layout = LetterboxLayout.Fit(Math.Max(1, (int)size.X), Math.Max(1, (int)size.Y), w, h);
+		var layout = LetterboxLayout.Fit(Math.Max(1, (int)size.X), Math.Max(1, (int)size.Y), w, h, scaleMode);
 		presented.Position = new Vector2(layout.X, layout.Y); presented.Size = new Vector2(layout.Width, layout.Height);
+		if (prescale is not null && prescaled is not null)
+		{
+			int k = LegacyScaleOptions.SharpPrescale(layout.Scale);
+			prescale.Size = new Vector2I(w * k, h * k); prescaled.Position = Vector2.Zero; prescaled.Size = new Vector2(w * k, h * k);
+			// A whole-number fit needs no resample: show the prescaled image 1:1.
+			presented.TextureFilter = layout.IsInteger || filter == LegacyScaleFilter.Nearest ? TextureFilterEnum.Nearest : TextureFilterEnum.Linear;
+		}
+		GD.Print($"OPEND2_LEGACY_LAYOUT scale={layout.Scale:0.###} rect={layout.X},{layout.Y},{layout.Width}x{layout.Height} filter={filter} window={layout.WindowWidth}x{layout.WindowHeight}");
 	}
 
 	/// <summary>Headless capture: CPU render straight to PNG, no window or GPU, so the bytes depend only on commit, data and request.</summary>
