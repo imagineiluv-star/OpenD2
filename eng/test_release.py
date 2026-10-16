@@ -11,6 +11,21 @@ import zipfile
 import release
 
 
+_ENV_KEYS = ("D2_DATA_PATH", "OPEND2_ORIGINAL_SHA256SUMS", "OPEND2_RELEASE_REHEARSAL")
+_saved_env = {}
+
+
+def setUpModule():
+    # Hermetic: a developer's D2_DATA_PATH / hash list must not change results.
+    for key in _ENV_KEYS:
+        if key in os.environ:
+            _saved_env[key] = os.environ.pop(key)
+
+
+def tearDownModule():
+    os.environ.update(_saved_env)
+
+
 class ReleaseTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
