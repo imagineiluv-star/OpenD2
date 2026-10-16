@@ -52,6 +52,16 @@ public sealed class CacheAssetSource(string cacheDirectory) : IAssetSource
 
 public sealed record AssetCacheOptions
 {
+	/// <summary>
+	/// Include filter for a path prefix, matched on path-separator boundaries: "data\global" selects
+	/// "data\global\..." and the exact path, never "data\globalx". A trailing separator is ignored.
+	/// </summary>
+	public static Func<string, bool> PathPrefix(string prefix)
+	{
+		string p = MpqArchive.NormalizePath(prefix.TrimEnd('\\', '/'));
+		return n => n.Length == p.Length ? string.Equals(n, p, StringComparison.Ordinal) : n.Length > p.Length && n[p.Length] == '\\' && n.StartsWith(p, StringComparison.Ordinal);
+	}
+
 	/// <summary>Kinds copied raw into the cache (readable by the engine). Audio is opt-in because of its size.</summary>
 	public IReadOnlySet<string> RawKinds { get; init; } = new HashSet<string> { "palette", "excel_txt", "text_tbl", "dc6", "dcc", "cof", "dt1", "ds1" };
 	/// <summary>Image kinds converted to PNG. DCC is opt-in: decoding every direction of every DCC is slow and large.</summary>

@@ -3,7 +3,8 @@ using System.Text;
 namespace OpenD2.Assets;
 
 /// <summary>Unreferenced counts failures in files no level table points at (shipped leftovers, e.g. old DT1 4.1 tilesets).</summary>
-/// <summary>Skipped counts resources that could not be read or exceed the decoder input budget; they are not validated and fail the run.</summary>
+/// <summary>Skipped counts listed resources the source returned no data for; they are not validated and fail the run.
+/// A source that rejects an oversized entry by throwing (as MpqAssetSource does past the 32 MiB budget) reports it under Failed with that error.</summary>
 public sealed record KindValidation(string Kind, int Passed, int Failed, int Unreferenced, int Skipped, IReadOnlyList<string> Failures, IReadOnlyList<string> UnreferencedFailures, IReadOnlyList<string> SkippedResources);
 public sealed record CorpusValidationReport(string Directory, int Resources, int Passed, int Failed, int Unreferenced, int Skipped, IReadOnlyList<KindValidation> Kinds, IReadOnlyList<string> Notes)
 {
@@ -24,7 +25,12 @@ public static class CorpusValidation
 	{
 		var notes = new List<string>();
 		HashSet<string>? referencedTiles = null;
-		try { referencedTiles = ReferencedTilesets(source); }
+		try
+		{
+			referencedTiles = ReferencedTilesets(source);
+			// A table that names no tileset gives no basis for calling any DT1 unreferenced.
+			if (referencedTiles is { Count: 0 }) { referencedTiles = null; notes.Add("lvltypes.txt references no .dt1 files; no DT1 failure is classed as unreferenced"); }
+		}
 		catch (Exception error) when (error is not (OutOfMemoryException or OperationCanceledException))
 		{ notes.Add($"lvltypes.txt unusable ({error.GetType().Name}: {error.Message}); no DT1 failure is classed as unreferenced"); }
 		var buckets = new SortedDictionary<string, Bucket>(StringComparer.Ordinal);
@@ -38,7 +44,7 @@ public static class CorpusValidation
 				if (!source.TryRead(name, AssetDecoders.MaxInputBytes, out var data))
 				{
 					bucket.Skipped++;
-					if (bucket.SkippedResources.Count < failuresPerKind) bucket.SkippedResources.Add($"{name}: unreadable or larger than {AssetDecoders.MaxInputBytes} bytes");
+					if (bucket.SkippedResources.Count < failuresPerKind) bucket.SkippedResources.Add($"{name}: the source returned no data (missing or unreadable)");
 					continue;
 				}
 				AssetDecoders.Validate(kind, data);
