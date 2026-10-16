@@ -51,7 +51,8 @@ public sealed class InstallManifest
 	}
 
 	/// <summary>Hashes every *.mpq in the directory and finds the version whose manifest matches.</summary>
-	/// <param name="hashCache">Optional JSON file that remembers hashes by name, size and mtime to skip re-reading gigabytes.</param>
+	/// <param name="hashCache">Optional, WEAKER fast path: remembers hashes by name, size and mtime. A file changed in place
+	/// with size and mtime preserved, or an edited cache file, would pass. Omit it (the default) for full SHA-256 verification.</param>
 	/// <param name="rehash">Ignore remembered hashes and re-read every archive (full SHA-256).</param>
 	public InstallVerification Verify(string directory, string? hashCache = null, string? expectedVersion = null, bool rehash = false)
 	{

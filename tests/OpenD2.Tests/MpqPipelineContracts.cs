@@ -44,6 +44,12 @@ internal static class MpqPipelineContracts
 			var ok = manifest.Verify(dir, hashes);
 			Check(ok.Verified && ok.Version == "1.0t" && ok.Missing.Count == 0 && ok.Unknown.Count == 0, "match");
 			Check(File.ReadAllText(hashes).Contains(H(a)), "hash cache written");
+			// Forged hash cache: same name/size/mtime, different bytes. Default verification ignores the cache and catches it.
+			var info = new FileInfo(Path.Combine(dir, "d2data.mpq")); var mtime = info.LastWriteTimeUtc;
+			File.WriteAllBytes(info.FullName, Encoding.ASCII.GetBytes("synthetic archive X")); File.SetLastWriteTimeUtc(info.FullName, mtime);
+			Check(!manifest.Verify(dir).Verified, "full hash catches in-place change");
+			Check(manifest.Verify(dir, hashes).Verified, "documented weakness: opt-in size+mtime cache trusts the forged entry");
+			File.WriteAllBytes(info.FullName, a); File.SetLastWriteTimeUtc(info.FullName, mtime);
 			File.WriteAllBytes(Path.Combine(dir, "d2data.mpq"), Encoding.ASCII.GetBytes("synthetic archive A"));
 			var bad = manifest.Verify(dir, hashes);
 			Check(!bad.Verified && bad.Mismatched.SequenceEqual(["d2data.mpq"]), "tamper detected");
@@ -91,6 +97,8 @@ internal static class MpqPipelineContracts
 			Check(File.Exists(Path.Combine(cache, "png", "data", "global", "ui", "panel", "sample.dc6", "d00_f000.png")), "dc6 png");
 			Check(File.Exists(Path.Combine(cache, "palettes", "act1.png")), "palette swatch");
 			Check(File.ReadAllText(Path.Combine(cache, "tables", "levels.tsv")) == "Name\tId\nRogue Encampment\t1\n", "normalized table");
+			Check(AssetCache.TablePath(cache, "data\\global\\excel\\levels.txt") != AssetCache.TablePath(cache, "data\\global\\excel\\expansion\\levels.txt")
+				&& AssetCache.TablePath(cache, "data\\global\\excel\\expansion\\levels.txt").EndsWith(Path.Combine("tables", "expansion", "levels.tsv")), "same-named tables do not collide");
 			Check(!File.Exists(AssetCache.RawPath(cache, "data\\global\\sfx\\ignored.wav")), "audio is opt-in");
 			Check(!AssetCache.Build(source, "fingerprint-1", cache).Rebuilt, "unchanged source is not rebuilt");
 			Check(AssetCache.Build(source, "fingerprint-1", cache, new AssetCacheOptions { PngKinds = new HashSet<string>() }).Rebuilt, "option change rebuilds");

@@ -67,7 +67,7 @@ public sealed record AssetCacheResult(bool Rebuilt, int Resources, int PngFiles,
 // source fingerprint (the archives' SHA-256), converter version or options change.
 public static class AssetCache
 {
-	public const string ConverterVersion = "p1-mpq-1";
+	public const string ConverterVersion = "p1-mpq-2";
 	public const string ManifestName = "cache-manifest.json";
 	private const int MaxErrors = 200;
 
@@ -158,9 +158,8 @@ public static class AssetCache
 							palettes++; break;
 						case "excel_txt":
 							ExcelTextTable.Parse(data); // validate before normalizing
-							if (IsDeviceName(name.Split('\\')[^1])) throw new ArgumentException("Reserved device name: " + name);
 							string text = Encoding.Latin1.GetString(data).Replace("\r\n", "\n");
-							Write(Path.Combine(staging, "tables", Path.GetFileNameWithoutExtension(name.Split('\\')[^1]) + ".tsv"), Encoding.UTF8.GetBytes(text));
+							Write(TablePath(staging, name), Encoding.UTF8.GetBytes(text));
 							tables++; break;
 						case "dc6" when png && pngPalette is not null:
 							var image = Dc6Image.Parse(data);
@@ -213,6 +212,14 @@ public static class AssetCache
 	{
 		try { return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose); }
 		catch (IOException e) { throw new InvalidOperationException("Another asset cache build is using " + path, e); }
+	}
+	/// <summary>Mirrors the logical path below data\global\excel so tables with the same file name never collide.</summary>
+	public static string TablePath(string root, string logicalPath)
+	{
+		var parts = SafeSegments(logicalPath);
+		int start = parts.Length > 3 && parts[0] == "data" && parts[1] == "global" && parts[2] == "excel" ? 3 : 0;
+		parts = parts[start..]; parts[^1] = Path.GetFileNameWithoutExtension(parts[^1]) + ".tsv";
+		return Path.Combine([Path.GetFullPath(root), "tables", .. parts]);
 	}
 	private static string PngPath(string root, string logicalPath, int direction, int frame) =>
 		Path.Combine([root, "png", .. SafeSegments(logicalPath), $"d{direction:D2}_f{frame:D3}.png"]);
