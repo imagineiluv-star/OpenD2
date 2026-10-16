@@ -218,35 +218,92 @@ public static class LegacyScreenRenderer
 	}
 }
 
-public sealed record ScreenDiffResult(int Width, int Height, long Pixels, long MatchingPixels, double MatchPercent, double MeanAbsoluteError, double Ssim, long DifferentPixels);
+public sealed record ScreenDiffResult(int Width, int Height, long Pixels, long MatchingPixels, double MatchPercent, double MeanAbsoluteError, double Ssim, long DifferentPixels, int MaxChannelError = 0, int MaxBlockMismatches = 0, long NonNeighborMismatches = 0, bool MismatchCluster2x2 = false);
 
 /// <summary>Compares two equally sized RGB images: exact pixel match %, mean absolute error per channel (0-255), and SSIM.</summary>
 public static class ScreenDiff
 {
 	/// <summary>
 	/// Tolerance for comparing a real GPU window against the CPU --window model at fractional scales. GPU bilinear and
-	/// nearest round differently from the CPU by at most 1 per channel (measured: 89.5% exact, MAE 0.05-0.07,
-	/// SSIM 0.9995-0.9997 on Mesa opengl3), so exact matching is not meaningful there. Whole-number scales, the
-	/// below-1x path and the internal buffer must still match 100%.
+	/// nearest round differently from the CPU by at most 1 per channel (1920x1080 content rect on Mesa opengl3: max
+	/// channel error 1), so exact matching is not meaningful there. Use <see cref="CompareGpuWindow"/>, which measures
+	/// only the content rect (black bars would inflate SSIM and dilute MAE) and requires the bars to be pure black.
+	/// Whole-number scales, the below-1x path and the internal buffer must still match 100%.
 	/// </summary>
 	public const double GpuWindowMaxMae = 0.5, GpuWindowMinSsim = 0.999;
-	public static bool WithinGpuWindowTolerance(ScreenDiffResult r) => r.MeanAbsoluteError <= GpuWindowMaxMae && r.Ssim >= GpuWindowMinSsim;
+	public const int GpuWindowMaxChannelError = 1;
+	/// <summary>
+	/// Fractional nearest instead flips whole pixels at float ties on source edges (measured 99.97% exact), so it trades the
+	/// max-error rule for at least 99.95% exact pixels that are not clustered: tie flips form thin lines along source edges,
+	/// so no aligned 8x8 block may hold more than <see cref="GpuWindowNearestMaxBlockMismatches"/> mismatches (two full lines),
+	/// no 2x2 square may be all mismatches, and every mismatched pixel of <c>a</c> (GPU) must equal one of the 8 neighbors in <c>b</c> (CPU).
+	/// A missing cursor, glyph or button fills whole blocks and fails even when the overall share is above the threshold.
+	/// </summary>
+	public const double GpuWindowNearestMinMatch = 99.95;
+	public const int BlockSize = 8, GpuWindowNearestMaxBlockMismatches = 16;
+	public static bool WithinGpuWindowTolerance(ScreenDiffResult r, bool nearest = false) =>
+		r.MeanAbsoluteError <= GpuWindowMaxMae && r.Ssim >= GpuWindowMinSsim
+		&& (nearest ? r.MatchPercent >= GpuWindowNearestMinMatch && r.MaxBlockMismatches <= GpuWindowNearestMaxBlockMismatches
+			&& r.NonNeighborMismatches == 0 && !r.MismatchCluster2x2 : r.MaxChannelError <= GpuWindowMaxChannelError);
+
+	/// <summary>Compares only <paramref name="layout"/>'s content rect; <c>BarsBlack</c> is true when every pixel outside it is 0 in both images.</summary>
+	public static (ScreenDiffResult Content, bool BarsBlack) CompareGpuWindow(int width, int height, ReadOnlySpan<byte> gpu, ReadOnlySpan<byte> cpu, LetterboxLayout layout)
+	{
+		long n = (long)width * height;
+		if (gpu.Length != n * 3 || cpu.Length != n * 3) throw new ArgumentException("Images must be the same size.");
+		if (layout.X < 0 || layout.Y < 0 || layout.Width <= 0 || layout.Height <= 0 || layout.X + layout.Width > width || layout.Y + layout.Height > height)
+			throw new ArgumentException("Content rect is outside the image.");
+		var ga = new byte[layout.Width * layout.Height * 3]; var ca = new byte[ga.Length]; bool bars = true;
+		for (int y = 0; y < height; y++)
+			for (int x = 0; x < width; x++)
+			{
+				int o = (y * width + x) * 3;
+				if (x >= layout.X && x < layout.X + layout.Width && y >= layout.Y && y < layout.Y + layout.Height)
+				{
+					int d = ((y - layout.Y) * layout.Width + x - layout.X) * 3;
+					gpu.Slice(o, 3).CopyTo(ga.AsSpan(d)); cpu.Slice(o, 3).CopyTo(ca.AsSpan(d));
+				}
+				else if ((gpu[o] | gpu[o + 1] | gpu[o + 2] | cpu[o] | cpu[o + 1] | cpu[o + 2]) != 0) bars = false;
+			}
+		return (Compare(layout.Width, layout.Height, ga, ca), bars);
+	}
 
 	public static ScreenDiffResult Compare(int width, int height, ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)
 	{
 		long n = (long)width * height;
 		if (a.Length != n * 3 || b.Length != n * 3) throw new ArgumentException("Images must be the same size.");
-		long match = 0, absSum = 0;
+		long match = 0, absSum = 0; int maxErr = 0, bw = (width + BlockSize - 1) / BlockSize;
+		var blocks = new int[bw * ((height + BlockSize - 1) / BlockSize)];
 		for (long i = 0; i < n; i++)
 		{
 			int o = (int)(i * 3); int dr = Math.Abs(a[o] - b[o]), dg = Math.Abs(a[o + 1] - b[o + 1]), db = Math.Abs(a[o + 2] - b[o + 2]);
-			if (dr + dg + db == 0) match++; absSum += dr + dg + db;
+			if (dr + dg + db == 0) match++; else blocks[(int)(i / width) / BlockSize * bw + (int)(i % width) / BlockSize]++;
+			absSum += dr + dg + db; maxErr = Math.Max(maxErr, Math.Max(dr, Math.Max(dg, db)));
 		}
-		return new(width, height, n, match, n == 0 ? 100 : 100.0 * match / n, n == 0 ? 0 : absSum / (3.0 * n), Ssim(width, height, a, b), n - match);
+		// Nearest tie-flip model: a mismatch in a must copy a neighboring pixel of b; tie flips never form a 2x2 square.
+		long nonNeighbor = 0; bool cluster = false;
+		if (match != n)
+			for (int y = 0; y < height; y++)
+				for (int x = 0; x < width; x++)
+				{
+					if (!Differs(a, b, width, x, y)) continue;
+					if (x + 1 < width && y + 1 < height && Differs(a, b, width, x + 1, y) && Differs(a, b, width, x, y + 1) && Differs(a, b, width, x + 1, y + 1)) cluster = true;
+					int o = (y * width + x) * 3; bool found = false;
+					for (int dy = -1; dy <= 1 && !found; dy++)
+						for (int dx = -1; dx <= 1 && !found; dx++)
+						{
+							int nx = x + dx, ny = y + dy; if ((dx | dy) == 0 || nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+							int q = (ny * width + nx) * 3; found = a[o] == b[q] && a[o + 1] == b[q + 1] && a[o + 2] == b[q + 2];
+						}
+					if (!found) nonNeighbor++;
+				}
+		return new(width, height, n, match, n == 0 ? 100 : 100.0 * match / n, n == 0 ? 0 : absSum / (3.0 * n), Ssim(width, height, a, b), n - match, maxErr, blocks.Length == 0 ? 0 : blocks.Max(), nonNeighbor, cluster);
 	}
 
+	static bool Differs(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b, int width, int x, int y) { int o = (y * width + x) * 3; return a[o] != b[o] || a[o + 1] != b[o + 1] || a[o + 2] != b[o + 2]; }
+
 	/// <summary>
-	/// Mean SSIM on BT.601 luma over 8x8 windows with stride 4 (Wang et al. 2004 constants, L=255). Images smaller
+	/// Approximate SSIM: mean on BT.601 luma (chroma errors show only in MAE/match) over 8x8 windows with stride 4 (Wang et al. 2004 constants, L=255). Images smaller
 	/// than one window use a single window covering the whole image. Identical images score exactly 1.
 	/// </summary>
 	public static double Ssim(int width, int height, ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)

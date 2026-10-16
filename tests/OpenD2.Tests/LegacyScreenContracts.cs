@@ -110,6 +110,48 @@ internal static class LegacyScreenContracts
 			var small = (byte[])a.Clone(); for (int i = 0; i < small.Length; i += 9) small[i] = (byte)(small[i] == 255 ? 254 : small[i] + 1);
 			Check(ScreenDiff.WithinGpuWindowTolerance(ScreenDiff.Compare(w, h, a, small)), "sparse +-1 differences are within GPU tolerance");
 			Check(!ScreenDiff.WithinGpuWindowTolerance(ScreenDiff.Compare(w, h, a, black)), "a wrong image is outside GPU tolerance");
+			var two = (byte[])a.Clone(); two[0] = (byte)(two[0] >= 2 ? two[0] - 2 : two[0] + 2);
+			var twoDiff = ScreenDiff.Compare(w, h, a, two);
+			Check(twoDiff.MaxChannelError == 2 && !ScreenDiff.WithinGpuWindowTolerance(twoDiff), "a single 2-level channel error fails the GPU tolerance");
+			// Nearest boundaries on a 100x100 image (10,000 pixels): fixed expectations, not the formula under test.
+			{
+				int nw = 100, nh = 100; var baseImg = new byte[nw * nh * 3]; for (int i = 0; i < baseImg.Length; i++) baseImg[i] = (byte)(i * 31 % 251);
+				// A tie flip copies the left source neighbor (x-1) into the pixel.
+				byte[] Flip(IEnumerable<(int X, int Y)> px) { var o = (byte[])baseImg.Clone(); foreach (var (x, y) in px) { int k = (y * nw + x) * 3; baseImg.AsSpan(k - 3, 3).CopyTo(o.AsSpan(k)); } return o; }
+				bool Near(byte[] img) => ScreenDiff.WithinGpuWindowTolerance(ScreenDiff.Compare(nw, nh, img, baseImg), nearest: true);
+				// Tie flips: thin vertical lines along "source edges" every 9 columns, one pixel per line segment.
+				IEnumerable<(int, int)> Scattered(int count) => Enumerable.Range(0, count).Select(i => (1 + i % 11 * 9, i / 11 * 9));
+				var five = Flip(Scattered(5)); var six = Flip(Scattered(6));
+				Check(ScreenDiff.Compare(nw, nh, five, baseImg).MatchPercent == 99.95 && Near(five), "exactly 99.95% exact, scattered: passes");
+				Check(ScreenDiff.Compare(nw, nh, six, baseImg).MatchPercent == 99.94 && !Near(six), "99.94% exact (one pixel below): fails");
+				Check(!ScreenDiff.WithinGpuWindowTolerance(ScreenDiff.Compare(nw, nh, five, baseImg)), "the sharp rule still rejects whole-pixel flips");
+				// Clustering at a large size where the share stays above 99.95%: 400x300 = 120,000 pixels, 17 mismatches = 99.986%.
+				int cw = 400, ch = 300; var big = new byte[cw * ch * 3]; for (int i = 0; i < big.Length; i++) big[i] = (byte)(i * 31 % 251);
+				byte[] FlipBig(IEnumerable<(int X, int Y)> px) { var o = (byte[])big.Clone(); foreach (var (x, y) in px) { int k = (y * cw + x) * 3; big.AsSpan(k - 3, 3).CopyTo(o.AsSpan(k)); } return o; }
+				bool NearBig(byte[] img) => ScreenDiff.WithinGpuWindowTolerance(ScreenDiff.Compare(cw, ch, img, big), nearest: true);
+				var twoLines = FlipBig(Enumerable.Range(0, 8).SelectMany(y => new[] { (16, 16 + y), (20, 16 + y) }));
+				Check(ScreenDiff.Compare(cw, ch, big, twoLines).MaxBlockMismatches == 16 && NearBig(twoLines), "two edge lines in one 8x8 block (16): passes");
+				var blob = FlipBig(Enumerable.Range(0, 17).Select(i => (16 + i % 5, 16 + i / 5)));
+				var blobDiff = ScreenDiff.Compare(cw, ch, blob, big);
+				Check(blobDiff.MatchPercent > 99.95 && blobDiff.MaxBlockMismatches == 17 && !NearBig(blob), "a 17-pixel cluster in one block fails despite >99.95% exact");
+				var cursor = FlipBig(Enumerable.Range(0, 16 * 16).Select(i => (100 + i % 16, 100 + i / 16)));
+				Check(!NearBig(cursor), "a missing 16x16 cursor fails");
+				// Regression: a 2x2 defect fails even though every pixel copies a neighbor and the share is 99.997%.
+				var square = FlipBig([(200, 150), (201, 150), (200, 151), (201, 151)]);
+				var squareDiff = ScreenDiff.Compare(cw, ch, square, big);
+				Check(squareDiff.MismatchCluster2x2 && squareDiff.NonNeighborMismatches == 0 && !NearBig(square), "a 2x2 defect fails");
+				// A single pixel with a value no CPU neighbor has (not a tie flip) fails.
+				var odd = (byte[])big.Clone(); int ko = (150 * cw + 200) * 3; odd[ko] ^= 0x80; odd[ko + 1] ^= 0x80; odd[ko + 2] ^= 0x80;
+				var oddDiff = ScreenDiff.Compare(cw, ch, odd, big);
+				Check(oddDiff.DifferentPixels == 1 && oddDiff.NonNeighborMismatches == 1 && !NearBig(odd), "a non-neighbor value fails");
+			}
+			// Content-rect comparison: bars are excluded from the metrics but must be black.
+			int W = w + 4, H = h; var layout = new LetterboxLayout(1, 2, 0, w, h, W, H);
+			byte[] Boxed(byte[] img) { var o = new byte[W * H * 3]; for (int y = 0; y < h; y++) img.AsSpan(y * w * 3, w * 3).CopyTo(o.AsSpan((y * W + 2) * 3)); return o; }
+			var (inner, bars) = ScreenDiff.CompareGpuWindow(W, H, Boxed(a), Boxed(small), layout);
+			Check(bars && inner.Width == w && inner.Pixels == (long)w * h && inner.DifferentPixels == ScreenDiff.Compare(w, h, a, small).DifferentPixels, "content rect only");
+			var lit = Boxed(a); lit[0] = 1;
+			Check(!ScreenDiff.CompareGpuWindow(W, H, lit, Boxed(a), layout).BarsBlack, "a non-black bar pixel is reported");
 		});
 		test("png reader round-trips the PNG writer and rejects malformed files", () =>
 		{
@@ -126,8 +168,24 @@ internal static class LegacyScreenContracts
 	// The expected hash is the RGB of an independent Python DC6 renderer (row-major 4-column stitch, units/act1 pal.dat).
 	public const string GameSelectUnitsRgbSha256 = "9ec1529c911158ec76fc96854bb774f8edeb660b2884d014d554ff6ffd4fd02f";
 	public const string GameSelectAct1RgbSha256 = "4bc657d0cb93ad1c1ef91b521e3ac93706ae78b6c0919aef1924fcd06ee32106";
+	// Local-QA-only pins over the decoded RGB pixels (1.11b data), not PNG bytes, so a runtime zlib change cannot break them.
+	// They run only when D2_DATA_PATH is set, so CI without game data never checks them.
+	// 800x600 is the --capture internal buffer; 1920x1080 is the CPU --window render (default fit 1.8x = 1440x1080 at x=240, sharp).
+	// The GPU window shot is not pinned: it varies by +-1 per channel across drivers and is checked by GodotWindowContracts instead.
+		public const string GameSelect1920x1080RgbSha256 = "6f647b62846a234f74912114af224094dc76189e362f0e87cb8e5998b040c1ec";
 	public static void Genuine(string data, Action<string, Action> test)
 	{
+		test("genuine (local QA): gameselect RGB hashes are pinned for the 800x600 buffer and the 1920x1080 window render", () =>
+		{
+			using var mpq = new MpqAssetSource(data);
+			byte[] Read(string p) => mpq.TryRead(p, AssetDecoders.MaxInputBytes, out var b) ? b : throw new FileNotFoundException(p);
+			var request = new LegacyCaptureRequest("gameselect", LegacyResolution.R800x600, "units");
+			string Hash(LegacyCapture c) => Convert.ToHexString(SHA256.HashData(c.Rgb)).ToLowerInvariant();
+			Check(Hash(LegacyScreenRenderer.Render(request, Read)) == GameSelectUnitsRgbSha256, "800x600 internal buffer RGB hash");
+			var window = LegacyScreenRenderer.Render(request with { WindowWidth = 1920, WindowHeight = 1080 }, Read);
+			Check(window.Layout is { X: 240, Y: 0, Width: 1440, Height: 1080 }, $"1920x1080 content rect {window.Layout}");
+			Check(Hash(window) == GameSelect1920x1080RgbSha256, $"1920x1080 window RGB hash {Hash(window)}");
+		});
 		test("genuine: gameselect capture with the units palette matches the Python reference 100% and is byte-identical across runs", () =>
 		{
 			using var mpq = new MpqAssetSource(data);
