@@ -52,10 +52,11 @@ public sealed class InstallManifest
 
 	/// <summary>Hashes every *.mpq in the directory and finds the version whose manifest matches.</summary>
 	/// <param name="hashCache">Optional JSON file that remembers hashes by name, size and mtime to skip re-reading gigabytes.</param>
-	public InstallVerification Verify(string directory, string? hashCache = null, string? expectedVersion = null)
+	/// <param name="rehash">Ignore remembered hashes and re-read every archive (full SHA-256).</param>
+	public InstallVerification Verify(string directory, string? hashCache = null, string? expectedVersion = null, bool rehash = false)
 	{
 		directory = DataDirectory.Validate(directory);
-		var remembered = LoadHashCache(hashCache);
+		var remembered = rehash ? new Dictionary<string, string>(StringComparer.Ordinal) : LoadHashCache(hashCache);
 		var archives = new List<ArchiveHash>();
 		foreach (var path in Directory.EnumerateFiles(directory).Where(p => Path.GetExtension(p).Equals(".mpq", StringComparison.OrdinalIgnoreCase)).Order(StringComparer.Ordinal))
 		{

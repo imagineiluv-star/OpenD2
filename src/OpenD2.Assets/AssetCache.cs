@@ -73,8 +73,32 @@ public static class AssetCache
 
 	public static bool IsCache(string directory) => File.Exists(Path.Combine(directory, ManifestName));
 
+	/// <summary>True only for a manifest this converter wrote (has a "converter" starting with "p1-mpq").</summary>
+	public static bool IsOwnedCache(string directory)
+	{
+		string path = Path.Combine(directory, ManifestName);
+		if (!File.Exists(path)) return false;
+		try
+		{
+			using var doc = JsonDocument.Parse(File.ReadAllText(path));
+			return doc.RootElement.TryGetProperty("converter", out var c) && c.GetString()?.StartsWith("p1-mpq", StringComparison.Ordinal) == true;
+		}
+		catch (JsonException) { return false; }
+	}
+
+	// Windows reserves these names with any extension; refuse them so a cache stays portable and safe.
+	private static readonly HashSet<string> DeviceNames = new(StringComparer.OrdinalIgnoreCase)
+	{ "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9" };
+	public static bool IsDeviceName(string segment) => DeviceNames.Contains(segment.Split('.')[0].TrimEnd(' '));
+	private static string[] SafeSegments(string logicalPath)
+	{
+		var parts = MpqArchive.NormalizePath(logicalPath).Split('\\');
+		if (parts.Any(IsDeviceName)) throw new ArgumentException("Path contains a reserved Windows device name: " + logicalPath);
+		return parts;
+	}
+
 	public static string RawPath(string cacheDirectory, string logicalPath) =>
-		Path.Combine([Path.GetFullPath(cacheDirectory), "raw", .. MpqArchive.NormalizePath(logicalPath).Split('\\')]);
+		Path.Combine([Path.GetFullPath(cacheDirectory), "raw", .. SafeSegments(logicalPath)]);
 
 	public static string Fingerprint(IEnumerable<ArchiveHash> archives) =>
 		Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(
@@ -99,6 +123,12 @@ public static class AssetCache
 		options ??= new();
 		cacheDirectory = Path.GetFullPath(cacheDirectory);
 		D2DataPaths.RequireOutsideGit(cacheDirectory);
+		if (Path.GetFileName(cacheDirectory).Length == 0 || Path.GetPathRoot(cacheDirectory) == cacheDirectory) throw new ArgumentException("Refusing to use a filesystem root as the asset cache.");
+		if (Path.GetFileName(cacheDirectory).Split(Path.DirectorySeparatorChar).Any(IsDeviceName)) throw new ArgumentException("Cache folder uses a reserved Windows device name.");
+		RequireReplaceable(cacheDirectory);
+		Directory.CreateDirectory(Path.GetDirectoryName(cacheDirectory)!);
+		// One builder per cache folder; a second concurrent build fails fast instead of racing the swap.
+		using var gate = AcquireLock(cacheDirectory + ".lock");
 		if (IsCurrent(cacheDirectory, sourceFingerprint, options)) return new(false, 0, 0, 0, 0, []);
 		string staging = cacheDirectory + ".building-" + Guid.NewGuid().ToString("N")[..8];
 		Directory.CreateDirectory(staging);
@@ -122,11 +152,13 @@ public static class AssetCache
 						case "palette":
 							var colors = Palette.Parse(data);
 							string act = name.Split('\\')[^2];
+							if (IsDeviceName(act)) throw new ArgumentException("Reserved device name: " + name);
 							var swatch = new byte[256]; for (int i = 0; i < 256; i++) swatch[i] = (byte)i;
 							Write(Path.Combine(staging, "palettes", act + ".png"), PngWriter.EncodeRgba(16, 16, colors.ToRgba(swatch, Enumerable.Repeat((byte)255, 256).ToArray())));
 							palettes++; break;
 						case "excel_txt":
 							ExcelTextTable.Parse(data); // validate before normalizing
+							if (IsDeviceName(name.Split('\\')[^1])) throw new ArgumentException("Reserved device name: " + name);
 							string text = Encoding.Latin1.GetString(data).Replace("\r\n", "\n");
 							Write(Path.Combine(staging, "tables", Path.GetFileNameWithoutExtension(name.Split('\\')[^1]) + ".tsv"), Encoding.UTF8.GetBytes(text));
 							tables++; break;
@@ -162,6 +194,7 @@ public static class AssetCache
 			var manifest = new { converter = ConverterVersion, source = sourceFingerprint, options = options.Signature, built = DateTimeOffset.UtcNow,
 				resources, pngs, tables, palettes, errors };
 			File.WriteAllText(Path.Combine(staging, ManifestName), JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
+			RequireReplaceable(cacheDirectory); // re-check under the lock right before deleting
 			if (Directory.Exists(cacheDirectory)) Directory.Delete(cacheDirectory, recursive: true);
 			Directory.CreateDirectory(Path.GetDirectoryName(cacheDirectory)!);
 			Directory.Move(staging, cacheDirectory);
@@ -170,8 +203,19 @@ public static class AssetCache
 		return new(true, resources, pngs, tables, palettes, errors);
 	}
 
+	/// <summary>The target may be replaced only if it is missing, empty, or a cache this converter created.</summary>
+	private static void RequireReplaceable(string cacheDirectory)
+	{
+		if (!Directory.Exists(cacheDirectory) || !Directory.EnumerateFileSystemEntries(cacheDirectory).Any() || IsOwnedCache(cacheDirectory)) return;
+		throw new InvalidOperationException("Refusing to replace a folder that is not an OpenD2 asset cache: " + cacheDirectory);
+	}
+	private static FileStream AcquireLock(string path)
+	{
+		try { return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose); }
+		catch (IOException e) { throw new InvalidOperationException("Another asset cache build is using " + path, e); }
+	}
 	private static string PngPath(string root, string logicalPath, int direction, int frame) =>
-		Path.Combine([root, "png", .. MpqArchive.NormalizePath(logicalPath).Split('\\'), $"d{direction:D2}_f{frame:D3}.png"]);
+		Path.Combine([root, "png", .. SafeSegments(logicalPath), $"d{direction:D2}_f{frame:D3}.png"]);
 	private static void Write(string path, byte[] data)
 	{
 		Directory.CreateDirectory(Path.GetDirectoryName(path)!);

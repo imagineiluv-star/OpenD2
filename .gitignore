@@ -61,8 +61,7 @@ CTestTestfile.cmake
 **/.godot/
 artifacts/
 .local-tools/
-*.mpq
-*.MPQ
+*.[mM][pP][qQ]
 *.d2s
 *.d2i
 *.gguf

@@ -101,6 +101,43 @@ internal static class MpqPipelineContracts
 			Check(!Directory.EnumerateDirectories(Path.GetDirectoryName(cache)!).Any(d => d.Contains(".building-")), "no staging leftovers");
 		});
 
+		test("asset cache replaces only empty or OpenD2-owned folders, never user folders", () =>
+		{
+			string temp = Path.GetFullPath(Path.GetTempPath());
+			string Under(string name) { string p = Path.GetFullPath(Path.Combine(root, "replace-guard", name)); Check(p.StartsWith(temp, StringComparison.Ordinal), "test path under temp"); return p; }
+			using var source = new MemorySource(new() { ["data\\global\\palette\\act1\\pal.dat"] = PaletteBytes() });
+			string user = Under("user-folder"); Directory.CreateDirectory(Path.Combine(user, "docs"));
+			File.WriteAllText(Path.Combine(user, "docs", "keep.txt"), "user data"); File.WriteAllText(Path.Combine(user, "notes.txt"), "user data");
+			try { AssetCache.Build(source, "fp", user); throw new Exception("user folder replaced"); } catch (InvalidOperationException) { }
+			Check(File.ReadAllText(Path.Combine(user, "docs", "keep.txt")) == "user data" && File.Exists(Path.Combine(user, "notes.txt")), "user files survive");
+			string foreign = Under("foreign-manifest"); Directory.CreateDirectory(foreign);
+			File.WriteAllText(Path.Combine(foreign, AssetCache.ManifestName), "{\"tool\":\"someone else\"}"); File.WriteAllText(Path.Combine(foreign, "data.bin"), "x");
+			try { AssetCache.Build(source, "fp", foreign); throw new Exception("foreign manifest folder replaced"); } catch (InvalidOperationException) { }
+			Check(File.Exists(Path.Combine(foreign, "data.bin")), "foreign folder survives");
+			string empty = Under("empty"); Directory.CreateDirectory(empty);
+			Check(AssetCache.Build(source, "fp", empty).Rebuilt && AssetCache.IsOwnedCache(empty), "empty folder becomes a cache");
+			Check(AssetCache.Build(source, "fp2", empty).Rebuilt, "owned cache is replaced on source change");
+			Check(!Directory.EnumerateFileSystemEntries(Path.GetDirectoryName(empty)!).Any(e => e.Contains(".building-") || e.EndsWith(".lock")), "no staging or lock leftovers");
+			using (new FileStream(Under("locked") + ".lock", FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+			{
+				try { AssetCache.Build(source, "fp", Under("locked")); throw new Exception("concurrent build allowed"); } catch (InvalidOperationException) { }
+			}
+			try { AssetCache.Build(source, "fp", Path.GetPathRoot(temp)!); throw new Exception("root accepted"); } catch (Exception e) when (e is ArgumentException or InvalidOperationException) { }
+		});
+
+		test("asset cache rejects Windows device names in resource paths", () =>
+		{
+			foreach (var name in new[] { "CON", "nul.dc6", "Aux", "com1.txt", "LPT9", "prn " }) Check(AssetCache.IsDeviceName(name), name);
+			foreach (var name in new[] { "console.dc6", "com10", "lpt", "nullify.txt", "act1" }) Check(!AssetCache.IsDeviceName(name), name);
+			var files = new Dictionary<string, byte[]> { ["data\\global\\palette\\act1\\pal.dat"] = PaletteBytes(),
+				["data\\global\\ui\\con.dc6"] = LegacyFormatContracts.Dc6(), ["data\\global\\aux\\panel.dc6"] = LegacyFormatContracts.Dc6() };
+			string cache = Path.Combine(root, "device-cache");
+			var result = AssetCache.Build(new MemorySource(files), "fp", cache);
+			Check(result.Errors.Count == 2 && result.Errors.All(e => e.Contains("device name")), "device paths reported");
+			Check(!Directory.Exists(Path.Combine(cache, "raw", "data", "global", "aux")) && !File.Exists(Path.Combine(cache, "raw", "data", "global", "ui", "con.dc6")), "nothing written");
+			try { AssetCache.RawPath(cache, "data\\nul\\x.txt"); throw new Exception("device path accepted"); } catch (ArgumentException) { }
+		});
+
 		test("data and cache paths come from settings or environment and the cache refuses Git checkouts", () =>
 		{
 			string? previous = Environment.GetEnvironmentVariable(D2DataPaths.DataPathVariable);
