@@ -65,8 +65,35 @@ class ReleaseTests(unittest.TestCase):
     def prepare(self):
         release.prepare(self.output, self.version, self.commit, "owner/repo", "https://example.test/run/1")
 
-    def test_candidate_names_reject_paths_stable_versions_and_shell_text(self):
-        for value in ("v1.2.3", "../v1.2.3-rc.1", "v1.2.3-rc.0", "v1.2.3-rc.1\n", "$(id)", "-bad", "ci"):
+    def test_tags_accept_stable_and_candidates_and_must_match_version_file(self):
+        for value in ("v0.1.0", "v0.1.0-rc.1", "v10.20.30-rc.12"):
+            self.assertEqual(value, release.check_version(value))
+        (self.root / "VERSION").write_text("0.1.0\n")
+        self.assertEqual("v0.1.0", release.check_tag_matches_version("v0.1.0", self.root))
+        self.assertEqual("v0.1.0-rc.2", release.check_tag_matches_version("v0.1.0-rc.2", self.root))
+        for value in ("v0.2.0", "v0.1.1-rc.1", "v1.0.0"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                release.check_tag_matches_version(value, self.root)
+        for bad in ("v0.1.0\n", "0.1", "0.1.0-rc.1", "01.0.0"):
+            (self.root / "VERSION").write_text(bad if bad.endswith("\n") and bad.startswith("v") else bad)
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                release.read_version(self.root)
+
+    def test_repository_version_is_single_source(self):
+        import version
+        self.assertEqual(release.read_version(), version.godot_version())
+        props = (release.ROOT / "Directory.Build.props").read_text()
+        self.assertIn("ReadAllText('$(MSBuildThisFileDirectory)VERSION')", props)
+
+    def test_ci_checks_version_sync_and_stamps_assembly_metadata(self):
+        release_yml = (release.ROOT / ".github/workflows/release.yml").read_text()
+        self.assertIn("python eng/version.py check", release_yml)
+        m0 = (release.ROOT / ".github/workflows/m0.yml").read_text()
+        self.assertIn("SourceRevisionId=$GITHUB_SHA", m0)
+        self.assertIn("VersionSuffix=${RELEASE_TAG#*-}", m0)
+
+    def test_candidate_names_reject_paths_and_shell_text(self):
+        for value in ("0.3", "v0.3", "v0.3.0-beta", "v01.2.3", "../v1.2.3-rc.1", "v1.2.3-rc.0", "v1.2.3-rc.1\n", "$(id)", "-bad", "ci"):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 release.check_version(value)
         self.assertEqual("v0.2.0-rc.1", release.check_version(self.version))
