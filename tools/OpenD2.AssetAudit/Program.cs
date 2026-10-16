@@ -31,7 +31,7 @@ try
 		if (!verification.Verified) { Console.Error.WriteLine("Installation does not match any known MPQ manifest; refusing to build the cache."); return 3; }
 		var png = (Option("--png") ?? "dc6").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(k => k != "none").ToHashSet();
 		string? include = Option("--include") is { } prefix ? OpenD2.Assets.MpqArchive.NormalizePath(prefix.TrimEnd('\\', '/')) : null;
-		var options = new AssetCacheOptions { PngKinds = png, MaxPngFiles = Option("--max-png-files") is { } maxText ? (int.TryParse(maxText, out int maxFiles) && maxFiles > 0 ? maxFiles : throw new ArgumentException("--max-png-files must be a positive integer.")) : 250_000, Include = include is null ? null : n => n.StartsWith(include, StringComparison.Ordinal) };
+		var options = new AssetCacheOptions { PngKinds = png, MaxPngFiles = Option("--max-png-files") is { } maxText ? (int.TryParse(maxText, out int maxFiles) && maxFiles > 0 ? maxFiles : throw new ArgumentException("--max-png-files must be a positive integer.")) : 250_000, Include = include is null ? null : AssetCacheOptions.PathPrefix(include) };
 		string target = Path.Combine(cache, verification.Version!);
 		using var source = new MpqAssetSource(data);
 		var watch = System.Diagnostics.Stopwatch.StartNew();
