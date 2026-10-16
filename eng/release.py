@@ -240,6 +240,30 @@ def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
     return metadata
 
 
+def is_release_candidate(version):
+    return "-rc." in version
+
+
+def _version_key(tag):
+    match = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?", tag)
+    if not match:
+        return None
+    major, minor, patch, rc = match.groups()
+    # A stable X.Y.Z sorts after every X.Y.Z-rc.N.
+    return int(major), int(minor), int(patch), int(rc) if rc else float("inf")
+
+
+def previous_tag(version, tags=None):
+    """The highest existing release tag below version, or None for the first release."""
+    if tags is None:
+        listed = subprocess.run(["git", "tag", "--list", "v*"], cwd=ROOT, capture_output=True, text=True,
+                                encoding="utf-8")
+        tags = listed.stdout.split() if listed.returncode == 0 else []
+    current = _version_key(version)
+    older = [tag for tag in tags if (key := _version_key(tag)) is not None and current is not None and key < current]
+    return max(older, key=_version_key) if older else None
+
+
 def prepare(folder, version, commit, repository, run_url):
     check_version(version)
     if not re.fullmatch(r"[0-9a-f]{40}", commit) or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
@@ -288,11 +312,16 @@ def prepare(folder, version, commit, repository, run_url):
                            ("docs/migration/RC5_QA.md", "FEATURE_QA.md"),
                            ("LICENSE", "LICENSE"), ("THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md")):
         shutil.copyfile(ROOT / source, folder / target)
-    notes = f"""# OpenD2 {version} — GUI QA pending
+    candidate = is_release_candidate(version)
+    previous = previous_tag(version)
+    since = previous or "the previous preview"
+    status_line = ("This is an experimental release candidate, not an accepted production release." if candidate else
+                   f"This is the {version} release build; GUI QA results are recorded separately in release-manifest.json.")
+    notes = f"""# OpenD2 {version}{" — GUI QA pending" if candidate else ""}
 
 Source: `{commit}` | [Build and headless checks]({run_url})
 
-This is an experimental release candidate, not an accepted production release.
+{status_line}
 All three desktop packages passed the build/contracts and extracted-package headless checks.
 **Grok Bot / visible gameplay QA: NOT_RUN.** Creating this release does not run a bot.
 
@@ -304,7 +333,7 @@ SDK, Godot editor, Python and NPC model downloads are not needed to play the syn
 The Simulation tab opens first with New game / Continue / Load checkpoint.
 The HUD shows health, mana, region and play/pause state.
 
-Features since rc.4: the online preview. A self-contained **server** is now part of this release
+Features since {since}: the online preview. A self-contained **server** is now part of this release
 (`OpenD2-<version>-server-<runtime>.zip` for linux-x64, win-x64 and osx-arm64). Realm (operator-run) and Open
 (personal or LAN host) modes, accounts, characters, rooms with invites and reconnect, WSS streams, Open character
 files, and a synthetic cooperative Camp/Field world with personal quests. Characters can have one of seven classes with
@@ -314,7 +343,7 @@ server on character tables they extracted from their own install with `--tables 
 package); that path has not been tried with real Diablo II files. Server hardening: login hashing and
 checkpoint writes no longer stall rooms, and restart, network-fault and 32-stream capacity behaviour are
 covered by contract tests (see the server package's documentation).
-Carried over from rc.4: scene creation and artwork configuration (PLAY-08–13), 10x4 grid inventory, Power strike
+Carried over from earlier previews: scene creation and artwork configuration (PLAY-08–13), 10x4 grid inventory, Power strike
 and mana, recovery potions and a four-slot belt, separated ground names. F picks up the nearest item in range.
 Q uses the selected skill; 1–4 use belt potions once per press. L toggles ground names.
 Godot 4.7.2 includes the desktop Android-polling lifecycle fix; strict ERROR checks remain enabled.

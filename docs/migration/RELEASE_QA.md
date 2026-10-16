@@ -25,14 +25,23 @@ python eng/release-local.py --tag v0.1.0-rc.1 [--preset Linux --preset Windows] 
 
 1. 작업 트리가 깨끗하고, 태그가 `VERSION`과 맞고, 태그가 있으면 HEAD가 그 태그 커밋이며 annotated인지 확인한다.
    태그 전 시험은 `--rehearsal`(노트에 REHEARSAL 표시).
-2. `git archive`로 HEAD를 고정 경로 `/tmp/opend2-release-build/src`에 풀고, `SOURCE_DATE_EPOCH`=커밋 시각으로 Release 빌드·테스트
-   (알려진 실패는 NPC 번들 런타임 하나만 허용)·Godot export를 한다.
-3. 정렬·소유자·시각을 고정한 tar.gz/ZIP으로 묶는다. 같은 커밋을 두 번 빌드하면 아카이브 SHA-256이 같다.
-4. **게임 데이터 차단**(`eng/data_guard.py`): 확장자(.mpq .wav .mp3 .ogg .bik .smk .dc6 .dcc .dt1 .ds1 .cof .pl2 .tbl .dat .d2s, 대소문자 무시,
-   Godot 가져오기 이름 포함), `data/global/` 경로, 압축 안의 압축, PCK 파일 목록과 내용, 원본 파일 SHA-256을 검사한다. 원본 해시는
-   저장소에 두지 않고 실행할 때 `OPEND2_ORIGINAL_SHA256SUMS=<정품 폴더>/SHA256SUMS` 또는 `D2_DATA_PATH`에서 읽는다. 하나라도 걸리면 종료 코드 1과
-   파일 이름을 출력한다. `release.py pack`도 같은 검사를 통과해야 아카이브를 남긴다. 50MB 초과 파일은 경고만 한다.
-5. 결과는 저장소 밖 `../opend2-release/<태그>/`에 `SHA256SUMS`, `release-manifest.json`, `RELEASE_NOTES.md`([템플릿](../release/NOTES_TEMPLATE.md),
+2. `eng/version.py check`로 `VERSION`과 Godot 설정이 맞는지 보고, Godot 편집기·export 템플릿 버전이 `eng/toolchain.json`과
+   같은지 확인한다(버전과 템플릿 SHA-256은 manifest `toolchain`에 기록).
+3. `git archive`로 HEAD를 `~/.cache/opend2/release-build/` 아래 실행마다 새로 만드는 비공개(0700) 임시 폴더에 풀고,
+   `SOURCE_DATE_EPOCH`=커밋 시각, `LC_ALL=C.UTF-8`, `TZ=UTC`, `PathMap`으로 Release 빌드·테스트(테스트 단계 출력과 요약 줄로 판정,
+   알려진 실패는 NPC 번들 런타임 하나만 허용)·Godot export를 한다. 동시에 두 번 실행해도 서로 덮어쓰지 않고, 임시 경로는 결과물에 남지 않는다.
+4. 정렬·소유자·시각을 고정한 tar.gz/ZIP으로 묶는다. 같은 머신에서 같은 커밋을 두 번 빌드하면 `SHA256SUMS`가 같다
+   (zip/gzip 바이트는 zlib 버전에 따라 달라질 수 있어 "같은 툴체인·같은 머신" 재현만 보장). 검증: 두 번 `--rehearsal`로 빌드해
+   `diff a/SHA256SUMS b/SHA256SUMS`.
+5. **릴리즈 페이로드 게임 데이터 차단**(`eng/data_guard.py`, 저장소 히스토리 검사는 아님): 확장자(.mpq .wav .mp3 .ogg .bik .smk .dc6 .dcc
+   .dt1 .ds1 .cof .pl2 .tbl .d2s .pal .pcx .fnt, NFKC 정규화·끝 공백/마침표/~ 무시, Godot 가져오기 이름 포함), `.txt/.dat/.bin`은
+   `data/global|local` 경로이거나 D2 테이블 이름일 때만(라이선스 txt, ICU `icudt*.dat` 오탐 방지), MPQ 헤더(`MPQ\x1A/\x1B`),
+   zip(EOCD 기준, 앞에 바이트가 붙은 SFX 포함)·tar(gz/bz2/xz)·단일 gz/bz2/xz·PCK(독립 파일과 실행 파일 끝에 붙은 PCK), 원본 SHA-256을
+   검사한다. 해석할 수 없는 형식(7z, rar, zstd, cab 등), 암호화된 PCK/zip 항목, 심볼릭 링크, 압축 해제 상한(항목 1GB, 합계 4GB, 비율 200:1)을
+   넘는 압축은 차단한다. 원본 해시는 저장소에 두지 않고 `OPEND2_ORIGINAL_SHA256SUMS` 또는 `D2_DATA_PATH`에서 읽으며, **정식 릴리즈에서는 필수**
+   (`--rehearsal`/`ci` 빌드는 경고만, 결과는 `PASS (no original hash list)`). 50MB 초과 파일은 경고로 출력하고 manifest에 남긴다.
+6. 모든 결과는 임시 폴더에 만들고 전부 성공했을 때만 `../opend2-release/<태그>/`로 이름을 바꾼다. 실패하면 아무것도 남지 않는다.
+7. 결과는 저장소 밖 `../opend2-release/<태그>/`에 `SHA256SUMS`, `release-manifest.json`, `RELEASE_NOTES.md`([템플릿](../release/NOTES_TEMPLATE.md),
    CHANGELOG 해당 절 포함)로 남는다. 업로드는 현우님이 `gh release create <태그> --verify-tag ../opend2-release/<태그>/*`로 직접 한다.
 
 
