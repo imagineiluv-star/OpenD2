@@ -185,3 +185,14 @@ PLAY-17에서는 바닥 이름을 클릭하면 그 아이템으로 접근해 한
 가방 부족/막힌 경로는 메시지를 표시하며 자동 재시도하지 않는다. **F**는 가까운 물건 즉시 줍기로 유지한다.
 이름은 지형 위의 선택 오버레이이며 원본 바닥 아트/품질색/글꼴 이관과 별도다.
 [검증과 실제 GUI 미실행 범위](docs/migration/PLAY_17_RESULTS.md).
+
+## 정품 MPQ 경로와 변환 캐시 (P1-MPQ)
+
+원본 MPQ와 추출 결과는 저작권 자료다. 저장소(비공개 포함)에 커밋·업로드하지 않는다. `.gitignore`가 `*.mpq`, `/asset-cache/`를 막고, 캐시 생성기는 Git 체크아웃 안의 경로를 거부한다.
+
+- `D2_DATA_PATH`: 정품 설치 폴더(MPQ가 있는 곳). 명시 인자가 있으면 그쪽이 우선.
+- `D2_ASSET_CACHE`: 변환 캐시 루트. 기본값은 사용자 로컬 데이터 폴더의 `OpenD2/asset-cache`.
+- 버전 검증: `dotnet run --project tools/OpenD2.AssetAudit -- --verify-install` — `src/OpenD2.Assets/Manifests/d2-mpq-manifest.json`의 SHA-256과 비교(1.11b 확정, 1.14d는 자리표시자).
+- 캐시 생성: `dotnet run --project tools/OpenD2.AssetAudit -- --build-cache [--png dc6,dcc] [--include <경로 접두사>]` — 팔레트(PNG 견본), Excel TXT(UTF-8 TSV), DC6(기본)/DCC(선택) → 프레임별 PNG, 엔진용 원본 리소스 사본. 원본 해시·변환기 버전·옵션이 같으면 다시 만들지 않는다.
+- 엔진: `AssetDecoders.ReadFromInstall`에 MPQ 폴더 대신 캐시 폴더(`<cache>/<version>`)를 넘기면 캐시에서 읽는다.
+- 테스트: `OpenD2.Tests`의 합성 픽스처 테스트는 항상 실행된다. 정품 테스트는 `D2_DATA_PATH`가 있을 때만 실행되고, 없으면 `SKIP`을 출력한다.

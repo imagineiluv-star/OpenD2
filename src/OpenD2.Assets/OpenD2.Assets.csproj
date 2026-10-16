@@ -1,1 +1,6 @@
-<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../OpenD2.Core/OpenD2.Core.csproj" /></ItemGroup></Project>
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup><ProjectReference Include="../OpenD2.Core/OpenD2.Core.csproj" /></ItemGroup>
+  <!-- Hashes only. MPQs and extracted output never live in the repository (see .gitignore). -->
+  <ItemGroup><EmbeddedResource Include="Manifests/d2-mpq-manifest.json" LogicalName="OpenD2.Assets.d2-mpq-manifest.json" /></ItemGroup>
+  <ItemGroup><InternalsVisibleTo Include="OpenD2.Tests" /></ItemGroup>
+</Project>

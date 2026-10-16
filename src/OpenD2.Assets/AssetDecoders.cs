@@ -48,6 +48,13 @@ public static class AssetDecoders
 	{
 		if (maxBytes < 0 || maxBytes > PcmWave.MaxAuditInputBytes) throw new ArgumentOutOfRangeException(nameof(maxBytes));
 		logicalPath = MpqArchive.NormalizePath(logicalPath);
+		// A converted cache (AssetCache.Build) is read like an installation; raw MPQs remain supported.
+		if (AssetCache.IsCache(directory))
+		{
+			using var cache = new CacheAssetSource(directory);
+			if (cache.TryRead(logicalPath, maxBytes, out var cached)) return cached;
+			throw new FileNotFoundException("Resource not found in converted asset cache.", logicalPath);
+		}
 		foreach (string archivePath in GameInstall.Probe(directory).Archives)
 		{
 			// Failure to open a higher-priority archive is not silently bypassed.
