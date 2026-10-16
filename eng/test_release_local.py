@@ -1,11 +1,14 @@
 """Unit tests for eng/release-local.py helpers (no build is run)."""
 import importlib.util
 from pathlib import Path
+import os
 import unittest
 
 spec = importlib.util.spec_from_file_location("release_local", Path(__file__).with_name("release-local.py"))
 release_local = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release_local)
+for _key in ("D2_DATA_PATH", "OPEND2_ORIGINAL_SHA256SUMS", "OPEND2_RELEASE_REHEARSAL"):
+    os.environ.pop(_key, None)  # hermetic; this module runs no subprocess that needs them
 NPC = "FAIL NPC bundled native runtime executes and invalid model startup cleans up for retry: boom"
 
 

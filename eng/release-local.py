@@ -214,7 +214,7 @@ def main():
         with BuildDirectory() as build_root:
             assemble(args, version, tag, presets, head, output, log, build_root)
         if final.exists():
-            raise SystemExit(f"{final} appeared during the build; result left in {output}")
+            raise SystemExit(f"{final} appeared during the build; this run's result was discarded")
         output.chmod(0o755)
         os.rename(output, final)
     except BaseException:
