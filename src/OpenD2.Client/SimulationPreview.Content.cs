@@ -76,8 +76,8 @@ public partial class SimulationPreview
 	public bool RequestSceneLoad(string file)
 	{
 		if (verifying || pendingRestart is not null || string.IsNullOrWhiteSpace(file)) return false;
-		if (sessionStarted) ConfirmRestart(() => _ = LoadLegacyScene(file));
-		else _ = LoadLegacyScene(file);
+		if (sessionStarted) ConfirmRestart(() => TaskObserver.Observe(LoadLegacyScene(file), "Scene load"));
+		else TaskObserver.Observe(LoadLegacyScene(file), "Scene load");
 		return true;
 	}
 	private async Task LoadLegacyScene(string file, Func<string, byte[]>? read = null)

@@ -4,11 +4,15 @@ namespace OpenD2.Online;
 
 // Owns only the child it starts. stdin is a private control channel: EOF also
 // shuts the server down if its client crashes, without a network shutdown API.
-public sealed class PersonalHost : IDisposable
+public sealed class PersonalHost : IDisposable, IAsyncDisposable
 {
     private Process? process;
     private int disposed;
+    // After Kill, wait only briefly: shutdown must not hang on a child the OS has not reaped yet.
+    internal static readonly TimeSpan KillTimeout = TimeSpan.FromSeconds(2);
     private readonly SemaphoreSlim gate = new(1);
+    /// <summary>Receives shutdown diagnostics, such as a child still alive after Kill. Optional.</summary>
+    public Action<string>? Diagnostic { get; set; }
     public string? Address { get; private set; }
     public string? TrustedRootSha256 { get; private set; }
     public bool Running => process is { HasExited: false };
@@ -96,12 +100,32 @@ public sealed class PersonalHost : IDisposable
             catch (Exception e) when (e is TimeoutException or IOException)
             {
                 clean = false;
-                if (!child.HasExited) { child.Kill(entireProcessTree: true); await child.WaitForExitAsync().ConfigureAwait(false); }
+                if (!child.HasExited)
+                {
+                    child.Kill(entireProcessTree: true);
+                    if (!await WaitForExit(child, KillTimeout).ConfigureAwait(false))
+                        Diagnostic?.Invoke($"Personal host process {child.Id} still running {KillTimeout.TotalSeconds:0}s after Kill.");
+                }
             }
         }
         finally { child.Dispose(); }
         return clean;
     }
-    /// <summary>Marks the host as disposed and synchronously stops any running child process.</summary>
-    public void Dispose() { Interlocked.Exchange(ref disposed, 1); Stop().GetAwaiter().GetResult(); }
+    internal static async Task<bool> WaitForExit(Process child, TimeSpan limit)
+    {
+        try { await child.WaitForExitAsync().WaitAsync(limit).ConfigureAwait(false); return true; }
+        catch (TimeoutException) { return false; }
+    }
+    /// <summary>Marks the host as disposed and stops any running child process without blocking the caller.</summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+        await Stop().ConfigureAwait(false);
+    }
+    /// <summary>Synchronous fallback for callers that cannot await; runs Stop off any caller SynchronizationContext.</summary>
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+        Task.Run(Stop).GetAwaiter().GetResult();
+    }
 }

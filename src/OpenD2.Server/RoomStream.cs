@@ -28,16 +28,35 @@ internal static class RoomStream
             using var socket = await context.WebSockets.AcceptWebSocketAsync(world ? RoomFrames.WorldProtocol : inputProgress ? RoomFrames.InputProgressProtocol : interest ? RoomInterest.Protocol : delta ? RoomFrames.Protocol : "opend2.room.v1");
             using var stop = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
             Task receive = Receive(socket, stop.Token), send = Push(socket, realm, room, token, delta, interest, inputProgress, world, stop.Token);
-            try { await Task.WhenAny(receive, send); }
+            Task? first = null;
+            try { first = await Task.WhenAny(receive, send); }
             finally
             {
+                // Record why the stream ended from the task that finished first, before our own
+                // Cancel/Abort turns the other one into a cancellation.
+                Log(context).LogDebug("Room stream {Room} closed: {Cause}.", room, ShutdownCause(first, receive, context.RequestAborted.IsCancellationRequested));
                 stop.Cancel(); socket.Abort();
                 try { await Task.WhenAll(receive, send); }
-                catch (OperationCanceledException) { Log(context).LogDebug("Room stream {Room} closed by cancellation.", room); }
-                catch (WebSocketException error) { Log(context).LogDebug("Room stream {Room} closed by socket error {Error}.", room, error.WebSocketErrorCode); }
+                catch (OperationCanceledException) { } // Expected: we cancelled the remaining task.
+                catch (WebSocketException) { }         // Expected: we aborted the socket.
             }
         }
         finally { active.TryRemove(token, out _); }
+    }
+
+    internal static string ShutdownCause(Task? first, Task receive, bool requestAborted)
+    {
+        if (first is null) return "unknown";
+        string side = ReferenceEquals(first, receive) ? "receive" : "send";
+        return first.Status switch
+        {
+            TaskStatus.RanToCompletion => side == "receive" ? "client closed" : "send completed",
+            TaskStatus.Canceled => requestAborted ? "request aborted" : side + " cancelled",
+            TaskStatus.Faulted when first.Exception!.GetBaseException() is WebSocketException socket => $"{side} socket error {socket.WebSocketErrorCode}",
+            TaskStatus.Faulted when first.Exception!.GetBaseException() is OperationCanceledException => requestAborted ? "request aborted" : side + " cancelled",
+            TaskStatus.Faulted => $"{side} failed {first.Exception!.GetBaseException().GetType().Name}",
+            _ => "unknown",
+        };
     }
 
     private static ILogger Log(HttpContext context) =>
