@@ -85,6 +85,13 @@ class ReleaseTests(unittest.TestCase):
         props = (release.ROOT / "Directory.Build.props").read_text()
         self.assertIn("ReadAllText('$(MSBuildThisFileDirectory)VERSION')", props)
 
+    def test_ci_checks_version_sync_and_stamps_assembly_metadata(self):
+        release_yml = (release.ROOT / ".github/workflows/release.yml").read_text()
+        self.assertIn("python eng/version.py check", release_yml)
+        m0 = (release.ROOT / ".github/workflows/m0.yml").read_text()
+        self.assertIn("SourceRevisionId=$GITHUB_SHA", m0)
+        self.assertIn("VersionSuffix=${RELEASE_TAG#*-}", m0)
+
     def test_candidate_names_reject_paths_and_shell_text(self):
         for value in ("0.3", "v0.3", "v0.3.0-beta", "v01.2.3", "../v1.2.3-rc.1", "v1.2.3-rc.0", "v1.2.3-rc.1\n", "$(id)", "-bad", "ci"):
             with self.subTest(value=value), self.assertRaises(ValueError):

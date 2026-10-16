@@ -52,6 +52,18 @@ jobs:
         run: python eng/build-native.py
       - name: Build pinned optional NPC runtime from source
         run: python eng/build-npc.py
+      - name: Stamp assembly version metadata (VersionSuffix, SourceRevisionId)
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || 'ci' }}
+        shell: bash
+        run: |
+          # MSBuild reads environment variables as properties, so every later dotnet build/publish picks these up.
+          echo "SourceRevisionId=$GITHUB_SHA" >> "$GITHUB_ENV"
+          case "$RELEASE_TAG" in
+            v*-rc.*) echo "VersionSuffix=${RELEASE_TAG#*-}" >> "$GITHUB_ENV" ;;
+            v*.*.*) ;;
+            *) echo "VersionSuffix=ci" >> "$GITHUB_ENV" ;;
+          esac
       - name: Build, contracts, headless smoke and export
         run: python eng/validate.py --export ${{ matrix.preset }}
       - name: Archive and smoke the extracted release package
