@@ -5,6 +5,18 @@ using OpenD2.Assets;
 // Synthetic reproductions of the shapes found while validating genuine 1.11b files. No game data.
 internal static class RealDataShapeContracts
 {
+	// Simulates an over-budget read (big.dc6) and a decoder-unrelated exception type (boom.dc6).
+	private sealed class FaultySource(Dictionary<string, byte[]> files) : IAssetSource
+	{
+		public IReadOnlyList<string> List() => files.Keys.Order(StringComparer.Ordinal).ToArray();
+		public bool TryRead(string path, long maxBytes, out byte[] data)
+		{
+			if (path.EndsWith("boom.dc6", StringComparison.Ordinal)) throw new NotSupportedException("simulated");
+			data = path.EndsWith("big.dc6", StringComparison.Ordinal) ? [] : files[path];
+			return !path.EndsWith("big.dc6", StringComparison.Ordinal);
+		}
+		public void Dispose() { }
+	}
 	private sealed class MemorySource(Dictionary<string, byte[]> files) : IAssetSource
 	{
 		public IReadOnlyList<string> List() => files.Keys.Order(StringComparer.Ordinal).ToArray();
@@ -81,7 +93,23 @@ internal static class RealDataShapeContracts
 			var dt1 = report.Kinds.Single(k => k.Kind == "dt1");
 			Check(dt1.Failed == 1 && dt1.Unreferenced == 1 && dt1.Failures[0].Contains("used.dt1") && dt1.UnreferencedFailures[0].Contains("leftover.dt1"), "dt1 buckets");
 			Check(report.Kinds.Single(k => k.Kind == "dc6").Passed == 1 && report.Kinds.Single(k => k.Kind == "excel_txt").Passed == 1, "other kinds");
-			Check(report.Resources == 4 && report.Failed == 1 && report.Unreferenced == 1, "totals");
+			Check(report.Resources == 4 && report.Failed == 1 && report.Unreferenced == 1 && report.Skipped == 0 && report.Notes.Count == 0, "totals");
+		});
+
+		test("corpus validation counts unreadable resources and unexpected exceptions instead of passing or aborting", () =>
+		{
+			var files = new Dictionary<string, byte[]>
+			{
+				["data\\global\\excel\\lvltypes.txt"] = [65, 0, 66],
+				["data\\global\\ui\\a.dc6"] = LegacyFormatContracts.Dc6(),
+				["data\\global\\ui\\big.dc6"] = LegacyFormatContracts.Dc6(),
+				["data\\global\\ui\\boom.dc6"] = LegacyFormatContracts.Dc6(),
+			};
+			var report = CorpusValidation.Run(new FaultySource(files));
+			var dc6 = report.Kinds.Single(k => k.Kind == "dc6");
+			Check(dc6.Passed == 1 && dc6.Skipped == 1 && dc6.SkippedResources[0].Contains("big.dc6") && dc6.Failed == 1 && dc6.Failures[0].Contains("NotSupportedException"), "per-resource accounting");
+			Check(report.Notes.Single().Contains("lvltypes.txt") && report.Kinds.Single(k => k.Kind == "excel_txt").Failed == 1, "bad lvltypes is a note and a failure, not an abort");
+			Check(report.Resources == 4 && report.Skipped == 1 && !report.Clean, "skipped resources fail the run");
 		});
 	}
 }

@@ -24,7 +24,8 @@ internal static class GenuineDataContracts
 			// amblxbow.cof in genuine 1.11b does not have a COF header at all (byte 3 is not 20); the game never loads it.
 			Check(failures.All(f => f.StartsWith("data\\global\\chars\\am\\cof\\amblxbow.cof:")) && failures.Length <= 1, "unexpected failures: " + string.Join(" | ", failures.Take(5)));
 			Check(report.Kinds.Single(k => k.Kind == "dt1").UnreferencedFailures.All(f => f.Contains("Unsupported DT1 version")), "only old-version DT1 leftovers are unreferenced");
-			Console.WriteLine($"  validated {report.Passed} resources; failed {report.Failed}; unreferenced {report.Unreferenced}");
+			Check(report.Skipped == 0 && report.Notes.Count == 0, "skipped: " + string.Join(" | ", report.Kinds.SelectMany(k => k.SkippedResources).Take(5)));
+			Console.WriteLine($"  validated {report.Passed} resources; failed {report.Failed}; unreferenced {report.Unreferenced}; skipped {report.Skipped}");
 		});
 		test("genuine: raw MPQ and converted cache return identical bytes and decode", () =>
 		{

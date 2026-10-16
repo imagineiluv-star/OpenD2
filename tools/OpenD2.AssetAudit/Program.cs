@@ -3,7 +3,7 @@ using OpenD2.Assets;
 
 if (args.Length == 0 || args[0] is "--help" or "-h")
 {
-	Console.WriteLine("Usage: OpenD2.AssetAudit --check-demo-music <pinned-demo-data-directory> <demo-scene.json>\n       OpenD2.AssetAudit --check-scene|--check-play-ready <game-data-directory> <scene-request.json>\n       OpenD2.AssetAudit --check-map <game-data-directory> <map-request.json>\n       OpenD2.AssetAudit --inspect-save <legacy-v96.d2s> (read-only header/checksum; no import)\n       OpenD2.AssetAudit [--probe|--decode|--decode-demo] <game-data-directory> [known-paths.txt]\n       OpenD2.AssetAudit --items-txt <game-data-directory> (lod-1.10f reference data; no gameplay import)\n       OpenD2.AssetAudit --character-txt <game-data-directory> (lod-1.10f charstats/experience/skills; no gameplay import)\n       OpenD2.AssetAudit --monsters-txt <game-data-directory> (lod-1.10f monstats: code, name key, level, experience; no gameplay import)\n       OpenD2.AssetAudit --tables-txt|--tables-bin-110f <game-data-directory>\n       OpenD2.AssetAudit --validate-all [game-data-directory] (decode every known resource kind from the MPQs; per-kind pass/fail summary; D2_DATA_PATH)\n       OpenD2.AssetAudit --verify-install [game-data-directory] (SHA-256 manifest check; directory defaults to D2_DATA_PATH)\n       OpenD2.AssetAudit --build-cache [game-data-directory] [--cache <dir>] [--png dc6,dcc] [--include <path-prefix>] [--version <id>] [--trust-hash-cache] (extract/convert into a cache outside the repo; D2_ASSET_CACHE)\nJSON goes to stdout. Scan uses read-only MPQs; no resource extraction. --decode validates Palette/text TBL/DC6/DCC/COF/DT1/DS1 and TXT structure. BIN schemas require explicit --tables-bin-110f.\nExit 0: scan completed without reported errors; 3: missing archives, read, decode or reference failures; 1: fatal error; 2: usage.\nA successful scan does not establish version compatibility or complete coverage.");
+	Console.WriteLine("Usage: OpenD2.AssetAudit --check-demo-music <pinned-demo-data-directory> <demo-scene.json>\n       OpenD2.AssetAudit --check-scene|--check-play-ready <game-data-directory> <scene-request.json>\n       OpenD2.AssetAudit --check-map <game-data-directory> <map-request.json>\n       OpenD2.AssetAudit --inspect-save <legacy-v96.d2s> (read-only header/checksum; no import)\n       OpenD2.AssetAudit [--probe|--decode|--decode-demo] <game-data-directory> [known-paths.txt]\n       OpenD2.AssetAudit --items-txt <game-data-directory> (lod-1.10f reference data; no gameplay import)\n       OpenD2.AssetAudit --character-txt <game-data-directory> (lod-1.10f charstats/experience/skills; no gameplay import)\n       OpenD2.AssetAudit --monsters-txt <game-data-directory> (lod-1.10f monstats: code, name key, level, experience; no gameplay import)\n       OpenD2.AssetAudit --tables-txt|--tables-bin-110f <game-data-directory>\n       OpenD2.AssetAudit --validate-all [game-data-directory] (decode every known resource kind from the MPQs; per-kind pass/fail summary; D2_DATA_PATH)\n       OpenD2.AssetAudit --verify-install [game-data-directory] (SHA-256 manifest check; directory defaults to D2_DATA_PATH)\n       OpenD2.AssetAudit --build-cache [game-data-directory] [--cache <dir>] [--png dc6,dcc] [--include <path-prefix>] [--version <id>] [--trust-hash-cache] [--max-png-files <n>] (extract/convert into a cache outside the repo; D2_ASSET_CACHE)\nJSON goes to stdout. Scan uses read-only MPQs; no resource extraction. --decode validates Palette/text TBL/DC6/DCC/COF/DT1/DS1 and TXT structure. BIN schemas require explicit --tables-bin-110f.\nExit 0: scan completed without reported errors; 3: missing archives, read, decode or reference failures; 1: fatal error; 2: usage.\nA successful scan does not establish version compatibility or complete coverage.");
 	return args.Length == 0 ? 2 : 0;
 }
 try
@@ -13,7 +13,7 @@ try
 		string data = D2DataPaths.ResolveDataPath(args.Length > 1 ? args[1] : null) ?? throw new ArgumentException("Pass a game data directory or set D2_DATA_PATH.");
 		var validation = CorpusValidation.Run(data);
 		Console.WriteLine(JsonSerializer.Serialize(validation, new JsonSerializerOptions { WriteIndented = true }));
-		return validation.Failed == 0 ? 0 : 3;
+		return validation.Clean ? 0 : 3;
 	}
 	if (args[0] is "--verify-install" or "--build-cache")
 	{
@@ -31,14 +31,15 @@ try
 		if (!verification.Verified) { Console.Error.WriteLine("Installation does not match any known MPQ manifest; refusing to build the cache."); return 3; }
 		var png = (Option("--png") ?? "dc6").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(k => k != "none").ToHashSet();
 		string? include = Option("--include") is { } prefix ? OpenD2.Assets.MpqArchive.NormalizePath(prefix) : null;
-		var options = new AssetCacheOptions { PngKinds = png, Include = include is null ? null : n => n.StartsWith(include, StringComparison.Ordinal) };
+		var options = new AssetCacheOptions { PngKinds = png, MaxPngFiles = Option("--max-png-files") is { } maxText ? (int.TryParse(maxText, out int maxFiles) && maxFiles > 0 ? maxFiles : throw new ArgumentException("--max-png-files must be a positive integer.")) : 250_000, Include = include is null ? null : n => n.StartsWith(include, StringComparison.Ordinal) };
 		string target = Path.Combine(cache, verification.Version!);
 		using var source = new MpqAssetSource(data);
 		var watch = System.Diagnostics.Stopwatch.StartNew();
 		var result = AssetCache.Build(source, AssetCache.Fingerprint(verification.Archives) + (include is null ? "" : "|" + include), target, options);
-		Console.WriteLine(JsonSerializer.Serialize(new { version = verification.Version, cache = target, result.Rebuilt, result.Resources, result.PngFiles, result.Tables, result.Palettes,
+		Console.WriteLine(JsonSerializer.Serialize(new { version = verification.Version, cache = target, result.Rebuilt, result.Resources, result.PngFiles, result.PngBytes, result.PngCapped, result.Tables, result.Palettes,
 			errorCount = result.Errors.Count, errors = result.Errors.Take(20), seconds = Math.Round(watch.Elapsed.TotalSeconds, 1) }, new JsonSerializerOptions { WriteIndented = true }));
-		return 0;
+		// A capped cache is incomplete (and is rebuilt next time); report it as a failure.
+		return result.PngCapped ? 3 : 0;
 	}
 	if (args[0] == "--check-demo-music")
 	{
