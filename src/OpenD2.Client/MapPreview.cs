@@ -31,9 +31,9 @@ public partial class MapPreview : VBoxContainer
 		tableMode.AddItem("TXT map tables"); tableMode.AddItem("BIN map tables (1.10f only)"); tableControls.AddChild(tableMode);
 		foreach (var input in new[] { ("Level ID", levelId), ("Preset Def", presetId), ("File slot", fileSlot) })
 		{ tableControls.AddChild(new Label { Text = input.Item1 }); tableControls.AddChild(input.Item2); }
-		tableControls.AddChild(resolve); resolve.Pressed += ResolvePaths;
+		tableControls.AddChild(resolve); resolve.Pressed += () => Observe(ResolvePaths());
 		AddChild(resource); AddChild(palettePath); AddChild(tilesets);
-		AddChild(load); load.Pressed += LoadMap;
+		AddChild(load); load.Pressed += () => Observe(LoadMap());
 		var controls = new HBoxContainer(); AddChild(controls);
 		var collision = new CheckButton { Text = "Collision" }; controls.AddChild(collision);
 		collision.Toggled += on => { view.ShowCollision = on; view.QueueRedraw(); };
@@ -48,7 +48,12 @@ public partial class MapPreview : VBoxContainer
 		if (OS.GetCmdlineUserArgs().Contains("--smoke-test")) SetupSmoke();
 	}
 	private void Busy(bool value) { busy = value; load.Disabled = value; resolve.Disabled = value; clearCache.Disabled = value; RefreshSetup(); }
-	private async void ResolvePaths()
+	private static async void Observe(Task work)
+	{
+		try { await work; }
+		catch (Exception error) { GD.PushError("Map preview failed: " + error); }
+	}
+	private async Task ResolvePaths()
 	{
 		if (busy) return;
 		Busy(true); status.Text = "Reading map tables and checking references...";
@@ -68,7 +73,7 @@ public partial class MapPreview : VBoxContainer
 		catch (Exception error) { if (IsInstanceValid(this) && IsInsideTree()) status.Text = "Table resolution failed; previous paths retained. " + error.Message; }
 		finally { if (IsInstanceValid(this) && IsInsideTree()) Busy(false); }
 	}
-	private async void LoadMap()
+	private async Task LoadMap()
 	{
 		if (busy) return;
 		loadedMap = null; Busy(true); status.Text = "Reading and decoding map...";
