@@ -4,9 +4,10 @@ using OpenD2.Assets;
 // Headless original-mode capture and screen comparison. Captures are written outside the repository only.
 const string Usage = """
 Usage: OpenD2.ScreenDiff --capture <scene> --out <file.png> [--data <game-data-dir>] [--resolution 800x600|640x480] [--palette units] [--seed N] [--tick N] [--window WxH] [--scale fit|integer] [--filter sharp|nearest|linear]
-       OpenD2.ScreenDiff --diff <a.png> <b.png> [--min-match <percent>] [--max-mae <value>] [--min-ssim <value>]
+       OpenD2.ScreenDiff --diff <a.png> <b.png> [--min-match <percent>] [--max-mae <value>] [--min-ssim <value>] [--gpu-window]
 --capture renders the internal 800x600/640x480 buffer on the CPU unless --window asks for the presented window (default: fit scale, sharp filter) (no GPU, no window); the same commit, scene and options give byte-identical PNGs.
 Scenes: gameselect, charselect. --data defaults to D2_DATA_PATH. The output must lie outside any Git checkout.
+--gpu-window applies the GPU-vs-CPU window tolerance (min-match 0, max-mae 0.5, min-ssim 0.999) instead of the exact default (100%).
 --diff prints pixel match %, mean absolute error (0-255) and SSIM as JSON. Exit 0: within thresholds; 3: outside; 1: error; 2: usage.
 """;
 if (args.Length == 0 || args[0] is "--help" or "-h") { Console.WriteLine(Usage); return args.Length == 0 ? 2 : 0; }
@@ -43,9 +44,11 @@ try
 		var a = PngReader.DecodeRgb(File.ReadAllBytes(args[1])); var b = PngReader.DecodeRgb(File.ReadAllBytes(args[2]));
 		if (a.Width != b.Width || a.Height != b.Height) { Console.WriteLine(JsonSerializer.Serialize(new { error = "size mismatch", a = new[] { a.Width, a.Height }, b = new[] { b.Width, b.Height } }, json)); return 3; }
 		var result = ScreenDiff.Compare(a.Width, a.Height, a.Rgb, b.Rgb);
-		double minMatch = double.Parse(Option("--min-match") ?? "100", System.Globalization.CultureInfo.InvariantCulture);
-		double maxMae = double.Parse(Option("--max-mae") ?? "0", System.Globalization.CultureInfo.InvariantCulture);
-		double minSsim = double.Parse(Option("--min-ssim") ?? "0", System.Globalization.CultureInfo.InvariantCulture);
+		bool gpu = args.Contains("--gpu-window");
+		var inv = System.Globalization.CultureInfo.InvariantCulture;
+		double minMatch = double.Parse(Option("--min-match") ?? (gpu ? "0" : "100"), inv);
+		double maxMae = double.Parse(Option("--max-mae") ?? (gpu ? ScreenDiff.GpuWindowMaxMae.ToString(inv) : "0"), inv);
+		double minSsim = double.Parse(Option("--min-ssim") ?? (gpu ? ScreenDiff.GpuWindowMinSsim.ToString(inv) : "0"), inv);
 		bool pass = result.MatchPercent >= minMatch && result.MeanAbsoluteError <= maxMae && result.Ssim >= minSsim;
 		Console.WriteLine(JsonSerializer.Serialize(new { result, pass }, json));
 		return pass ? 0 : 3;

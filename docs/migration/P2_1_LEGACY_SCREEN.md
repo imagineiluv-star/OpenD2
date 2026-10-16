@@ -25,3 +25,16 @@
   - 비정수 sharp와 nearest는 MAE ≤ 0.5, SSIM ≥ 0.99를 만족해야 한다.
 - 창이 800x600보다 작으면 sharp와 linear는 box filter(면적 평균)로 줄여 aliasing을 막는다. nearest는 요청대로 점 샘플링한다.
 - sharp의 정수 확대 배수는 CPU와 Godot가 같은 함수 `LetterboxLayout.SharpPrescale`(반올림된 rect 기준 ceil)로 계산한다.
+
+## 기준 해시 (gameselect, units, 1.11b)
+| 대상 | 명령 | PNG SHA-256 |
+|---|---|---|
+| 800x600 내부 버퍼 | `--capture gameselect` | `13e758f8a5662907e282f445f62d30ce1bb0bdf1640d37e99b02b4ab450176c0` |
+| 1920x1080 창 (기본 fit 1.8배 + sharp, CPU) | `--capture gameselect --window 1920x1080` | `65cac090c4e16c22ddcffb9ca0943d75a8cddd60acd20478207c11a331c8de25` |
+
+같은 커밋에서 두 번 캡처하면 두 해시 모두 바이트가 같다. 내부 버퍼 해시는 표시 경로(fit, sharp)를 검증하지 않는다.
+
+## GPU 화면 비교 임계값
+- 실제 GPU(Godot) 창과 CPU `--window` 결과는 비정수 배율에서 채널값이 ±1 다르다. 1920x1080에서 일치율 89.5%, MAE 0.071, SSIM 0.9995였다.
+- 그래서 GPU 창 비교에는 `ScreenDiff.GpuWindowMaxMae = 0.5`, `GpuWindowMinSsim = 0.999`를 쓴다. CLI에서는 `--diff a b --gpu-window`이다. `GodotWindowContracts`도 같은 값을 쓴다.
+- 정수 배율, 1배 미만 경로, 내부 버퍼 비교는 기본값(100% 일치)을 쓴다.

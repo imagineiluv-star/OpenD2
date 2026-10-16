@@ -223,6 +223,15 @@ public sealed record ScreenDiffResult(int Width, int Height, long Pixels, long M
 /// <summary>Compares two equally sized RGB images: exact pixel match %, mean absolute error per channel (0-255), and SSIM.</summary>
 public static class ScreenDiff
 {
+	/// <summary>
+	/// Tolerance for comparing a real GPU window against the CPU --window model at fractional scales. GPU bilinear and
+	/// nearest round differently from the CPU by at most 1 per channel (measured: 89.5% exact, MAE 0.05-0.07,
+	/// SSIM 0.9995-0.9997 on Mesa opengl3), so exact matching is not meaningful there. Whole-number scales, the
+	/// below-1x path and the internal buffer must still match 100%.
+	/// </summary>
+	public const double GpuWindowMaxMae = 0.5, GpuWindowMinSsim = 0.999;
+	public static bool WithinGpuWindowTolerance(ScreenDiffResult r) => r.MeanAbsoluteError <= GpuWindowMaxMae && r.Ssim >= GpuWindowMinSsim;
+
 	public static ScreenDiffResult Compare(int width, int height, ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)
 	{
 		long n = (long)width * height;

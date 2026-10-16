@@ -29,7 +29,7 @@ internal static class GodotWindowContracts
 
 		// (scale, filter, window, exact): whole-number scales and the below-1x path (CPU box filter shown 1:1) must match
 		// the CPU model exactly. Fractional scales go through GPU sampling: bilinear rounding for sharp, and float ties at
-		// source-pixel edges for nearest (measured 99.98% exact at 1.667x on Mesa), so they get an error tolerance.
+		// source-pixel edges for nearest (measured 99.98% exact at 1.667x on Mesa), so they use ScreenDiff.WithinGpuWindowTolerance (MAE <= 0.5, SSIM >= 0.999).
 		(string Scale, string Filter, int W, int H, bool Exact)[] cases =
 		[
 			("fit", "nearest", 1700, 1000, false),
@@ -61,7 +61,7 @@ internal static class GodotWindowContracts
 						ScaleMode: LegacyScaleOptions.ParseMode(c.Scale), Filter: LegacyScaleOptions.ParseFilter(c.Filter)), Read);
 					var diff = ScreenDiff.Compare(gpu.Width, gpu.Height, gpu.Rgb, cpu.Rgb);
 					Console.WriteLine($"  {gpu.Width}x{gpu.Height} rect {cpu.Layout}: match {diff.MatchPercent:0.###}% MAE {diff.MeanAbsoluteError:0.###} SSIM {diff.Ssim:0.#####}");
-					Check(c.Exact ? diff.MatchPercent == 100 : diff.MeanAbsoluteError <= 0.5 && diff.Ssim >= 0.99, $"match {diff.MatchPercent} MAE {diff.MeanAbsoluteError} SSIM {diff.Ssim}");
+					Check(c.Exact ? diff.MatchPercent == 100 : ScreenDiff.WithinGpuWindowTolerance(diff), $"match {diff.MatchPercent} MAE {diff.MeanAbsoluteError} SSIM {diff.Ssim}");
 				}
 				finally { Directory.Delete(dir, true); }
 			});

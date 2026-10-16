@@ -105,6 +105,11 @@ internal static class LegacyScreenContracts
 			Check(one.DifferentPixels == 1 && Math.Abs(one.MatchPercent - 100.0 * 255 / 256) < 1e-9 && one.Ssim < 1 && one.MeanAbsoluteError > 0, "one pixel");
 			var black = new byte[a.Length]; Check(ScreenDiff.Compare(w, h, a, black).Ssim < 0.5, "very different");
 			try { ScreenDiff.Compare(w, h, a, new byte[3]); throw new Exception("size mismatch accepted"); } catch (ArgumentException) { }
+			// GPU tolerance: scattered +-1 channel differences pass; a wrong image does not.
+			Check(ScreenDiff.WithinGpuWindowTolerance(ScreenDiff.Compare(w, h, a, a)), "identical is within GPU tolerance");
+			var small = (byte[])a.Clone(); for (int i = 0; i < small.Length; i += 9) small[i] = (byte)(small[i] == 255 ? 254 : small[i] + 1);
+			Check(ScreenDiff.WithinGpuWindowTolerance(ScreenDiff.Compare(w, h, a, small)), "sparse +-1 differences are within GPU tolerance");
+			Check(!ScreenDiff.WithinGpuWindowTolerance(ScreenDiff.Compare(w, h, a, black)), "a wrong image is outside GPU tolerance");
 		});
 		test("png reader round-trips the PNG writer and rejects malformed files", () =>
 		{
