@@ -51,6 +51,8 @@ public sealed record Dc6Frame(int Width, int Height, int OffsetX, int OffsetY, b
 
 public sealed class Dc6Image
 {
+	// Korean font DC6s in genuine 1.11b hold up to 11,374 glyph frames; frames still decode one at a time.
+	public const int MaxFrames = 16384;
 	private readonly byte[] data;
 	private readonly int[] offsets;
 	public int Directions { get; }
@@ -63,7 +65,7 @@ public sealed class Dc6Image
 		AssetBinary.Require(data.Length is >= 24 and <= 33554432, "DC6 input exceeds size bounds.");
 		AssetBinary.Require(AssetBinary.U32(data, 0) == 6, "Unsupported DC6 version.");
 		uint directions = AssetBinary.U32(data, 16), frames = AssetBinary.U32(data, 20);
-		AssetBinary.Require(directions is >= 1 and <= 32 && frames is >= 1 and <= 4096 && (ulong)directions * frames <= 4096, "DC6 frame count exceeds budget.");
+		AssetBinary.Require(directions is >= 1 and <= 32 && frames is >= 1 and <= MaxFrames && (ulong)directions * frames <= MaxFrames, "DC6 frame count exceeds budget.");
 		int count = (int)(directions * frames), tableEnd = 24 + count * 4;
 		AssetBinary.Slice(data, 24, count * 4);
 		var offsets = new int[count]; long pixels = 0;
