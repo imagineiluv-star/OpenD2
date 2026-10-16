@@ -45,6 +45,17 @@ python eng/release-local.py --tag v0.1.0-rc.1 [--preset Linux --preset Windows] 
    CHANGELOG 해당 절 포함)로 남는다. 업로드는 현우님이 `gh release create <태그> --verify-tag ../opend2-release/<태그>/*`로 직접 한다.
 
 
+## Original hash list (원본 해시 목록, 태그 릴리즈 필수)
+
+태그(`vX.Y.Z`, `vX.Y.Z-rc.N`) 릴리즈는 **의도적으로** 원본 파일 SHA-256 목록이 있어야만 패키징된다. 목록이 없거나
+항목이 5개 미만이면 `release.py pack`/`release-local.py`가 `MissingOriginalHashes`로 실패하고 아카이브를 남기지 않는다.
+목록은 정품 설치본의 sha256sum 형식 파일(`<hash>  <name>`)이며 게임 파일 자체는 아니다. 저장소에는 절대 커밋하지 않는다.
+
+- 로컬: `OPEND2_ORIGINAL_SHA256SUMS=<설치본>/SHA256SUMS` 또는 `D2_DATA_PATH=<설치본>`.
+- GitHub Actions: 저장소 Settings → Secrets → Actions에 `OPEND2_ORIGINAL_SHA256SUMS` 이름으로 목록 내용을 넣는다.
+  `release.yml`이 `secrets: inherit`로 `m0.yml`에 넘기고, pack 단계가 러너 임시 파일로 써서 사용한다.
+- 태그 없는 `ci` 빌드와 `--rehearsal`(`OPEND2_RELEASE_REHEARSAL=1`)은 경고만 하고 결과를 `PASS (no original hash list)`로 표시한다.
+
 ## GitHub Actions 실행
 
 1. Actions → **Release candidate and QA handoff** → **Run workflow**.

@@ -53,9 +53,16 @@ CONTEXT_PATTERN = re.compile(r"\.(txt|dat|bin)(?=$|[.\-])", re.I)
 UNINSPECTABLE_EXTENSIONS = (".7z", ".rar", ".zst", ".zstd", ".cab", ".lz4", ".lzma", ".lz", ".arj", ".ace", ".z",
                             ".sit", ".dmg", ".iso", ".wim", ".msi")
 UNINSPECTABLE_MAGIC = {b"7z\xbc\xaf\x27\x1c": "7z", b"Rar!\x1a\x07": "rar", b"\x28\xb5\x2f\xfd": "zstd",
-                       b"MSCF": "cab", b"\x04\x22\x4d\x18": "lz4", b"\x5d\x00\x00": "lzma", b"\x1f\x9d": "compress",
-                       b"ISc(": "InstallShield cab"}
+                       b"MSCF": "cab", b"\x04\x22\x4d\x18": "lz4", b"ISc(": "InstallShield cab"}
+# lzma-alone ("]\0\0") and Unix compress ("\x1f\x9d") have 2-3 byte magics that hit ordinary files; those formats are
+# caught by extension (.lzma, .z) instead.
 MPQ_MAGIC = (b"MPQ\x1a", b"MPQ\x1b")
+BIK_VERSIONS = b"bdfghik"
+KB2_VERSIONS = b"abdfghij"
+# A plausible install hash list has one entry per MPQ/executable (classic 1.11b: 7+ MPQs); fewer means a stub.
+MIN_ORIGINAL_HASHES = 5
+# Latin look-alikes that NFKC leaves alone (Cyrillic/Greek), folded only for matching extensions.
+CONFUSABLES = str.maketrans("аеорсхмкнтвіјѕԁԛɡαεορτνκχ", "aeopcxmkhtbijsdqgaeoptvkx")
 WARN_BYTES = 50 * 1024 * 1024
 MAX_DEPTH = 8
 MAX_TOTAL_BYTES = 4 * 1024 * 1024 * 1024  # decompressed bytes per scan
@@ -71,9 +78,11 @@ class Uninspectable(RuntimeError):
 
 
 def load_original_hashes(sums=None, folder=None):
+    """Explicit sums/folder arguments win; the environment is only consulted when neither is given."""
     hashes = set()
-    sums = sums or os.environ.get("OPEND2_ORIGINAL_SHA256SUMS")
-    folder = folder or os.environ.get("D2_DATA_PATH")
+    if sums is None and folder is None:
+        sums = os.environ.get("OPEND2_ORIGINAL_SHA256SUMS")
+        folder = os.environ.get("D2_DATA_PATH")
     if sums:
         for line in Path(sums).read_text(encoding="utf-8").splitlines():
             match = re.match(r"([0-9a-fA-F]{64})\s", line)
@@ -89,7 +98,7 @@ def load_original_hashes(sums=None, folder=None):
 
 def normalize_name(name):
     name = unicodedata.normalize("NFKC", name).replace("\\", "/").lower()
-    return "/".join(part.rstrip(" .~") for part in name.split("/"))
+    return "/".join(part.rstrip(" .~_") for part in name.split("/"))
 
 
 class Guard:
@@ -99,6 +108,7 @@ class Guard:
         self.max_total_bytes = max_total_bytes
         self.expanded = 0
         self.blocked, self.warnings, self.scanned = [], [], 0
+        self.context = {}
 
     @property
     def result(self):
@@ -113,6 +123,12 @@ class Guard:
         leaf = parts[-1] if parts else lowered
         joined = "/".join(parts) + "/"
         data_path = "data/global/" in joined or "data/local/" in joined
+        folded = leaf.translate(CONFUSABLES)
+        for pattern in (EXTENSION_PATTERN, CONTEXT_PATTERN):
+            hit = pattern.search(folded)
+            if hit and leaf[hit.start():hit.end()] != hit.group(0):  # the extension itself used look-alikes
+                reasons.append("look-alike (non-Latin) characters in a game-data extension")
+                break
         match = EXTENSION_PATTERN.search(leaf)
         if match:
             reasons.append(f"game-data extension .{match.group(1)}")
@@ -136,16 +152,28 @@ class Guard:
 
     def entry(self, label, data, depth=0):
         self.scanned += 1
-        reasons = self.name_reasons(label.split("!")[-1])
+        reasons = self.name_reasons(self.context.pop(label, label).split("!")[-1])
         if self.original and hashlib.sha256(data).hexdigest() in self.original:
             reasons.append("matches an original game file hash")
         if self.mpq_offset(data) is not None:
             reasons.append("MPQ archive header")
+        signature = self.media_signature(data)
+        if signature:
+            reasons.append(signature)
         if len(data) > self.warn_bytes:
             self.warnings.append(f"{label}: {len(data)} bytes exceeds {self.warn_bytes}")
         if reasons:
             self.blocked.append(f"{label}: {', '.join(reasons)}")
         self.nested(label, data, depth)
+
+    @staticmethod
+    def media_signature(data):
+        if data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+            return "WAV audio (RIFF/WAVE header)"
+        if (data[:3] == b"BIK" and data[3:4] and data[3:4] in BIK_VERSIONS) or \
+                (data[:3] == b"KB2" and data[3:4] and data[3:4] in KB2_VERSIONS):
+            return "Bink video header"
+        return None
 
     @staticmethod
     def mpq_offset(data):
@@ -257,6 +285,10 @@ class Guard:
     def path(self, path, base=None):
         path = Path(path)
         label = path.relative_to(base).as_posix() if base else path.name
+        if base is not None and base.name:
+            # Starting at pkg/data must still see data/global: name checks include the start folder's last parts.
+            anchor = "/".join(Path(os.path.abspath(base)).parts[-2:])
+            self.context[label] = f"{anchor}/{label}"
         if path.is_symlink():
             self.scanned += 1
             self.blocked.append(f"{label}: symlink in release payload")
@@ -279,16 +311,20 @@ class GameDataError(ValueError):
 
 
 class MissingOriginalHashes(GameDataError):
-    def __init__(self):
-        message = ("original hash list required for a release: set OPEND2_ORIGINAL_SHA256SUMS or D2_DATA_PATH "
-                   "(or use a rehearsal)")
+    def __init__(self, found=0):
+        problem = (f"only {found} original hashes (minimum {MIN_ORIGINAL_HASHES}); the list looks incomplete"
+                   if found else "no original hash list")
+        message = (f"{problem}. A tagged release requires the SHA-256 list of your own Diablo II install. Locally: "
+                   "OPEND2_ORIGINAL_SHA256SUMS=<install>/SHA256SUMS or D2_DATA_PATH=<install>. In GitHub Actions: store "
+                   "the sha256sum-style list as the repository secret OPEND2_ORIGINAL_SHA256SUMS (m0.yml writes it to a "
+                   "temp file). For a dry run use --rehearsal / OPEND2_RELEASE_REHEARSAL=1.")
         ValueError.__init__(self, message)
         self.blocked = [message]
 
 
 def scan(paths, original_hashes=(), require_original_hashes=False):
-    if require_original_hashes and not original_hashes:
-        raise MissingOriginalHashes()
+    if require_original_hashes and len(set(original_hashes)) < MIN_ORIGINAL_HASHES:
+        raise MissingOriginalHashes(len(set(original_hashes)))
     guard = Guard(original_hashes)
     for path in paths:
         guard.path(path)

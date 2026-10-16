@@ -15,6 +15,21 @@ import zipfile
 import data_guard
 import release
 
+_ENV_KEYS = ("D2_DATA_PATH", "OPEND2_ORIGINAL_SHA256SUMS", "OPEND2_RELEASE_REHEARSAL")
+_saved_env = {}
+
+
+def setUpModule():
+    # Hermetic: a developer's D2_DATA_PATH / hash list must not change results.
+    for key in _ENV_KEYS:
+        if key in os.environ:
+            _saved_env[key] = os.environ.pop(key)
+
+
+def tearDownModule():
+    os.environ.update(_saved_env)
+
+
 FAKE = b"synthetic fixture bytes, not game data"
 
 
@@ -245,6 +260,54 @@ class DataGuardTests(unittest.TestCase):
         self.assertTrue(any(line.startswith("WARNING data guard:") and "exceeds 10" in line for line in lines), lines)
         self.assertTrue(metadata["data_guard"]["warnings"])
         self.assertEqual("PASS (no original hash list)", metadata["data_guard"]["result"])
+    def test_wav_and_bink_detected_by_content_under_any_name(self):
+        for name, data in (("a.res", b"RIFF\x10\0\0\0WAVEfmt " + FAKE), ("b.bin", b"BIKi" + FAKE), ("c", b"KB2j" + FAKE)):
+            with self.subTest(name=name):
+                path = self.add(name, data)
+                self.assertTrue(any(item.startswith(name + ":") for item in self.blocked()), self.blocked())
+                path.unlink()
+        self.add("riff.res", b"RIFF\x10\0\0\0AVI LIST")  # other RIFF types are not WAV
+        self.add("bike.txt", b"BIKE ride")
+        self.assertEqual([], self.blocked())
+
+    def test_trailing_underscore_and_cyrillic_lookalikes(self):
+        for name in ("x.mpq_", "x.\u043cpq", "x.w\u0430v"):
+            with self.subTest(name=name):
+                path = self.add(name, FAKE)
+                self.assertTrue(self.blocked(), name)
+                path.unlink()
+        self.add("\u0442\u0435\u043a\u0441\u0442.txt", FAKE)  # Cyrillic base name, plain extension: allowed
+        self.assertEqual([], self.blocked())
+
+    def test_scan_started_inside_package_still_sees_data_global(self):
+        start = self.export / "pkg" / "data"
+        self.add("pkg/data/global/excel/foo.res", FAKE)
+        self.assertTrue(any("data/global path" in item for item in self.blocked(start)), self.blocked(start))
+
+    def test_lzma_and_compress_short_magics_are_not_false_positives(self):
+        self.add("level.res", b"]\0\0 ordinary bytes")
+        self.add("other.res", b"\x1f\x9d ordinary bytes")
+        self.assertEqual([], self.blocked())
+        self.add("x.lzma", FAKE)
+        self.assertTrue(self.blocked())
+
+    def test_hash_list_needs_a_plausible_number_of_entries(self):
+        few = {f"{i:064x}" for i in range(data_guard.MIN_ORIGINAL_HASHES - 1)}
+        with self.assertRaises(data_guard.MissingOriginalHashes) as caught:
+            data_guard.scan([self.export], few, require_original_hashes=True)
+        self.assertIn("looks incomplete", str(caught.exception))
+        self.assertIn("secret OPEND2_ORIGINAL_SHA256SUMS", str(caught.exception))
+        enough = few | {"f" * 64}
+        self.assertEqual("PASS", data_guard.scan([self.export], enough, require_original_hashes=True).result)
+
+    def test_explicit_hash_sources_ignore_the_environment(self):
+        sums = self.root / "SHA256SUMS"
+        sums.write_text(f"{'a' * 64}  d2data.mpq\n")
+        owned = self.root / "owned"
+        owned.mkdir()
+        (owned / "x").write_bytes(b"other")
+        with mock.patch.dict(os.environ, {"D2_DATA_PATH": str(owned)}):
+            self.assertEqual({"a" * 64}, data_guard.load_original_hashes(sums))
 
 
 if __name__ == "__main__":

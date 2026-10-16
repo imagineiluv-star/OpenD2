@@ -67,10 +67,21 @@ jobs:
       - name: Build, contracts, headless smoke and export
         run: python eng/validate.py --export ${{ matrix.preset }}
       - name: Archive and smoke the extracted release package
+        # Tagged releases REQUIRE the original-file hash list (intended): the data guard refuses to pack a real tag
+        # without it. Store the sha256sum-style list of your own install (not the files) as the repository secret
+        # OPEND2_ORIGINAL_SHA256SUMS; it is written to a runner temp file and never committed. Untagged "ci" builds
+        # only warn ("PASS (no original hash list)").
         env:
           RELEASE_TAG: ${{ inputs.release_tag || 'ci' }}
           SOURCE_SHA: ${{ github.sha }}
-        run: python eng/release.py pack --preset ${{ matrix.preset }} --smoke
+          ORIGINAL_SHA256SUMS_CONTENT: ${{ secrets.OPEND2_ORIGINAL_SHA256SUMS }}
+        shell: bash
+        run: |
+          if [ -n "$ORIGINAL_SHA256SUMS_CONTENT" ]; then
+            printf '%s\n' "$ORIGINAL_SHA256SUMS_CONTENT" > "$RUNNER_TEMP/original-SHA256SUMS"
+            export OPEND2_ORIGINAL_SHA256SUMS="$RUNNER_TEMP/original-SHA256SUMS"
+          fi
+          python eng/release.py pack --preset ${{ matrix.preset }} --smoke
       - name: Repeat Linux client initialization and audio teardown
         if: runner.os == 'Linux'
         run: python eng/smoke-export.py Linux --iterations 8
