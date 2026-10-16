@@ -5,7 +5,7 @@ namespace OpenD2.Client;
 
 public partial class OnlinePanel
 {
-    private readonly PersonalHost personalHost = new();
+    private readonly PersonalHost personalHost = new() { Diagnostic = message => GD.PushWarning(message) };
     private readonly LineEdit hostExecutable = new() { PlaceholderText = "Extracted OpenD2.Server executable", SizeFlagsHorizontal = SizeFlags.ExpandFill };
     private readonly Label hostStatus = new() { AutowrapMode = TextServer.AutowrapMode.WordSmart };
     private bool hostWasRunning;
