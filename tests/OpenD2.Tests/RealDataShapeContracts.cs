@@ -110,6 +110,14 @@ internal static class RealDataShapeContracts
 			Check(dc6.Passed == 1 && dc6.Skipped == 1 && dc6.SkippedResources[0].Contains("big.dc6") && dc6.Failed == 1 && dc6.Failures[0].Contains("NotSupportedException"), "per-resource accounting");
 			Check(report.Notes.Single().Contains("lvltypes.txt") && report.Kinds.Single(k => k.Kind == "excel_txt").Failed == 1, "bad lvltypes is a note and a failure, not an abort");
 			Check(report.Resources == 4 && report.Skipped == 1 && !report.Clean, "skipped resources fail the run");
+			Check(dc6.SkippedResources[0].Contains("returned no data"), "skip wording matches behaviour");
+			var noRefs = new Dictionary<string, byte[]>
+			{
+				["data\\global\\excel\\lvltypes.txt"] = Encoding.Latin1.GetBytes("Name\tFile 1\r\nAct 1 - Town\t0\r\n"),
+				["data\\global\\tiles\\act1\\town\\bad.dt1"] = [4, 0, 0, 0, 1, 0, 0, 0],
+			};
+			var unref = CorpusValidation.Run(new MemorySource(noRefs));
+			Check(unref.Failed == 1 && unref.Unreferenced == 0 && !unref.Clean && unref.Notes.Single().Contains("references no .dt1"), "no references means no DT1 is reclassified");
 		});
 	}
 }
