@@ -98,5 +98,6 @@ internal static class GenuineDataContracts
 			Check(play.Monsters < raw.Monsters && play.BaseItems < raw.BaseItems && play.UniqueItems < raw.UniqueItems && play.Areas + inv.UberAreas == raw.Areas, "playable counts are filtered subsets");
 			Console.WriteLine($"  {bins} BINs; rows {raw}; playable {play}; uber areas {inv.UberAreas}");
 		});
+		LegacyScreenContracts.Genuine(data, test);
 }
 }
