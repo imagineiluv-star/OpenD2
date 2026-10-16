@@ -15,3 +15,13 @@
 - 기준값(해시만 저장): gameselectscreenexp.dc6의 RGB SHA-256
   - units `9ec1529c…`, act1 `4bc657d0…`. 독립 Python 렌더러 결과와 같다.
   - act1과 units는 13,769픽셀이 다르다.
+
+## 수락 기준 (fit 기준으로 갱신)
+- 기본 fit: 1920x1080 창에서 800x600 화면은 1440x1080 @ x=240(1.8배)에 놓이고, 바깥 영역은 순흑 (0,0,0)이다.
+- `--scale integer`: 1920x1080에서 800x600은 1배(560,240), 640x480은 2배다.
+- 내부 캡처(`--capture`)는 배율이나 필터와 상관없이 800x600(640x480) 버퍼를 바이트 단위로 고정해 저장한다.
+- 실제 창 일치(GodotWindowContracts, 디스플레이가 있을 때만 실행하고 없으면 SKIP)
+  - 정수 배율과 1배 미만(CPU box filter를 1:1로 표시)은 CPU `--window`와 100% 같아야 한다.
+  - 비정수 sharp와 nearest는 MAE ≤ 0.5, SSIM ≥ 0.99를 만족해야 한다.
+- 창이 800x600보다 작으면 sharp와 linear는 box filter(면적 평균)로 줄여 aliasing을 막는다. nearest는 요청대로 점 샘플링한다.
+- sharp의 정수 확대 배수는 CPU와 Godot가 같은 함수 `LetterboxLayout.SharpPrescale`(반올림된 rect 기준 ceil)로 계산한다.
