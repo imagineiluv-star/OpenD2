@@ -36,8 +36,8 @@ public partial class SimulationPreview
 		menuLoad.Pressed += () =>
 		{
 			string file = ActiveSavePath;
-			if (sessionStarted) ConfirmRestart(() => _ = LoadMenuCheckpoint(file));
-			else _ = LoadMenuCheckpoint(file);
+			if (sessionStarted) ConfirmRestart(() => TaskObserver.Observe(LoadMenuCheckpoint(file), "Checkpoint load"));
+			else TaskObserver.Observe(LoadMenuCheckpoint(file), "Checkpoint load");
 		};
 	}
 	private void OpenMenu(bool initial = false)

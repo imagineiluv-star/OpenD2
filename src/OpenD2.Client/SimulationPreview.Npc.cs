@@ -72,28 +72,30 @@ public partial class SimulationPreview
 		});
 		npcModelName = selected.Name;
 	}
+	private async Task FinishNpcOperation(Task<string> finished)
+	{
+		try
+		{
+			npcStatus.Text = await finished;
+			if (npcRuntimeSmoke) GD.Print("OPEND2_NPC02_RUNTIME_READY");
+		}
+		catch (OperationCanceledException) { npcStatus.Text = "작업을 취소했거나 응답이 지연됐습니다. 다운로드는 다시 누르면 이어받습니다."; }
+		catch (Exception error)
+		{
+			npcStatus.Text = $"로컬 AI 작업 실패 ({error.GetType().Name}). 기본 대사로 플레이하거나 다운로드/실행을 다시 시도하세요.";
+			log("npc_runtime_failure", error.GetType().Name);
+			if (npcRuntimeSmoke) GD.PushError("Bundled NPC runtime smoke failed: " + error.GetType().Name);
+		}
+		bool startSmokeDialogue = npcRuntimeSmoke && npcSmokePending;
+		npcRuntimeSmoke = false; npcOperation = null; npcCancellation?.Dispose(); npcCancellation = null;
+		if (startSmokeDialogue) SendDialogue();
+	}
 	private void PollNpcSettings()
 	{
 		long now = Stopwatch.GetTimestamp(); if (now < npcSettingsNextRefresh) return;
 		npcSettingsNextRefresh = now + Stopwatch.Frequency / 4;
-		if (npcOperation is { IsCompleted: true } finished)
-		{
-			try
-			{
-				npcStatus.Text = finished.GetAwaiter().GetResult();
-				if (npcRuntimeSmoke) GD.Print("OPEND2_NPC02_RUNTIME_READY");
-			}
-			catch (OperationCanceledException) { npcStatus.Text = "작업을 취소했거나 응답이 지연됐습니다. 다운로드는 다시 누르면 이어받습니다."; }
-			catch (Exception error)
-			{
-				npcStatus.Text = $"로컬 AI 작업 실패 ({error.GetType().Name}). 기본 대사로 플레이하거나 다운로드/실행을 다시 시도하세요.";
-				log("npc_runtime_failure", error.GetType().Name);
-				if (npcRuntimeSmoke) GD.PushError("Bundled NPC runtime smoke failed: " + error.GetType().Name);
-			}
-			bool startSmokeDialogue = npcRuntimeSmoke && npcSmokePending;
-			npcRuntimeSmoke = false; npcOperation = null; npcCancellation?.Dispose(); npcCancellation = null;
-			if (startSmokeDialogue) SendDialogue();
-		}
+		// The task is already complete, so the await finishes synchronously inside this poll.
+		if (npcOperation is { IsCompleted: true } finished) TaskObserver.Observe(FinishNpcOperation(finished), "NPC runtime operation");
 		bool busy = npcOperation is not null, supported = LocalNpcRuntime.IsHardwareSupported && File.Exists(npcExecutable);
 		if (busy && npcOperationName == "download") npcStatus.Text = $"다운로드 {Interlocked.Read(ref npcDownloadBytes) / 1000000.0:F1} / {SelectedNpcModel.Bytes / 1000000.0:F1} MB — 취소 후 이어받기 가능";
 		npcMode.Text = !supported ? "이 PC의 선택형 AI 런타임은 지원되지 않습니다. 기본 대사는 사용할 수 있습니다." :

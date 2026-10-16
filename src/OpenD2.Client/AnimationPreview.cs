@@ -27,7 +27,7 @@ public partial class AnimationPreview : VBoxContainer
 		AddChild(new Label { Text = "DCC / COF animation preview" }); AddChild(resource); AddChild(palettePath); AddChild(mapping);
 		var controls = new HBoxContainer(); AddChild(controls);
 		controls.AddChild(new Label { Text = "Direction" }); controls.AddChild(direction); controls.AddChild(load);
-		load.Pressed += () => Observe(LoadSelected());
+		load.Pressed += () => TaskObserver.Observe(LoadSelected(), "Animation preview");
 		var playback = new HBoxContainer(); AddChild(playback);
 		playback.AddChild(play); playback.AddChild(new Label { Text = "Frame" }); playback.AddChild(frame);
 		playback.AddChild(new Label { Text = "Preview FPS" }); playback.AddChild(fps);
@@ -42,13 +42,7 @@ public partial class AnimationPreview : VBoxContainer
 		if (load.Disabled || facing is < 0 or > 7) return false;
 		resource.Text = motion.Path; palettePath.Text = colors;
 		mapping.Text = motion.Layers is null ? "" : string.Join('\n', motion.Layers.OrderBy(p => p.Key).Select(p => $"{p.Key}={p.Value}"));
-		direction.Value = motion.Directions[facing]; fps.Value = motion.Fps; Observe(LoadSelected()); return true;
-	}
-	// Surfaces faults that escape LoadSelected's own handling instead of letting them crash the process.
-	private static async void Observe(Task work)
-	{
-		try { await work; }
-		catch (Exception error) { GD.PushError("Animation preview failed: " + error); }
+		direction.Value = motion.Directions[facing]; fps.Value = motion.Fps; TaskObserver.Observe(LoadSelected(), "Animation preview"); return true;
 	}
 	private async Task LoadSelected()
 	{
