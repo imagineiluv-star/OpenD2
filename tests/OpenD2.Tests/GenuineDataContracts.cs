@@ -27,6 +27,32 @@ internal static class GenuineDataContracts
 			Check(report.Skipped == 0 && report.Notes.Count == 0, "skipped: " + string.Join(" | ", report.Kinds.SelectMany(k => k.SkippedResources).Take(5)));
 			Console.WriteLine($"  validated {report.Passed} resources; failed {report.Failed}; unreferenced {report.Unreferenced}; skipped {report.Skipped}");
 		});
+		test("genuine: every pal.pl2 and font TBL decodes; PL2 base palette matches pal.dat; glyph frames fit the font DC6", () =>
+		{
+			using var mpq = new MpqAssetSource(data);
+			int pl2s = 0, fonts = 0;
+			foreach (string name in mpq.List())
+			{
+				string? kind = AssetDecoders.Kind(name);
+				if (kind == "pl2")
+				{
+					Check(mpq.TryRead(name, AssetDecoders.MaxInputBytes, out var raw), "read " + name);
+					var pl2 = Pl2Palette.Parse(raw); pl2s++;
+					Check(mpq.TryRead(name[..^3] + "dat", 768, out var dat), "read pal.dat next to " + name);
+					for (int i = 0; i < 256; i++) Check(pl2.BaseRgb[i * 3] == dat[i * 3 + 2] && pl2.BaseRgb[i * 3 + 2] == dat[i * 3], "pl2 base vs pal.dat " + name);
+				}
+				else if (kind == "font_tbl")
+				{
+					Check(mpq.TryRead(name, AssetDecoders.MaxInputBytes, out var tbl), "read " + name);
+					var font = FontTable.Parse(tbl); fonts++;
+					Check(font.Glyphs.All(g => g.Height == font.LineHeight && g.Flags == 1), "glyph constants " + name);
+					// Every font table has its DC6 next to it; a missing or unreadable DC6 fails the test.
+					Check(mpq.TryRead(name[..^3] + "dc6", AssetDecoders.MaxInputBytes, out var dc6), "read dc6 for " + name);
+					font.RequireFramesWithin(Dc6Image.Parse(dc6));
+				}
+			}
+			Check(pl2s == 16 && fonts == 28, $"counts pl2={pl2s} fonts={fonts}");
+		});
 		test("genuine: raw MPQ and converted cache return identical bytes and decode", () =>
 		{
 			string cache = Path.Combine(Path.GetTempPath(), "opend2-genuine-cache-" + Guid.NewGuid().ToString("N"));

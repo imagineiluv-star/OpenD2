@@ -40,6 +40,7 @@ try
 	MpqContracts.Run(root, Test);
 	MpqPipelineContracts.Run(root, Test);
 	RealDataShapeContracts.Run(Test);
+	Pl2FontContracts.Run(Test);
 	GenuineDataContracts.Run(Test);
 	SimulationContracts.Run(Test);
 	CombatContracts.Run(Test);
