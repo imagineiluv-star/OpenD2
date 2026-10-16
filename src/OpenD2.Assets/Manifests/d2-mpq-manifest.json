@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "note": "SHA-256 of user-supplied Blizzard MPQs. Hashes only; never commit the archives.",
+  "versions": [
+    {
+      "id": "1.11b",
+      "description": "Diablo II: Lord of Destruction 1.11b (Game.exe 1.0.11.46)",
+      "placeholder": false,
+      "files": {
+        "d2char.mpq": {
+          "sha256": "e132f2310d71afa050a7a2cfac333fa2bc31084043235b72230ac65cbca65e7e",
+          "size": 266912357
+        },
+        "d2data.mpq": {
+          "sha256": "e5edb9604549a42703f9a4f8f2c11d5c5cae6cb2add32031a49b4937dd6ec636",
+          "size": 277993454
+        },
+        "d2exp.mpq": {
+          "sha256": "2b1e8a66bbeee1a153fe49daba77c3b609ea7efe87d4e54c12f545c8c16c3cdc",
+          "size": 250692593
+        },
+        "d2music.mpq": {
+          "sha256": "0656145d74fc09a744f6ca8bf777447be2012314e60b54aadfacd1183f502070",
+          "size": 345209223
+        },
+        "d2sfx.mpq": {
+          "sha256": "93689c95a0949904619d1f500056dfc25689a6f79f7cab990506c35f6e08e3e2",
+          "size": 51954162
+        },
+        "d2speech.mpq": {
+          "sha256": "7a238f808be9fbc74da55c98dc629ab7fac9a4f40c537cec3c1b042fa45d211a",
+          "size": 163021838
+        },
+        "d2video.mpq": {
+          "sha256": "beeb4dc350e2f45cf49468d87fd18235ebdb2fcc07a8d5d37953ea19eda5db08",
+          "size": 440887871
+        },
+        "d2xtalk.mpq": {
+          "sha256": "581aa1fd2649a0a278b6b72376e2e94cbef406dc2c303fe09e0ca6a1321bb670",
+          "size": 60278256
+        },
+        "d2xvideo.mpq": {
+          "sha256": "2c96e28d2d2ffb38ee3d7f65bf512db685f68c4648ecb4dba1c7dcba9ed0eec7",
+          "size": 221366284
+        },
+        "patch_d2.mpq": {
+          "sha256": "dfd2fdb74b0944b73113ba780c9a8b9969caf8151ae8148e474b792879634f9f",
+          "size": 2104101
+        }
+      }
+    },
+    {
+      "id": "1.14d",
+      "description": "Diablo II: Lord of Destruction 1.14d \u2014 placeholder, fill from a verified 1.14d install",
+      "placeholder": true,
+      "files": {}
+    }
+  ]
+}
