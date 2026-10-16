@@ -7,6 +7,8 @@ public static class AssetDecoders
 	public static string? Kind(string logicalPath)
 	{
 		string path = MpqArchive.NormalizePath(logicalPath);
+		// aiparms.txt ships in the excel folder but is prose documentation, not a tab-separated table.
+		if (path == "data\\global\\excel\\aiparms.txt") return "excel_doc";
 		if (path.StartsWith("data\\global\\excel\\") && path.EndsWith(".txt")) return "excel_txt";
 		if (path.EndsWith(".dt1")) return "dt1";
 		if (path.EndsWith(".ds1")) return "ds1";
@@ -23,6 +25,7 @@ public static class AssetDecoders
 		switch (kind)
 		{
 			case "excel_txt": ExcelTextTable.Parse(data); break;
+			case "excel_doc": AssetBinary.Require(data.Length <= MaxInputBytes && !data.Contains((byte)0), "Documentation text contains NUL bytes."); break;
 			case "wav_pcm": PcmWave.Validate(data); break;
 			case "ds1": Ds1Map.Parse(data); break;
 			case "dt1":
