@@ -58,16 +58,23 @@ public sealed record AssetCacheOptions
 	public IReadOnlySet<string> PngKinds { get; init; } = new HashSet<string> { "dc6" };
 	public string PngPalette { get; init; } = "act1";
 	public Func<string, bool>? Include { get; init; }
-	public string Signature => $"{string.Join(',', RawKinds.Order(StringComparer.Ordinal))}|{string.Join(',', PngKinds.Order(StringComparer.Ordinal))}|{PngPalette}";
+	/// <summary>Total PNG output caps; once either is reached no further PNGs are written and the result reports PngCapped.</summary>
+	public int MaxPngFiles { get; init; } = 250_000;
+	public long MaxPngBytes { get; init; } = 4L * 1024 * 1024 * 1024;
+	public string Signature => $"{string.Join(',', RawKinds.Order(StringComparer.Ordinal))}|{string.Join(',', PngKinds.Order(StringComparer.Ordinal))}|{PngPalette}|{MaxPngFiles}|{MaxPngBytes}";
 }
 
-public sealed record AssetCacheResult(bool Rebuilt, int Resources, int PngFiles, int Tables, int Palettes, IReadOnlyList<string> Errors);
+public sealed record AssetCacheResult(bool Rebuilt, int Resources, int PngFiles, int Tables, int Palettes, IReadOnlyList<string> Errors)
+{
+	public bool PngCapped { get; init; }
+	public long PngBytes { get; init; }
+}
 
 // Converts user-supplied MPQ content into a local cache OUTSIDE the repository. Rebuilds only when the
 // source fingerprint (the archives' SHA-256), converter version or options change.
 public static class AssetCache
 {
-	public const string ConverterVersion = "p1-mpq-2";
+	public const string ConverterVersion = "p1-mpq-3";
 	public const string ManifestName = "cache-manifest.json";
 	private const int MaxErrors = 200;
 
@@ -88,12 +95,16 @@ public static class AssetCache
 
 	// Windows reserves these names with any extension; refuse them so a cache stays portable and safe.
 	private static readonly HashSet<string> DeviceNames = new(StringComparer.OrdinalIgnoreCase)
-	{ "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9" };
+	{ "con", "prn", "aux", "nul", "conin$", "conout$",
+	  "com0", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9", "com\u00b9", "com\u00b2", "com\u00b3",
+	  "lpt0", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9", "lpt\u00b9", "lpt\u00b2", "lpt\u00b3" };
 	public static bool IsDeviceName(string segment) => DeviceNames.Contains(segment.Split('.')[0].TrimEnd(' '));
+	/// <summary>Device names, and names Windows silently rewrites (trailing dot or space), are not safe cache segments.</summary>
+	public static bool IsUnsafeSegment(string segment) => segment.Length == 0 || segment.EndsWith('.') || segment.EndsWith(' ') || IsDeviceName(segment);
 	private static string[] SafeSegments(string logicalPath)
 	{
 		var parts = MpqArchive.NormalizePath(logicalPath).Split('\\');
-		if (parts.Any(IsDeviceName)) throw new ArgumentException("Path contains a reserved Windows device name: " + logicalPath);
+		if (parts.Any(IsUnsafeSegment)) throw new ArgumentException("Path contains a reserved Windows device name or a trailing dot/space: " + logicalPath);
 		return parts;
 	}
 
@@ -124,7 +135,7 @@ public static class AssetCache
 		cacheDirectory = Path.GetFullPath(cacheDirectory);
 		D2DataPaths.RequireOutsideGit(cacheDirectory);
 		if (Path.GetFileName(cacheDirectory).Length == 0 || Path.GetPathRoot(cacheDirectory) == cacheDirectory) throw new ArgumentException("Refusing to use a filesystem root as the asset cache.");
-		if (Path.GetFileName(cacheDirectory).Split(Path.DirectorySeparatorChar).Any(IsDeviceName)) throw new ArgumentException("Cache folder uses a reserved Windows device name.");
+		if (Path.GetFileName(cacheDirectory).Split(Path.DirectorySeparatorChar).Any(IsUnsafeSegment)) throw new ArgumentException("Cache folder uses a reserved Windows device name or a trailing dot/space.");
 		RequireReplaceable(cacheDirectory);
 		Directory.CreateDirectory(Path.GetDirectoryName(cacheDirectory)!);
 		// One builder per cache folder; a second concurrent build fails fast instead of racing the swap.
@@ -132,11 +143,18 @@ public static class AssetCache
 		if (IsCurrent(cacheDirectory, sourceFingerprint, options)) return new(false, 0, 0, 0, 0, []);
 		string staging = cacheDirectory + ".building-" + Guid.NewGuid().ToString("N")[..8];
 		Directory.CreateDirectory(staging);
-		var errors = new List<string>(); int resources = 0, pngs = 0, tables = 0, palettes = 0;
+		var errors = new List<string>(); int resources = 0, pngs = 0, tables = 0, palettes = 0; long pngBytes = 0; bool capped = false;
 		try
 		{
 			Palette? pngPalette = null;
 			if (options.PngKinds.Count > 0 && source.TryRead($"data\\global\\palette\\{options.PngPalette}\\pal.dat", 768, out var pal)) pngPalette = Palette.Parse(pal);
+			bool PngBudget()
+			{
+				if (pngs < options.MaxPngFiles && pngBytes < options.MaxPngBytes) return true;
+				if (!capped) { capped = true; errors.Add($"PNG output cap reached ({pngs} files, {pngBytes} bytes); remaining PNGs skipped"); }
+				return false;
+			}
+			void WritePng(string path, byte[] png) { Write(path, png); pngs++; pngBytes += png.Length; }
 			foreach (string name in source.List())
 			{
 				string? kind = AssetDecoders.Kind(name);
@@ -152,7 +170,7 @@ public static class AssetCache
 						case "palette":
 							var colors = Palette.Parse(data);
 							string act = name.Split('\\')[^2];
-							if (IsDeviceName(act)) throw new ArgumentException("Reserved device name: " + name);
+							if (IsUnsafeSegment(act)) throw new ArgumentException("Reserved device name or trailing dot/space: " + name);
 							var swatch = new byte[256]; for (int i = 0; i < 256; i++) swatch[i] = (byte)i;
 							Write(Path.Combine(staging, "palettes", act + ".png"), PngWriter.EncodeRgba(16, 16, colors.ToRgba(swatch, Enumerable.Repeat((byte)255, 256).ToArray())));
 							palettes++; break;
@@ -168,7 +186,7 @@ public static class AssetCache
 								{
 									var frame = image.DecodeFrame(d, f);
 									if (frame.Width == 0 || frame.Height == 0) continue;
-									Write(PngPath(staging, name, d, f), PngWriter.EncodeIndexed(frame.Width, frame.Height, frame.Indices, pngPalette, frame.Opacity)); pngs++;
+									if (!PngBudget()) break; WritePng(PngPath(staging, name, d, f), PngWriter.EncodeIndexed(frame.Width, frame.Height, frame.Indices, pngPalette, frame.Opacity));
 								}
 							break;
 						case "dcc" when png && pngPalette is not null:
@@ -179,7 +197,7 @@ public static class AssetCache
 								for (int f = 0; f < frames.Count; f++)
 								{
 									if (frames[f].Width == 0 || frames[f].Height == 0) continue;
-									Write(PngPath(staging, name, d, f), PngWriter.EncodeIndexed(frames[f].Width, frames[f].Height, frames[f].Indices, pngPalette)); pngs++;
+									if (!PngBudget()) break; WritePng(PngPath(staging, name, d, f), PngWriter.EncodeIndexed(frames[f].Width, frames[f].Height, frames[f].Indices, pngPalette));
 								}
 							}
 							break;
@@ -191,7 +209,7 @@ public static class AssetCache
 				}
 			}
 			var manifest = new { converter = ConverterVersion, source = sourceFingerprint, options = options.Signature, built = DateTimeOffset.UtcNow,
-				resources, pngs, tables, palettes, errors };
+				resources, pngs, pngBytes, pngCapped = capped, tables, palettes, errors };
 			File.WriteAllText(Path.Combine(staging, ManifestName), JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
 			RequireReplaceable(cacheDirectory); // re-check under the lock right before deleting
 			if (Directory.Exists(cacheDirectory)) Directory.Delete(cacheDirectory, recursive: true);
@@ -199,7 +217,7 @@ public static class AssetCache
 			Directory.Move(staging, cacheDirectory);
 		}
 		catch { try { Directory.Delete(staging, true); } catch (IOException) { } throw; }
-		return new(true, resources, pngs, tables, palettes, errors);
+		return new(true, resources, pngs, tables, palettes, errors) { PngCapped = capped, PngBytes = pngBytes };
 	}
 
 	/// <summary>The target may be replaced only if it is missing, empty, or a cache this converter created.</summary>
