@@ -7,7 +7,9 @@ Usage: OpenD2.ScreenDiff --capture <scene> --out <file.png> [--data <game-data-d
        OpenD2.ScreenDiff --diff <a.png> <b.png> [--min-match <percent>] [--max-mae <value>] [--min-ssim <value>] [--gpu-window]
 --capture renders the internal 800x600/640x480 buffer on the CPU unless --window asks for the presented window (default: fit scale, sharp filter) (no GPU, no window); the same commit, scene and options give byte-identical PNGs.
 Scenes: gameselect, charselect. --data defaults to D2_DATA_PATH. The output must lie outside any Git checkout.
---gpu-window applies the GPU-vs-CPU window tolerance (min-match 0, max-mae 0.5, min-ssim 0.999) instead of the exact default (100%).
+--gpu-window (a = GPU window shot, b = CPU --window render, default fit of an 800x600 screen) compares only the content rect,
+  requires the letterbox bars to be pure black, and applies MAE <= 0.5, SSIM >= 0.999, max channel error <= 1 instead of exact (100%).
+  Add --nearest for a fractional nearest shot: >= 99.9% exact pixels replaces the max-error rule.
 --diff prints pixel match %, mean absolute error (0-255) and SSIM as JSON. Exit 0: within thresholds; 3: outside; 1: error; 2: usage.
 """;
 if (args.Length == 0 || args[0] is "--help" or "-h") { Console.WriteLine(Usage); return args.Length == 0 ? 2 : 0; }
@@ -43,12 +45,20 @@ try
 	{
 		var a = PngReader.DecodeRgb(File.ReadAllBytes(args[1])); var b = PngReader.DecodeRgb(File.ReadAllBytes(args[2]));
 		if (a.Width != b.Width || a.Height != b.Height) { Console.WriteLine(JsonSerializer.Serialize(new { error = "size mismatch", a = new[] { a.Width, a.Height }, b = new[] { b.Width, b.Height } }, json)); return 3; }
-		var result = ScreenDiff.Compare(a.Width, a.Height, a.Rgb, b.Rgb);
 		bool gpu = args.Contains("--gpu-window");
+		if (gpu)
+		{
+			var layout = LetterboxLayout.Fit(a.Width, a.Height, 800, 600);
+			var (content, barsBlack) = ScreenDiff.CompareGpuWindow(a.Width, a.Height, a.Rgb, b.Rgb, layout);
+			bool ok = barsBlack && ScreenDiff.WithinGpuWindowTolerance(content, nearest: args.Contains("--nearest"));
+			Console.WriteLine(JsonSerializer.Serialize(new { contentRect = new[] { layout.X, layout.Y, layout.Width, layout.Height }, result = content, barsBlack, pass = ok }, json));
+			return ok ? 0 : 3;
+		}
+		var result = ScreenDiff.Compare(a.Width, a.Height, a.Rgb, b.Rgb);
 		var inv = System.Globalization.CultureInfo.InvariantCulture;
-		double minMatch = double.Parse(Option("--min-match") ?? (gpu ? "0" : "100"), inv);
-		double maxMae = double.Parse(Option("--max-mae") ?? (gpu ? ScreenDiff.GpuWindowMaxMae.ToString(inv) : "0"), inv);
-		double minSsim = double.Parse(Option("--min-ssim") ?? (gpu ? ScreenDiff.GpuWindowMinSsim.ToString(inv) : "0"), inv);
+		double minMatch = double.Parse(Option("--min-match") ?? "100", inv);
+		double maxMae = double.Parse(Option("--max-mae") ?? "0", inv);
+		double minSsim = double.Parse(Option("--min-ssim") ?? "0", inv);
 		bool pass = result.MatchPercent >= minMatch && result.MeanAbsoluteError <= maxMae && result.Ssim >= minSsim;
 		Console.WriteLine(JsonSerializer.Serialize(new { result, pass }, json));
 		return pass ? 0 : 3;

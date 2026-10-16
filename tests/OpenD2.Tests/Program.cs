@@ -130,5 +130,6 @@ Npc02Contracts.Run(Test);
 	});
 }
 finally { Directory.Delete(root, recursive: true); }
-Console.WriteLine($"{count - failures}/{count} passed");
+foreach (var (name, reason) in GodotWindowContracts.Skipped) Console.WriteLine($"SKIPPED {name}: {reason}");
+Console.WriteLine($"{count - failures}/{count} passed" + (GodotWindowContracts.Skipped.Count > 0 ? $", {GodotWindowContracts.Skipped.Count} skipped" : ""));
 return failures == 0 ? 0 : 1;

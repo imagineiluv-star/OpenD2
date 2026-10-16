@@ -110,6 +110,17 @@ internal static class LegacyScreenContracts
 			var small = (byte[])a.Clone(); for (int i = 0; i < small.Length; i += 9) small[i] = (byte)(small[i] == 255 ? 254 : small[i] + 1);
 			Check(ScreenDiff.WithinGpuWindowTolerance(ScreenDiff.Compare(w, h, a, small)), "sparse +-1 differences are within GPU tolerance");
 			Check(!ScreenDiff.WithinGpuWindowTolerance(ScreenDiff.Compare(w, h, a, black)), "a wrong image is outside GPU tolerance");
+			var two = (byte[])a.Clone(); two[0] = (byte)(two[0] >= 2 ? two[0] - 2 : two[0] + 2);
+			var twoDiff = ScreenDiff.Compare(w, h, a, two);
+			Check(twoDiff.MaxChannelError == 2 && !ScreenDiff.WithinGpuWindowTolerance(twoDiff), "a single 2-level channel error fails the GPU tolerance");
+			Check(ScreenDiff.WithinGpuWindowTolerance(twoDiff, nearest: true) == (twoDiff.MatchPercent >= 99.9), "nearest uses the exact-pixel share instead");
+			// Content-rect comparison: bars are excluded from the metrics but must be black.
+			int W = w + 4, H = h; var layout = new LetterboxLayout(1, 2, 0, w, h, W, H);
+			byte[] Boxed(byte[] img) { var o = new byte[W * H * 3]; for (int y = 0; y < h; y++) img.AsSpan(y * w * 3, w * 3).CopyTo(o.AsSpan((y * W + 2) * 3)); return o; }
+			var (inner, bars) = ScreenDiff.CompareGpuWindow(W, H, Boxed(a), Boxed(small), layout);
+			Check(bars && inner.Width == w && inner.Pixels == (long)w * h && inner.DifferentPixels == ScreenDiff.Compare(w, h, a, small).DifferentPixels, "content rect only");
+			var lit = Boxed(a); lit[0] = 1;
+			Check(!ScreenDiff.CompareGpuWindow(W, H, lit, Boxed(a), layout).BarsBlack, "a non-black bar pixel is reported");
 		});
 		test("png reader round-trips the PNG writer and rejects malformed files", () =>
 		{
@@ -126,8 +137,24 @@ internal static class LegacyScreenContracts
 	// The expected hash is the RGB of an independent Python DC6 renderer (row-major 4-column stitch, units/act1 pal.dat).
 	public const string GameSelectUnitsRgbSha256 = "9ec1529c911158ec76fc96854bb774f8edeb660b2884d014d554ff6ffd4fd02f";
 	public const string GameSelectAct1RgbSha256 = "4bc657d0cb93ad1c1ef91b521e3ac93706ae78b6c0919aef1924fcd06ee32106";
+	// Local-QA-only PNG pins (1.11b data): run only when D2_DATA_PATH is set, so CI without game data never checks them.
+	// 800x600 is the --capture internal buffer; 1920x1080 is the CPU --window render (default fit 1.8x = 1440x1080 at x=240, sharp).
+	// The GPU window shot is not pinned: it varies by +-1 per channel across drivers and is checked by GodotWindowContracts instead.
+	public const string GameSelect800PngSha256 = "13e758f8a5662907e282f445f62d30ce1bb0bdf1640d37e99b02b4ab450176c0";
+	public const string GameSelect1920x1080PngSha256 = "65cac090c4e16c22ddcffb9ca0943d75a8cddd60acd20478207c11a331c8de25";
 	public static void Genuine(string data, Action<string, Action> test)
 	{
+		test("genuine (local QA): gameselect PNG hashes are pinned for the 800x600 buffer and the 1920x1080 window render", () =>
+		{
+			using var mpq = new MpqAssetSource(data);
+			byte[] Read(string p) => mpq.TryRead(p, AssetDecoders.MaxInputBytes, out var b) ? b : throw new FileNotFoundException(p);
+			var request = new LegacyCaptureRequest("gameselect", LegacyResolution.R800x600, "units");
+			string Hash(LegacyCapture c) => Convert.ToHexString(SHA256.HashData(LegacyScreenRenderer.EncodePng(c))).ToLowerInvariant();
+			Check(Hash(LegacyScreenRenderer.Render(request, Read)) == GameSelect800PngSha256, "800x600 internal buffer PNG hash");
+			var window = LegacyScreenRenderer.Render(request with { WindowWidth = 1920, WindowHeight = 1080 }, Read);
+			Check(window.Layout is { X: 240, Y: 0, Width: 1440, Height: 1080 }, $"1920x1080 content rect {window.Layout}");
+			Check(Hash(window) == GameSelect1920x1080PngSha256, "1920x1080 window PNG hash");
+		});
 		test("genuine: gameselect capture with the units palette matches the Python reference 100% and is byte-identical across runs", () =>
 		{
 			using var mpq = new MpqAssetSource(data);

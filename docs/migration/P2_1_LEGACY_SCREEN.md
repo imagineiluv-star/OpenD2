@@ -22,7 +22,7 @@
 - 내부 캡처(`--capture`)는 배율이나 필터와 상관없이 800x600(640x480) 버퍼를 바이트 단위로 고정해 저장한다.
 - 실제 창 일치(GodotWindowContracts, 디스플레이가 있을 때만 실행하고 없으면 SKIP)
   - 정수 배율과 1배 미만(CPU box filter를 1:1로 표시)은 CPU `--window`와 100% 같아야 한다.
-  - 비정수 sharp와 nearest는 MAE ≤ 0.5, SSIM ≥ 0.99를 만족해야 한다.
+  - 비정수 sharp와 nearest는 콘텐츠 rect 기준으로 MAE ≤ 0.5, SSIM ≥ 0.999, 채널별 최대 오차 ≤ 1을 만족해야 한다(nearest는 최대 오차 조건 대신 정확 일치율 ≥ 99.9%). 또한 레터박스 막대는 모두 0이어야 한다.
 - 창이 800x600보다 작으면 sharp와 linear는 box filter(면적 평균)로 줄여 aliasing을 막는다. nearest는 요청대로 점 샘플링한다.
 - sharp의 정수 확대 배수는 CPU와 Godot가 같은 함수 `LetterboxLayout.SharpPrescale`(반올림된 rect 기준 ceil)로 계산한다.
 
@@ -32,9 +32,13 @@
 | 800x600 내부 버퍼 | `--capture gameselect` | `13e758f8a5662907e282f445f62d30ce1bb0bdf1640d37e99b02b4ab450176c0` |
 | 1920x1080 창 (기본 fit 1.8배 + sharp, CPU) | `--capture gameselect --window 1920x1080` | `65cac090c4e16c22ddcffb9ca0943d75a8cddd60acd20478207c11a331c8de25` |
 
-같은 커밋에서 두 번 캡처하면 두 해시 모두 바이트가 같다. 내부 버퍼 해시는 표시 경로(fit, sharp)를 검증하지 않는다.
+같은 커밋에서 두 번 캡처하면 두 해시 모두 바이트가 같다. 두 PNG 해시는 `LegacyScreenContracts.Genuine`에 고정돼 있다. 이 검사는 **로컬 QA 전용**이다. `D2_DATA_PATH`가 없으면(CI) 실행되지 않는다. GPU 창 샷은 드라이버에 따라 ±1씩 달라지므로 해시를 고정하지 않고 아래 허용치로 비교한다. 내부 버퍼 해시는 표시 경로(fit, sharp)를 검증하지 않는다.
 
 ## GPU 화면 비교 임계값
 - 실제 GPU(Godot) 창과 CPU `--window` 결과는 비정수 배율에서 채널값이 ±1 다르다. 1920x1080에서 일치율 89.5%, MAE 0.071, SSIM 0.9995였다.
-- 그래서 GPU 창 비교에는 `ScreenDiff.GpuWindowMaxMae = 0.5`, `GpuWindowMinSsim = 0.999`를 쓴다. CLI에서는 `--diff a b --gpu-window`이다. `GodotWindowContracts`도 같은 값을 쓴다.
+- GPU 창 비교는 `ScreenDiff.CompareGpuWindow`를 쓴다. 콘텐츠 rect(1920x1080이면 1440x1080@240,0)만 잘라서 지표를 계산하고, 막대 영역은 모든 픽셀이 0인지 따로 확인한다. 막대를 포함하면 SSIM이 부풀고 MAE가 희석되기 때문이다.
+- 임계값은 `GpuWindowMaxMae = 0.5`, `GpuWindowMinSsim = 0.999`, `GpuWindowMaxChannelError = 1`이다. 비정수 nearest는 소스 픽셀 경계의 부동소수 동률 때문에 픽셀 전체가 뒤집힌다(실측: 1700x1000에서 99.973% 일치, 최대 오차 184). 그래서 최대 오차 조건 대신 `GpuWindowNearestMinMatch = 99.9`%를 적용한다(CLI `--nearest`). CLI는 `--diff <gpu.png> <cpu.png> --gpu-window`(800x600 화면의 기본 fit 기준)이다. `GodotWindowContracts`도 같은 함수를 쓴다.
+- 콘텐츠 rect만 잰 실측값(1920x1080 실제 GPU 샷): 일치율 86.05%, MAE 0.094, SSIM 0.99937, 최대 채널 오차 1, 막대 모두 0 → 통과.
+- SSIM은 근사값이다. BT.601 휘도에 8x8 균등 창, stride 4를 쓰며, 색차 오차는 MAE와 최대 오차로 잡는다.
+- `GodotWindowContracts`는 정품 데이터, 디스플레이, Godot 바이너리, Godot 빌드가 모두 있어야 실행되는 **로컬 QA 전용** 테스트다. 케이스는 1700x1000 4개와 1920x1080(fit sharp/nearest) 2개다. 환경이 없으면 각 케이스를 사유와 함께 `SKIPPED`로 표시하고 요약에 `N skipped`로 집계한다. 통과로 세지 않는다. `OPEND2_REQUIRE_GODOT_WINDOW=1`이면 환경이 없을 때 실패로 처리한다.
 - 정수 배율, 1배 미만 경로, 내부 버퍼 비교는 기본값(100% 일치)을 쓴다.
