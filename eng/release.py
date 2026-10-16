@@ -50,10 +50,31 @@ CASES = [
 ]
 
 
+TAG_PATTERN = r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?"
+
+
+def read_version(root=ROOT):
+    """The root VERSION file is the single version source (X.Y.Z, no prefix or suffix)."""
+    value = (root / "VERSION").read_text(encoding="utf-8").strip()
+    if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", value):
+        raise ValueError(f"VERSION must be X.Y.Z, got {value!r}")
+    return value
+
+
 def check_version(version, allow_ci=False):
-    if (allow_ci and version == "ci") or re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*", version):
+    """Accept a stable tag (v0.1.0) or a candidate (v0.1.0-rc.1)."""
+    if (allow_ci and version == "ci") or re.fullmatch(TAG_PATTERN, version):
         return version
-    raise ValueError("Expected a release candidate such as v0.2.0-rc.1")
+    raise ValueError("Expected a release tag such as v0.1.0 or v0.1.0-rc.1")
+
+
+def check_tag_matches_version(version, root=ROOT):
+    """Fail unless the tag's X.Y.Z equals the VERSION file."""
+    check_version(version)
+    expected = read_version(root)
+    if version.split("-", 1)[0][1:] != expected:
+        raise ValueError(f"Tag {version} does not match VERSION {expected}")
+    return version
 
 
 def sha256(path):
@@ -296,7 +317,7 @@ def main():
     handoff.add_argument("--folder", type=Path, default=ROOT / "artifacts/release")
     args = parser.parse_args()
     if args.command == "check-version":
-        check_version(args.version)
+        check_tag_matches_version(args.version)
     elif args.command == "pack":
         pack(args.source or ROOT / "artifacts" / args.preset, args.output, args.preset,
              os.environ.get("RELEASE_TAG", "ci"), os.environ["SOURCE_SHA"], args.smoke)

@@ -2,11 +2,11 @@ name: Release candidate and QA handoff
 
 on:
   push:
-    tags: ["v*-rc.*"]
+    tags: ["v*.*.*"]
   workflow_dispatch:
     inputs:
       version:
-        description: "New candidate tag, e.g. v0.2.0-rc.1"
+        description: "Release tag matching VERSION, e.g. v0.1.0-rc.1 or v0.1.0"
         required: true
         type: string
       publish:

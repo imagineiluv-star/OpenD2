@@ -8,6 +8,10 @@
     <BuildInParallel>false</BuildInParallel>
     <RestoreBuildInParallel>false</RestoreBuildInParallel>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Single version source: the root VERSION file (eng/version.py keeps Godot's config/version in sync). -->
+    <OpenD2Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)VERSION').Trim())</OpenD2Version>
+    <VersionPrefix>$(OpenD2Version)</VersionPrefix>
+    <!-- Pre-releases: -p:VersionSuffix=rc.1. Commit: -p:SourceRevisionId=<sha> becomes InformationalVersion 0.1.0-rc.1+<sha>. -->
     <NuGetLockFilePath Condition="'$(Configuration)' == 'ExportRelease' Or '$(Configuration)' == 'ExportDebug'">$(MSBuildProjectDirectory)/obj/export-$(Configuration)-$(RuntimeIdentifier).lock.json</NuGetLockFilePath>
   </PropertyGroup>
 </Project>
