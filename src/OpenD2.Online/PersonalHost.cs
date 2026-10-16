@@ -8,6 +8,7 @@ public sealed class PersonalHost : IDisposable, IAsyncDisposable
 {
     private Process? process;
     private int disposed;
+    private static readonly TimeSpan KillTimeout = TimeSpan.FromSeconds(5);
     private readonly SemaphoreSlim gate = new(1);
     public string? Address { get; private set; }
     public string? TrustedRootSha256 { get; private set; }
@@ -92,7 +93,13 @@ public sealed class PersonalHost : IDisposable, IAsyncDisposable
             catch (Exception e) when (e is TimeoutException or IOException)
             {
                 clean = false;
-                if (!child.HasExited) { child.Kill(entireProcessTree: true); await child.WaitForExitAsync().ConfigureAwait(false); }
+                if (!child.HasExited)
+                {
+                    child.Kill(entireProcessTree: true);
+                    // Kill is asynchronous; do not let an unreapable child hang shutdown forever.
+                    try { await child.WaitForExitAsync().WaitAsync(KillTimeout).ConfigureAwait(false); }
+                    catch (TimeoutException) { }
+                }
             }
         }
         finally { child.Dispose(); }

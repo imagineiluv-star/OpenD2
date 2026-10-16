@@ -332,5 +332,11 @@ public partial class OnlinePanel : VBoxContainer
         else return;
         GetViewport().SetInputAsHandled();
     }
-    public override void _ExitTree() { StopRoomStream(); lifetime.Cancel(); client?.Dispose(); personalHost.Dispose(); lifetime.Dispose(); }
+    public override void _ExitTree() { StopRoomStream(); lifetime.Cancel(); client?.Dispose(); ShutdownPersonalHost(); lifetime.Dispose(); }
+    // Never block the main thread on window close: the bounded graceful stop runs in the
+    // background, and stdin EOF still stops the child if the client process exits first.
+    private void ShutdownPersonalHost() =>
+        _ = personalHost.DisposeAsync().AsTask().ContinueWith(
+            t => GD.PushError("Personal host shutdown failed: " + t.Exception?.GetBaseException()),
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
 }
