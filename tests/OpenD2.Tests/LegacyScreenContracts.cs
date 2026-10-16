@@ -20,7 +20,10 @@ internal static class LegacyScreenContracts
 			Check(LetterboxLayout.Fit(1920, 1080, 640, 480, integer) == new LetterboxLayout(2, 320, 60, 1280, 960, 1920, 1080), "integer 1080p 640x480 is 2x");
 			Check(LetterboxLayout.Fit(700, 500, 800, 600, integer) is { Scale: 1, X: -50, Y: -50 }, "integer never below 1x");
 			Check(LegacyScaleOptions.ParseMode("Integer") == integer && LegacyScaleOptions.ParseFilter("linear") == LegacyScaleFilter.Linear && LegacyScaleOptions.ParseFilter("SHARP") == LegacyScaleFilter.Sharp, "options");
-			Check(LegacyScaleOptions.SharpPrescale(1.8) == 2 && LegacyScaleOptions.SharpPrescale(2) == 2 && LegacyScaleOptions.SharpPrescale(2.4) == 3 && LegacyScaleOptions.SharpPrescale(0.8) == 1, "sharp prescale is ceil");
+			Check(LetterboxLayout.Fit(1920, 1080, 800, 600).SharpPrescale(800) == 2 && LetterboxLayout.Fit(1920, 1200, 800, 600).SharpPrescale(800) == 2
+				&& LetterboxLayout.Fit(2560, 1440, 800, 600).SharpPrescale(800) == 3 && LetterboxLayout.Fit(700, 500, 800, 600).SharpPrescale(800) == 1, "sharp prescale is ceil of the rounded rect");
+			// The prescale follows the rounded rect the screen is actually drawn at, not the unrounded scale.
+			var nearTwo = new LetterboxLayout(1.9999, 0, 0, 1600, 1200, 1600, 1200); Check(nearTwo.SharpPrescale(800) == 2, "rect-based prescale");
 			try { LegacyScaleOptions.ParseMode("stretch"); throw new Exception("bad mode accepted"); } catch (ArgumentException) { }
 			Check(LegacyResolution.R640x480.Size() == (640, 480) && LegacyResolutions.Parse("800X600") == LegacyResolution.R800x600, "resolutions");
 			try { LegacyResolutions.Parse("1024x768"); throw new Exception("odd resolution accepted"); } catch (ArgumentException) { }
@@ -49,6 +52,14 @@ internal static class LegacyScreenContracts
 			Check(Enumerable.Range(0, 18).All(x => sharp[(row * 18 + x) * 3] <= 90) && Exact(sharp) > Exact(linear) && Exact(sharp) >= 9, $"sharp {Exact(sharp)} vs linear {Exact(linear)} exact columns");
 			foreach (var f in new[] { LegacyScaleFilter.Sharp, LegacyScaleFilter.Linear })
 				Check(LegacyFrameBuffer.Present(rgb, 2, 1, layout, f).AsSpan().SequenceEqual(window), $"{f} equals nearest at whole-number scales");
+			Check(LegacyFrameBuffer.Present(rgb, 2, 1, layout).AsSpan().SequenceEqual(window), "Present defaults to Sharp (same as the CLI)");
+			// Below 1x: Sharp and Linear box-filter instead of aliasing; Nearest keeps point sampling on request.
+			byte[] stripes = [0, 0, 0, 255, 255, 255, 0, 0, 0, 255, 255, 255]; // 4x1 black/white
+			var half = LetterboxLayout.Fit(2, 1, 4, 1);
+			Check(half is { Width: 2, Scale: 0.5 } && half.IsDownscale(4), "downscale layout");
+			foreach (var f in new[] { LegacyScaleFilter.Sharp, LegacyScaleFilter.Linear })
+				Check(LegacyFrameBuffer.Present(stripes, 4, 1, half, f).All(v => v == 128), $"{f} averages stripes below 1x");
+			Check(LegacyFrameBuffer.Present(stripes, 4, 1, half, LegacyScaleFilter.Nearest).All(v => v is 0 or 255), "nearest point-samples");
 		});
 		test("legacy screen: frame buffer clips, skips transparent pixels and leaves uncovered pixels black", () =>
 		{
@@ -94,6 +105,11 @@ internal static class LegacyScreenContracts
 			Check(one.DifferentPixels == 1 && Math.Abs(one.MatchPercent - 100.0 * 255 / 256) < 1e-9 && one.Ssim < 1 && one.MeanAbsoluteError > 0, "one pixel");
 			var black = new byte[a.Length]; Check(ScreenDiff.Compare(w, h, a, black).Ssim < 0.5, "very different");
 			try { ScreenDiff.Compare(w, h, a, new byte[3]); throw new Exception("size mismatch accepted"); } catch (ArgumentException) { }
+			// GPU tolerance: scattered +-1 channel differences pass; a wrong image does not.
+			Check(ScreenDiff.WithinGpuWindowTolerance(ScreenDiff.Compare(w, h, a, a)), "identical is within GPU tolerance");
+			var small = (byte[])a.Clone(); for (int i = 0; i < small.Length; i += 9) small[i] = (byte)(small[i] == 255 ? 254 : small[i] + 1);
+			Check(ScreenDiff.WithinGpuWindowTolerance(ScreenDiff.Compare(w, h, a, small)), "sparse +-1 differences are within GPU tolerance");
+			Check(!ScreenDiff.WithinGpuWindowTolerance(ScreenDiff.Compare(w, h, a, black)), "a wrong image is outside GPU tolerance");
 		});
 		test("png reader round-trips the PNG writer and rejects malformed files", () =>
 		{

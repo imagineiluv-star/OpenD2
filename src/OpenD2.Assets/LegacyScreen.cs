@@ -32,14 +32,20 @@ public static class LegacyScaleOptions
 	{ "fit" => LegacyScaleMode.Fit, "integer" => LegacyScaleMode.Integer, _ => throw new ArgumentException("--scale must be fit or integer.") };
 	public static LegacyScaleFilter ParseFilter(string text) => text.Trim().ToLowerInvariant() switch
 	{ "sharp" => LegacyScaleFilter.Sharp, "nearest" => LegacyScaleFilter.Nearest, "linear" => LegacyScaleFilter.Linear, _ => throw new ArgumentException("--filter must be sharp, nearest or linear.") };
-	/// <summary>The whole-number prescale the Sharp filter uses: ceil(scale), at least 1.</summary>
-	public static int SharpPrescale(double scale) => Math.Max(1, (int)Math.Ceiling(scale - 1e-9));
+
 }
 
 /// <summary>Where the fixed screen lands in a window, centred; the uncovered pillarbox/letterbox area is pure black.</summary>
 public readonly record struct LetterboxLayout(double Scale, int X, int Y, int Width, int Height, int WindowWidth, int WindowHeight)
 {
 	public bool IsInteger => Scale == Math.Floor(Scale);
+	/// <summary>True when the screen is shown smaller than its native size (the window is smaller than 800x600/640x480).</summary>
+	public bool IsDownscale(int screenWidth) => Width < screenWidth;
+	/// <summary>
+	/// The whole-number prescale of the Sharp filter: ceil(rect width / screen width), at least 1, in integer maths on the
+	/// rounded rect. The CPU path and the Godot client both call this, so they always pick the same factor.
+	/// </summary>
+	public int SharpPrescale(int screenWidth) => Math.Max(1, (Width + screenWidth - 1) / screenWidth);
 
 	public static LetterboxLayout Fit(int windowWidth, int windowHeight, int screenWidth, int screenHeight, LegacyScaleMode mode = LegacyScaleMode.Fit)
 	{
@@ -114,15 +120,18 @@ public sealed class LegacyFrameBuffer
 	/// <summary>
 	/// Scales into a window-sized RGB24 image with black bars, sampling at window pixel centres like the GPU.
 	/// Nearest: source = floor((offset + 0.5) * size / scaledSize). Linear: bilinear on the source. Sharp: bilinear on the
-	/// source nearest-upscaled by <see cref="LegacyScaleOptions.SharpPrescale"/>. Whole-number scales give nearest for all.
+	/// source nearest-upscaled by <see cref="LetterboxLayout.SharpPrescale"/>. Whole-number scales give nearest for all.
+	/// Below 1x (window smaller than the screen) Sharp and Linear average each window pixel's source footprint (box
+	/// filter) instead of point-sampling, which would alias; Nearest stays nearest by request.
 	/// </summary>
-	public static byte[] Present(ReadOnlySpan<byte> rgb, int width, int height, LetterboxLayout layout, LegacyScaleFilter filter = LegacyScaleFilter.Nearest)
+	public static byte[] Present(ReadOnlySpan<byte> rgb, int width, int height, LetterboxLayout layout, LegacyScaleFilter filter = LegacyScaleFilter.Sharp)
 	{
 		if (rgb.Length != width * height * 3) throw new ArgumentException("RGB size does not match the screen size.");
 		var output = new byte[layout.WindowWidth * layout.WindowHeight * 3];
 		bool exact = layout.Width % width == 0 && layout.Height % height == 0 && layout.Width / width == layout.Height / height;
 		if (exact) filter = LegacyScaleFilter.Nearest;
-		int k = filter == LegacyScaleFilter.Sharp ? LegacyScaleOptions.SharpPrescale((double)layout.Width / width) : 1;
+		bool box = filter != LegacyScaleFilter.Nearest && layout.IsDownscale(width);
+		int k = filter == LegacyScaleFilter.Sharp ? layout.SharpPrescale(width) : 1;
 		int vw = width * k, vh = height * k; // virtual (prescaled) image for Sharp; the source itself for Linear
 		for (int wy = Math.Max(0, layout.Y); wy < Math.Min(layout.WindowHeight, layout.Y + layout.Height); wy++)
 		{
@@ -130,6 +139,7 @@ public sealed class LegacyFrameBuffer
 			for (int wx = Math.Max(0, layout.X); wx < Math.Min(layout.WindowWidth, layout.X + layout.Width); wx++)
 			{
 				int ox = wx - layout.X; var dst = output.AsSpan((wy * layout.WindowWidth + wx) * 3, 3);
+				if (box) { BoxSample(rgb, width, height, layout, ox, oy, dst); continue; }
 				if (filter == LegacyScaleFilter.Nearest)
 				{
 					int sx = (int)((2L * ox + 1) * width / (2L * layout.Width)), sy = (int)((2L * oy + 1) * height / (2L * layout.Height));
@@ -148,6 +158,24 @@ public sealed class LegacyFrameBuffer
 			}
 		}
 		return output;
+	}
+
+	// Area average of the source rectangle a window pixel covers, weighting partially covered source pixels.
+	static void BoxSample(ReadOnlySpan<byte> rgb, int width, int height, LetterboxLayout layout, int ox, int oy, Span<byte> dst)
+	{
+		double x0 = (double)ox * width / layout.Width, x1 = (double)(ox + 1) * width / layout.Width;
+		double y0 = (double)oy * height / layout.Height, y1 = (double)(oy + 1) * height / layout.Height;
+		double r = 0, g = 0, b = 0, total = 0;
+		for (int sy = (int)y0; sy < Math.Min(height, (int)Math.Ceiling(y1)); sy++)
+		{
+			double wy = Math.Min(y1, sy + 1) - Math.Max(y0, sy); if (wy <= 0) continue;
+			for (int sx = (int)x0; sx < Math.Min(width, (int)Math.Ceiling(x1)); sx++)
+			{
+				double w = (Math.Min(x1, sx + 1) - Math.Max(x0, sx)) * wy; if (w <= 0) continue;
+				int o = (sy * width + sx) * 3; r += rgb[o] * w; g += rgb[o + 1] * w; b += rgb[o + 2] * w; total += w;
+			}
+		}
+		dst[0] = (byte)Math.Round(r / total); dst[1] = (byte)Math.Round(g / total); dst[2] = (byte)Math.Round(b / total);
 	}
 }
 
@@ -195,6 +223,15 @@ public sealed record ScreenDiffResult(int Width, int Height, long Pixels, long M
 /// <summary>Compares two equally sized RGB images: exact pixel match %, mean absolute error per channel (0-255), and SSIM.</summary>
 public static class ScreenDiff
 {
+	/// <summary>
+	/// Tolerance for comparing a real GPU window against the CPU --window model at fractional scales. GPU bilinear and
+	/// nearest round differently from the CPU by at most 1 per channel (measured: 89.5% exact, MAE 0.05-0.07,
+	/// SSIM 0.9995-0.9997 on Mesa opengl3), so exact matching is not meaningful there. Whole-number scales, the
+	/// below-1x path and the internal buffer must still match 100%.
+	/// </summary>
+	public const double GpuWindowMaxMae = 0.5, GpuWindowMinSsim = 0.999;
+	public static bool WithinGpuWindowTolerance(ScreenDiffResult r) => r.MeanAbsoluteError <= GpuWindowMaxMae && r.Ssim >= GpuWindowMinSsim;
+
 	public static ScreenDiffResult Compare(int width, int height, ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)
 	{
 		long n = (long)width * height;

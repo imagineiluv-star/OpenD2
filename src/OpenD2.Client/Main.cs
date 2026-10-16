@@ -74,16 +74,33 @@ public partial class Main : Node3D
 		{
 			// Original mode is its own scene: no dev panels, no 3D camera, just the fixed legacy screen.
 			SetProcess(false);
-			// The project stretches dev UI from 1152x720; original mode needs real window pixels for whole-number scaling.
-			GetTree().Root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
-			GetWindow().MinSize = Vector2I.Zero;
-			ConfigureNativeResolver();
-			paths.EnsureCreated();
-			var saved = AppSettings.Load(paths.SettingsFile);
-			string? Option(string name) { int i = Array.IndexOf(args, name); return i >= 0 && i + 1 < args.Length ? args[i + 1] : null; }
-			string data = D2DataPaths.ResolveDataPath(string.IsNullOrWhiteSpace(saved.GameDataPath) ? null : saved.GameDataPath) ?? "";
-			var request = new LegacyCaptureRequest(Option("--scene") ?? "gameselect", LegacyResolutions.Parse(Option("--resolution") ?? "800x600"), Option("--palette") ?? "units");
-			var layer = new CanvasLayer(); AddChild(layer); layer.AddChild(new Legacy.LegacyScreen(data, request, LegacyScaleOptions.ParseMode(Option("--scale") ?? "fit"), LegacyScaleOptions.ParseFilter(Option("--filter") ?? "sharp")));
+			try
+			{
+				// The project stretches dev UI from 1152x720; original mode needs real window pixels for exact scaling.
+				GetTree().Root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
+				GetWindow().MinSize = Vector2I.Zero;
+				ConfigureNativeResolver();
+				paths.EnsureCreated();
+				var saved = AppSettings.Load(paths.SettingsFile);
+				string? Option(string name) { int i = Array.IndexOf(args, name); return i >= 0 && i + 1 < args.Length ? args[i + 1] : null; }
+				string data = D2DataPaths.ResolveDataPath(string.IsNullOrWhiteSpace(saved.GameDataPath) ? null : saved.GameDataPath) ?? "";
+				var request = new LegacyCaptureRequest(Option("--scene") ?? "gameselect", LegacyResolutions.Parse(Option("--resolution") ?? "800x600"), Option("--palette") ?? "units");
+				var screen = new Legacy.LegacyScreen(data, request, LegacyScaleOptions.ParseMode(Option("--scale") ?? "fit"), LegacyScaleOptions.ParseFilter(Option("--filter") ?? "sharp"));
+				var layer = new CanvasLayer(); AddChild(layer); layer.AddChild(screen);
+				if (Option("--capture-window") is { } windowShot)
+				{
+					string full = System.IO.Path.GetFullPath(windowShot);
+					D2DataPaths.RequireOutsideGit(System.IO.Path.GetDirectoryName(full)!);
+					screen.CaptureWindowAfter(full, int.Parse(Option("--capture-frames") ?? "10"));
+				}
+			}
+			catch (Exception error) when (error is ArgumentException or FormatException or InvalidOperationException or System.IO.IOException or InvalidDataException)
+			{
+				// Bad options: say so and exit instead of leaving an empty window.
+				GD.PrintErr("OPEND2_ORIGINAL_MODE_ERROR " + error.Message);
+				if (DisplayServer.GetName() != "headless") OS.Alert(error.Message, "OpenD2 — original mode");
+				GetTree().Quit(2);
+			}
 			return;
 		}
 		BuildScene();

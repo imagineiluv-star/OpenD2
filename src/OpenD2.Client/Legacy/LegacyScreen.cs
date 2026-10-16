@@ -20,10 +20,14 @@ public partial class LegacyScreen : Control
 	private SubViewport viewport = null!;
 	private TextureRect presented = null!;
 	private SubViewport? prescale;
+	private byte[]? internalRgb;
+	private Texture2D? viewportTexture;
+	private int captureFrames = -1;
+	private string? captureWindowPath;
 	private TextureRect? prescaled;
 	private Label? error;
 
-	public LegacyScreen(string dataPath, LegacyCaptureRequest request, LegacyScaleMode scaleMode = LegacyScaleMode.Fit, LegacyScaleFilter filter = LegacyScaleFilter.Nearest)
+	public LegacyScreen(string dataPath, LegacyCaptureRequest request, LegacyScaleMode scaleMode = LegacyScaleMode.Fit, LegacyScaleFilter filter = LegacyScaleFilter.Sharp)
 	{ this.dataPath = dataPath; this.request = request; this.scaleMode = scaleMode; this.filter = filter; }
 
 	public override void _Ready()
@@ -45,6 +49,7 @@ public partial class LegacyScreen : Control
 			prescaled = new TextureRect { Texture = viewport.GetTexture(), TextureFilter = TextureFilterEnum.Nearest, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale };
 			prescale.AddChild(prescaled); AddChild(prescale); shown = prescale.GetTexture();
 		}
+		viewportTexture = shown;
 		presented = new TextureRect { Texture = shown, TextureFilter = filter == LegacyScaleFilter.Nearest ? TextureFilterEnum.Nearest : TextureFilterEnum.Linear, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
 			StretchMode = TextureRect.StretchModeEnum.Scale, MouseFilter = MouseFilterEnum.Ignore };
 		AddChild(presented);
@@ -54,6 +59,7 @@ public partial class LegacyScreen : Control
 			byte[] Read(string path) => source.TryRead(path, AssetDecoders.MaxInputBytes, out var bytes) ? bytes : throw new System.IO.FileNotFoundException("Missing " + path);
 			var capture = LegacyScreenRenderer.Render(request with { WindowWidth = null, WindowHeight = null }, Read);
 			screen.Texture = ImageTexture.CreateFromImage(Image.CreateFromData(capture.Width, capture.Height, false, Image.Format.Rgb8, capture.Rgb));
+			internalRgb = capture.Rgb;
 		}
 		catch (Exception e) when (e is System.IO.IOException or InvalidDataException or ArgumentException or InvalidOperationException)
 		{
@@ -70,12 +76,34 @@ public partial class LegacyScreen : Control
 		presented.Position = new Vector2(layout.X, layout.Y); presented.Size = new Vector2(layout.Width, layout.Height);
 		if (prescale is not null && prescaled is not null)
 		{
-			int k = LegacyScaleOptions.SharpPrescale(layout.Scale);
+			int k = layout.SharpPrescale(w);
 			prescale.Size = new Vector2I(w * k, h * k); prescaled.Position = Vector2.Zero; prescaled.Size = new Vector2(w * k, h * k);
 			// A whole-number fit needs no resample: show the prescaled image 1:1.
 			presented.TextureFilter = layout.IsInteger || filter == LegacyScaleFilter.Nearest ? TextureFilterEnum.Nearest : TextureFilterEnum.Linear;
 		}
+		// Below 1x the GPU would point-sample (no mipmaps on viewport textures) and alias: show the CPU box-filtered
+		// image 1:1 instead, so Godot and the CPU --window path produce the same pixels.
+		if (layout.IsDownscale(w) && filter != LegacyScaleFilter.Nearest && internalRgb is not null)
+		{
+			var full = LegacyFrameBuffer.Present(internalRgb, w, h, layout with { X = 0, Y = 0, WindowWidth = layout.Width, WindowHeight = layout.Height }, filter);
+			presented.Texture = ImageTexture.CreateFromImage(Image.CreateFromData(layout.Width, layout.Height, false, Image.Format.Rgb8, full));
+			presented.TextureFilter = TextureFilterEnum.Nearest;
+		}
+		else if (viewportTexture is not null) presented.Texture = viewportTexture;
 		GD.Print($"OPEND2_LEGACY_LAYOUT scale={layout.Scale:0.###} rect={layout.X},{layout.Y},{layout.Width}x{layout.Height} filter={filter} window={layout.WindowWidth}x{layout.WindowHeight}");
+	}
+
+	/// <summary>Test hook: save the real rendered window after a few frames, then quit (needs a display, not --headless).</summary>
+	public void CaptureWindowAfter(string path, int frames) { captureWindowPath = path; captureFrames = frames; SetProcess(true); }
+
+	public override void _Process(double delta)
+	{
+		if (captureFrames < 0 || --captureFrames > 0) return;
+		captureFrames = -1;
+		var image = GetViewport().GetTexture().GetImage();
+		var error = image.SavePng(captureWindowPath!);
+		GD.Print($"OPEND2_WINDOW_CAPTURE {(error == Error.Ok ? "WRITTEN" : "FAILED " + error)} {image.GetWidth()}x{image.GetHeight()} {captureWindowPath}");
+		GetTree().Quit(error == Error.Ok ? 0 : 1);
 	}
 
 	/// <summary>Headless capture: CPU render straight to PNG, no window or GPU, so the bytes depend only on commit, data and request.</summary>

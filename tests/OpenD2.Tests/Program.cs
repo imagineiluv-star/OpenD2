@@ -41,6 +41,7 @@ try
 	MpqContracts.Run(root, Test);
 	MpqPipelineContracts.Run(root, Test);
 	LegacyScreenContracts.Run(Test);
+	GodotWindowContracts.Run(Test);
 	RealDataShapeContracts.Run(Test);
 	Pl2FontContracts.Run(Test);
 	GenuineDataContracts.Run(Test);
