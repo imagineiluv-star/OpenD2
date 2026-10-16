@@ -4,16 +4,17 @@ namespace OpenD2.Online;
 
 // Owns only the child it starts. stdin is a private control channel: EOF also
 // shuts the server down if its client crashes, without a network shutdown API.
-public sealed class PersonalHost : IDisposable, IAsyncDisposable
+public sealed class PersonalHost : IDisposable
 {
     private Process? process;
     private int disposed;
-    private static readonly TimeSpan KillTimeout = TimeSpan.FromSeconds(5);
     private readonly SemaphoreSlim gate = new(1);
     public string? Address { get; private set; }
     public string? TrustedRootSha256 { get; private set; }
     public bool Running => process is { HasExited: false };
+    /// <summary>Starts the personal host process without LAN settings.</summary>
     public Task Start(string executable, string data, CancellationToken cancellation = default) => Start(executable, data, null, cancellation);
+    /// <summary>Launches the host executable, waits for it to report ready, and verifies it responds before returning.</summary>
     public async Task Start(string executable, string data, LanHostSettings? lan, CancellationToken cancellation = default)
     {
         await gate.WaitAsync(cancellation).ConfigureAwait(false);
@@ -67,12 +68,14 @@ public sealed class PersonalHost : IDisposable, IAsyncDisposable
         finally { gate.Release(); }
     }
     // False means the bounded graceful stop failed and the owned child was killed.
+    /// <summary>Stops the running child process, if any, under the shared gate. Returns false if it had to be killed.</summary>
     public async Task<bool> Stop()
     {
         await gate.WaitAsync().ConfigureAwait(false);
         try { return await StopChild().ConfigureAwait(false); }
         finally { gate.Release(); }
     }
+    /// <summary>Requests a graceful shutdown of the owned child, falling back to killing it if it does not exit in time.</summary>
     private async Task<bool> StopChild()
     {
         var child = process; process = null; Address = null; TrustedRootSha256 = null;
@@ -93,28 +96,12 @@ public sealed class PersonalHost : IDisposable, IAsyncDisposable
             catch (Exception e) when (e is TimeoutException or IOException)
             {
                 clean = false;
-                if (!child.HasExited)
-                {
-                    child.Kill(entireProcessTree: true);
-                    // Kill is asynchronous; do not let an unreapable child hang shutdown forever.
-                    try { await child.WaitForExitAsync().WaitAsync(KillTimeout).ConfigureAwait(false); }
-                    catch (TimeoutException) { }
-                }
+                if (!child.HasExited) { child.Kill(entireProcessTree: true); await child.WaitForExitAsync().ConfigureAwait(false); }
             }
         }
         finally { child.Dispose(); }
         return clean;
     }
-    public async ValueTask DisposeAsync()
-    {
-        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
-        await Stop().ConfigureAwait(false);
-    }
-    // Synchronous fallback for callers that cannot await. Stop() uses ConfigureAwait(false)
-    // throughout, and running it on the thread pool keeps it off any caller SynchronizationContext.
-    public void Dispose()
-    {
-        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
-        Task.Run(Stop).GetAwaiter().GetResult();
-    }
+    /// <summary>Marks the host as disposed and synchronously stops any running child process.</summary>
+    public void Dispose() { Interlocked.Exchange(ref disposed, 1); Stop().GetAwaiter().GetResult(); }
 }
