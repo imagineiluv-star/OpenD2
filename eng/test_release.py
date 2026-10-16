@@ -5,6 +5,7 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 import release
@@ -14,6 +15,9 @@ class ReleaseTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
+        patcher = mock.patch.dict(os.environ, {"OPEND2_RELEASE_REHEARSAL": "1"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.root = Path(self.temporary.name)
         self.output = self.root / "out"
         self.version = "v0.2.0-rc.1"
