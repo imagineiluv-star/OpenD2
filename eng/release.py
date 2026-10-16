@@ -12,6 +12,8 @@ import tarfile
 import tempfile
 import zipfile
 
+import data_guard
+
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORMS = {"Linux": "linux-x64.tar.gz", "Windows": "windows-x64.zip", "macOS": "macos-universal.zip"}
 # The online server is published self-contained per OS runtime (macOS CI runs on arm64; an Intel Mac build is not produced).
@@ -170,6 +172,13 @@ def pack(source, output, preset, version, commit, smoke=False):
                 with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as target:
                     for item in sorted(stage.rglob("*")):
                         target.write(item, item.relative_to(stage).as_posix())
+    # Fail closed on game data anywhere in the archive, including nested archives and PCK file tables.
+    guard = data_guard.scan([archive], data_guard.load_original_hashes())
+    try:
+        guard.check()
+    except data_guard.GameDataError:
+        archive.unlink()
+        raise
     if smoke:
         with tempfile.TemporaryDirectory(prefix="opend2-packaged-smoke-") as temporary:
             extracted = Path(temporary)
@@ -185,7 +194,8 @@ def pack(source, output, preset, version, commit, smoke=False):
                             "--folder", str(extracted)], check=True)
     metadata = {"schema_version": 1, "version": version, "commit": commit, "platform": preset,
                 "file": archive.name, "bytes": archive.stat().st_size, "sha256": sha256(archive),
-                "headless_smoke": "PASS" if smoke else "NOT_RUN"}
+                "headless_smoke": "PASS" if smoke else "NOT_RUN",
+                "data_guard": {"result": "PASS", "entries": guard.scanned, "original_hashes": len(guard.original)}}
     write_json(output / f"package-{preset}.json", metadata)
     mpq_kit(output, version, commit)
     return metadata
