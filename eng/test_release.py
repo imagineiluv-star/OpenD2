@@ -5,6 +5,7 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 import release
@@ -14,6 +15,9 @@ class ReleaseTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
+        patcher = mock.patch.dict(os.environ, {"OPEND2_RELEASE_REHEARSAL": "1"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.root = Path(self.temporary.name)
         self.output = self.root / "out"
         self.version = "v0.2.0-rc.1"
@@ -84,6 +88,13 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(release.read_version(), version.godot_version())
         props = (release.ROOT / "Directory.Build.props").read_text()
         self.assertIn("ReadAllText('$(MSBuildThisFileDirectory)VERSION')", props)
+
+    def test_ci_checks_version_sync_and_stamps_assembly_metadata(self):
+        release_yml = (release.ROOT / ".github/workflows/release.yml").read_text()
+        self.assertIn("python eng/version.py check", release_yml)
+        m0 = (release.ROOT / ".github/workflows/m0.yml").read_text()
+        self.assertIn("SourceRevisionId=$GITHUB_SHA", m0)
+        self.assertIn("VersionSuffix=${RELEASE_TAG#*-}", m0)
 
     def test_candidate_names_reject_paths_and_shell_text(self):
         for value in ("0.3", "v0.3", "v0.3.0-beta", "v01.2.3", "../v1.2.3-rc.1", "v1.2.3-rc.0", "v1.2.3-rc.1\n", "$(id)", "-bad", "ci"):
