@@ -4,7 +4,7 @@ namespace OpenD2.Online;
 
 // Owns only the child it starts. stdin is a private control channel: EOF also
 // shuts the server down if its client crashes, without a network shutdown API.
-public sealed class PersonalHost : IDisposable
+public sealed class PersonalHost : IDisposable, IAsyncDisposable
 {
     private Process? process;
     private int disposed;
@@ -98,5 +98,16 @@ public sealed class PersonalHost : IDisposable
         finally { child.Dispose(); }
         return clean;
     }
-    public void Dispose() { Interlocked.Exchange(ref disposed, 1); Stop().GetAwaiter().GetResult(); }
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+        await Stop().ConfigureAwait(false);
+    }
+    // Synchronous fallback for callers that cannot await. Stop() uses ConfigureAwait(false)
+    // throughout, and running it on the thread pool keeps it off any caller SynchronizationContext.
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+        Task.Run(Stop).GetAwaiter().GetResult();
+    }
 }
