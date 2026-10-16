@@ -10,6 +10,7 @@ void Test(string name, Action action)
 {
 	count++;
 	try { action(); Console.WriteLine($"PASS {name}"); }
+	catch (GodotWindowContracts.SkipException skip) { count--; GodotWindowContracts.Skipped.Add((name, skip.Message)); }
 	catch (Exception e) { failures++; Console.Error.WriteLine($"FAIL {name}: {e}"); }
 }
 void Check(bool value) { if (!value) throw new Exception("Assertion failed"); }
