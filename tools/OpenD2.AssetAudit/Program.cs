@@ -13,7 +13,7 @@ try
 		string data = D2DataPaths.ResolveDataPath(args.Length > 1 ? args[1] : null) ?? throw new ArgumentException("Pass a game data directory or set D2_DATA_PATH.");
 		var validation = CorpusValidation.Run(data);
 		Console.WriteLine(JsonSerializer.Serialize(validation, new JsonSerializerOptions { WriteIndented = true }));
-		return validation.Failed == 0 ? 0 : 3;
+		return validation.Clean ? 0 : 3;
 	}
 	if (args[0] is "--verify-install" or "--build-cache")
 	{
