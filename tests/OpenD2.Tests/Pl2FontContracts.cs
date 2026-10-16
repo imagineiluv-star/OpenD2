@@ -53,6 +53,9 @@ internal static class Pl2FontContracts
 			var bad = Font(); bad[0] = (byte)'X'; try { FontTable.Parse(bad); throw new Exception("bad magic accepted"); } catch (InvalidDataException) { }
 			Check(AssetDecoders.Kind("data\\local\\font\\latin\\font16.tbl") == "font_tbl" && AssetDecoders.Kind("data\\local\\font\\latin\\fonter.tbl") is null
 				&& AssetDecoders.Kind("data\\local\\font\\latin\\default.tbl") is null, "font kinds");
+			var oneFrame = Dc6Image.Parse(LegacyFormatContracts.Dc6());
+			FontTable.Parse(Font(1)).RequireFramesWithin(oneFrame);
+			try { font.RequireFramesWithin(oneFrame); throw new Exception("glyph frame past the DC6 accepted"); } catch (InvalidDataException) { }
 		});
 	}
 }

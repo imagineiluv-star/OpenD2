@@ -26,6 +26,13 @@ public sealed class FontTable
 	}
 	public FontGlyph? Find(char character) => byChar.TryGetValue(character, out var g) ? g : null;
 
+	/// <summary>Rejects a font whose glyphs point past the frames of its DC6 (which would fail later at draw time).</summary>
+	public void RequireFramesWithin(Dc6Image image)
+	{
+		int max = Glyphs.Count == 0 ? -1 : Glyphs.Max(g => g.Frame);
+		AssetBinary.Require(image.Directions >= 1 && max < image.FramesPerDirection, $"Font glyph frame {max} exceeds the DC6's {image.FramesPerDirection} frames.");
+	}
+
 	public static FontTable Parse(ReadOnlySpan<byte> data)
 	{
 		AssetBinary.Require(data.Length >= 12 && data[..4].SequenceEqual("Woo!"u8), "Font table must start with Woo!.");

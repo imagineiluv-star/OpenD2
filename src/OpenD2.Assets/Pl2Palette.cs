@@ -13,7 +13,7 @@ public sealed class Pl2Palette
 	private readonly byte[] data;
 	private readonly int alpha, additive, multiplicative, maxComponent, textColors;
 	public int TextColorCount { get; }
-	/// <summary>Base palette as RGB triples (the file stores BGRA-like 4-byte entries).</summary>
+	/// <summary>Base palette as RGB triples (the file stores 4-byte R, G, B, unused entries).</summary>
 	public byte[] BaseRgb { get; }
 
 	private Pl2Palette(byte[] data, int textColorCount)

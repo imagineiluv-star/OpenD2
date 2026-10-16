@@ -146,6 +146,27 @@ internal static class MpqPipelineContracts
 			try { AssetCache.RawPath(cache, "data\\nul\\x.txt"); throw new Exception("device path accepted"); } catch (ArgumentException) { }
 		});
 
+		test("cache rejects trailing dot/space names and extra device names, and caps total PNG output", () =>
+		{
+			foreach (var name in new[] { "COM0", "lpt0.txt", "CONIN$", "conout$.dc6", "com\u00b9", "panel.", "panel ", "" }) Check(AssetCache.IsUnsafeSegment(name), "unsafe " + name);
+			foreach (var name in new[] { "panel.dc6", "com10", "conin", "a.b" }) Check(!AssetCache.IsUnsafeSegment(name), "safe " + name);
+			try { AssetCache.RawPath(root, "data\\global\\ui.\\a.dc6"); throw new Exception("trailing dot accepted"); } catch (ArgumentException) { }
+			try { AssetCache.RawPath(root, "data\\global\\CONOUT$\\a.dc6"); throw new Exception("CONOUT$ accepted"); } catch (ArgumentException) { }
+			var files = new Dictionary<string, byte[]> { ["data\\global\\palette\\act1\\pal.dat"] = PaletteBytes() };
+			for (int i = 0; i < 5; i++) files[$"data\\global\\ui\\p{i}.dc6"] = LegacyFormatContracts.Dc6();
+			string cache = Path.Combine(root, "png-cap");
+			var capped = AssetCache.Build(new MemorySource(files), "fp", cache, new AssetCacheOptions { MaxPngFiles = 3 });
+			Check(capped.PngFiles == 3 && capped.PngCapped && capped.PngBytes > 0 && capped.Errors.Count(e => e.Contains("PNG output cap")) == 1 && capped.Resources == 6, "file cap");
+			Check(!AssetCache.IsCurrent(cache, "fp", new AssetCacheOptions { MaxPngFiles = 3 }), "capped cache is stale");
+			var retry = AssetCache.Build(new MemorySource(files), "fp", cache, new AssetCacheOptions { MaxPngFiles = 3 });
+			Check(retry.Rebuilt && retry.PngCapped, "capped cache rebuilt with the same options");
+			var bytesCap = AssetCache.Build(new MemorySource(files), "fp", cache, new AssetCacheOptions { MaxPngBytes = 1 });
+			Check(bytesCap.PngFiles == 0 && bytesCap.PngBytes == 0 && bytesCap.PngCapped, "byte cap is checked before writing");
+			var free = AssetCache.Build(new MemorySource(files), "fp", cache);
+			Check(free.PngFiles == 5 && !free.PngCapped, "default cap not hit");
+			Check(AssetCache.IsCurrent(cache, "fp", new AssetCacheOptions()) && !AssetCache.Build(new MemorySource(files), "fp", cache).Rebuilt, "uncapped cache stays current");
+		});
+
 		test("data and cache paths come from settings or environment and the cache refuses Git checkouts", () =>
 		{
 			string? previous = Environment.GetEnvironmentVariable(D2DataPaths.DataPathVariable);
