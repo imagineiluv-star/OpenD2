@@ -87,9 +87,17 @@ internal static class MapContracts
 				if (version == 14) Check(map.Paths[0].Points[0].Action == 1);
 			}
 		});
-		test("DS1 all prefixes, missing optional sections and trailing data fail", () =>
+		test("DS1 truncated prefixes fail unless they end at a tolerated block boundary, which is reported; trailing data fails", () =>
 		{
-			byte[] raw = Ds1(rich: true); for (int i = 0; i < raw.Length; i++) { var prefix = raw[..i]; Bad(() => Ds1Map.Parse(prefix)); }
+			// Genuine 1.11b maps omit trailing optional blocks or store short group lists; those parse with Notes.
+			byte[] raw = Ds1(rich: true); int tolerated = 0;
+			for (int i = 0; i < raw.Length; i++)
+			{
+				var prefix = raw[..i];
+				try { var map = Ds1Map.Parse(prefix); if (map.Notes.Count == 0) throw new Exception($"prefix {i} parsed silently"); tolerated++; }
+				catch (InvalidDataException) { }
+			}
+			if (tolerated == 0 || tolerated > 8) throw new Exception($"unexpected tolerated prefix count {tolerated}");
 			Bad(() => Ds1Map.Parse([.. raw, 0]));
 		});
 		test("DS1 invalid counts, act, dimensions and string terminators fail", () =>

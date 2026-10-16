@@ -106,45 +106,67 @@ public static class TableSchemas
 	}
 }
 
-public sealed record ContentInventory(
-	int Skills, int PlayerSkills, IReadOnlyDictionary<string, int> SkillsByClass,
-	int Monsters, int EnabledMonsters, int SuperUniques,
-	int BaseItems, int Weapons, int Armor, int Misc, int UniqueItems, int EnabledUniqueItems, int SetItems, int Runewords, int CompleteRunewords,
-	int Quests, IReadOnlyDictionary<int, int> QuestsByAct,
-	int Areas, IReadOnlyDictionary<int, int> AreasByAct,
-	IReadOnlyList<string> Sources);
+public sealed record ContentCounts(int Skills, int Monsters, int SuperUniques, int BaseItems, int Weapons, int Armor, int Misc,
+	int UniqueItems, int SetItems, int Runewords, int Quests, int Areas);
 
-// M4-01: counts the playable content defined by the installed data. Every number comes from the files; nothing
-// is hard-coded. Quests come from the quest title strings (qstsa<act>q<n>) because 1.11b has no quest table.
+/// <summary>Rows: every record row (separators excluded). Playable: the content a player can meet; see Definitions.</summary>
+public sealed record ContentInventory(ContentCounts Rows, ContentCounts Playable, IReadOnlyDictionary<string, int> SkillsByClass,
+	IReadOnlyDictionary<int, int> QuestsByAct, IReadOnlyDictionary<int, int> AreasByAct, int UberAreas, int? SetDefinitions,
+	IReadOnlyDictionary<string, string> Definitions, IReadOnlyList<string> Sources);
+
+// M4-01: counts the content defined by the installed data. Every number comes from the files; nothing is
+// hard-coded. Quests come from the quest title strings (qstsa<act>q<n>) because 1.11b has no quest table.
 public static class ContentInventoryBuilder
 {
 	static readonly Regex QuestKey = new(@"^qstsa([1-5])q([1-6])$", RegexOptions.CultureInvariant);
 	public static readonly string[] StringTables = ["data\\local\\lng\\eng\\string.tbl", "data\\local\\lng\\eng\\expansionstring.tbl", "data\\local\\lng\\eng\\patchstring.tbl"];
+	// The 1.11 Uber event levels share this levels.txt name prefix; they are counted apart from regular areas.
+	public const string UberAreaPrefix = "Act 5 - Pandemonium";
+
+	public static IReadOnlyDictionary<string, string> Definitions { get; } = new SortedDictionary<string, string>(StringComparer.Ordinal)
+	{
+		["Skills"] = "skills.txt rows with a charclass (player skills)",
+		["Monsters"] = "monstats.txt rows with enabled=1, npc!=1 and killable=1 (drops NPCs, traps, critters, spawners and dummies)",
+		["SuperUniques"] = "superuniques.txt rows",
+		["BaseItems"] = "weapons/armor/misc rows with spawnable=1 and no quest value",
+		["UniqueItems"] = "uniqueitems.txt rows with enabled=1",
+		["SetItems"] = "setitems.txt rows",
+		["Runewords"] = "runes.txt rows with complete=1",
+		["Quests"] = "distinct qstsa<act>q<n> title keys in the English string tables",
+		["Areas"] = $"levels.txt rows with Id>0, excluding Uber event levels (Name starts with '{UberAreaPrefix}')",
+	};
 
 	public static ContentInventory Build(Func<string, byte[]?> read)
 	{
 		var sources = new List<string>();
-		ExcelTextTable Table(string name)
+		ExcelTextTable? Optional(string name)
 		{
 			string path = "data\\global\\excel\\" + name;
-			var bytes = read(path) ?? throw new FileNotFoundException("Missing table " + path);
+			if (read(path) is not { } bytes) return null;
 			sources.Add(path); return ExcelTextTable.Parse(bytes);
 		}
-		IEnumerable<int> Records(ExcelTextTable t, string key) { int k = t.Column(key); for (int r = 0; r < t.Rows.Count; r++) if (!TableSchemas.IsSeparator(t.Rows[r][k].Trim())) yield return r; }
-		bool On(ExcelTextTable t, int r, string c) => t.Value(r, c).Trim() == "1";
+		ExcelTextTable Table(string name) => Optional(name) ?? throw new FileNotFoundException("Missing table data\\global\\excel\\" + name);
+		static List<int> Records(ExcelTextTable t, string key) { int k = t.Column(key); var rows = new List<int>(); for (int r = 0; r < t.Rows.Count; r++) if (!TableSchemas.IsSeparator(t.Rows[r][k].Trim())) rows.Add(r); return rows; }
+		static bool Has(ExcelTextTable t, string c) => t.Columns.Any(x => x.Equals(c, StringComparison.OrdinalIgnoreCase));
+		static bool On(ExcelTextTable t, int r, string c) => Has(t, c) && t.Value(r, c).Trim() == "1";
+		static int Spawnable(ExcelTextTable t, List<int> rows) => rows.Count(r => On(t, r, "spawnable") && (!Has(t, "quest") || t.Value(r, "quest").Trim() is "" or "0"));
 
-		var skills = Table("skills.txt"); var skillRows = Records(skills, "skill").ToList();
+		var skills = Table("skills.txt"); var skillRows = Records(skills, "skill");
 		var byClass = skillRows.Select(r => skills.Value(r, "charclass").Trim()).Where(c => c.Length > 0).GroupBy(c => c).OrderBy(g => g.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count());
-		var monstats = Table("monstats.txt"); var monRows = Records(monstats, "Id").ToList();
-		var supers = Table("superuniques.txt");
+		var monstats = Table("monstats.txt"); var monRows = Records(monstats, "Id");
+		int playableMonsters = monRows.Count(r => On(monstats, r, "enabled") && !On(monstats, r, "npc") && On(monstats, r, "killable"));
+		var supers = Table("superuniques.txt"); int superCount = Records(supers, "Superunique").Count;
 		var weapons = Table("weapons.txt"); var armor = Table("armor.txt"); var misc = Table("misc.txt");
-		int w = Records(weapons, "code").Count(), a = Records(armor, "code").Count(), m = Records(misc, "code").Count();
-		var uniques = Table("uniqueitems.txt"); var uniqueRows = Records(uniques, "index").ToList();
-		var sets = Table("setitems.txt");
-		var runes = Table("runes.txt"); var runeRows = Records(runes, "Name").ToList();
+		var wRows = Records(weapons, "code"); var aRows = Records(armor, "code"); var mRows = Records(misc, "code");
+		int ws = Spawnable(weapons, wRows), @as = Spawnable(armor, aRows), ms = Spawnable(misc, mRows);
+		var uniques = Table("uniqueitems.txt"); var uniqueRows = Records(uniques, "index");
+		var setItems = Table("setitems.txt"); int setItemCount = Records(setItems, "index").Count;
+		int? setDefinitions = Optional("sets.txt") is { } sets ? Records(sets, "index").Count : null;
+		var runes = Table("runes.txt"); var runeRows = Records(runes, "Name");
 		var levels = Table("levels.txt");
 		var areaRows = Records(levels, "Name").Where(r => levels.Number(r, "Id") > 0).ToList();
-		var areasByAct = areaRows.GroupBy(r => (int)levels.Number(r, "Act") + 1).OrderBy(g => g.Key).ToDictionary(g => g.Key, g => g.Count());
+		var regular = areaRows.Where(r => !levels.Value(r, "Name").StartsWith(UberAreaPrefix, StringComparison.Ordinal)).ToList();
+		var areasByAct = regular.GroupBy(r => (int)levels.Number(r, "Act") + 1).OrderBy(g => g.Key).ToDictionary(g => g.Key, g => g.Count());
 
 		var quests = new HashSet<(int Act, int Quest)>();
 		foreach (string path in StringTables)
@@ -157,9 +179,10 @@ public static class ContentInventoryBuilder
 		}
 		var questsByAct = quests.GroupBy(q => q.Act).OrderBy(g => g.Key).ToDictionary(g => g.Key, g => g.Count());
 
-		return new(skillRows.Count, byClass.Values.Sum(), byClass,
-			monRows.Count, monRows.Count(r => On(monstats, r, "enabled")), Records(supers, "Superunique").Count(),
-			w + a + m, w, a, m, uniqueRows.Count, uniqueRows.Count(r => On(uniques, r, "enabled")), Records(sets, "index").Count(), runeRows.Count, runeRows.Count(r => On(runes, r, "complete")),
-			quests.Count, questsByAct, areaRows.Count, areasByAct, sources);
+		var rows = new ContentCounts(skillRows.Count, monRows.Count, superCount, wRows.Count + aRows.Count + mRows.Count, wRows.Count, aRows.Count, mRows.Count,
+			uniqueRows.Count, setItemCount, runeRows.Count, quests.Count, areaRows.Count);
+		var playable = new ContentCounts(byClass.Values.Sum(), playableMonsters, superCount, ws + @as + ms, ws, @as, ms,
+			uniqueRows.Count(r => On(uniques, r, "enabled")), setItemCount, runeRows.Count(r => On(runes, r, "complete")), quests.Count, regular.Count);
+		return new(rows, playable, byClass, questsByAct, areasByAct, areaRows.Count - regular.Count, setDefinitions, Definitions, sources);
 	}
 }

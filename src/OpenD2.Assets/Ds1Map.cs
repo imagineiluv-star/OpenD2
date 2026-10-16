@@ -28,6 +28,8 @@ public sealed class Ds1Map
 	public IReadOnlyList<MapObject> Objects { get; }
 	public IReadOnlyList<MapGroup> Groups { get; }
 	public IReadOnlyList<MapPath> Paths { get; }
+	/// <summary>Tolerated deviations seen in genuine files (missing optional blocks, short group lists, unparsed pre-v14 paths).</summary>
+	public IReadOnlyList<string> Notes { get; private init; } = [];
 	private Ds1Map(int version, int width, int height, int act, uint substitution, string[] files, MapLayer[] layers, MapObject[] objects, MapGroup[] groups, MapPath[] paths)
 	{
 		Version = version; Width = width; Height = height; Act = act; SubstitutionType = substitution;
@@ -41,7 +43,8 @@ public sealed class Ds1Map
 		int version = reader.Count(18); AssetBinary.Require(version >= 1, "Unsupported DS1 version (expected 1..18).");
 		int width = reader.Count(1023) + 1, height = reader.Count(1023) + 1;
 		int cells = width * height; AssetBinary.Require(cells <= MaxCells, "DS1 cell budget exceeded.");
-		int act = version >= 8 ? reader.Count(4) + 1 : 1;
+		// Expansion maps store act 5 as raw 5 as well as 4; clamp like the game (genuine 1.11b siege/arena DS1).
+		int act = version >= 8 ? Math.Min(reader.Count(5) + 1, 5) : 1;
 		uint substitution = version >= 10 ? reader.UInt() : 0;
 		AssetBinary.Require(substitution <= 2, "Unsupported DS1 substitution type.");
 		var files = new string[version >= 3 ? reader.Count(256) : 0];
@@ -72,17 +75,41 @@ public sealed class Ds1Map
 			layers.Add(Layer(MapLayerKind.Shadow, 0, ReadPlane(ref reader, cells), null, version));
 			if (tags) layers.Add(Layer(MapLayerKind.Tag, 0, ReadPlane(ref reader, cells), null, version));
 		}
-		var objects = new MapObject[version >= 2 ? reader.Count(16384) : 0];
+		var notes = new List<string>();
+		// Genuine 1.11b siege\xtransition.ds1 ends right after its layers: a missing object block means no objects.
+		if (version >= 2 && reader.Remaining == 0) notes.Add("object block absent");
+		var objects = new MapObject[version >= 2 && reader.Remaining > 0 ? reader.Count(16384) : 0];
 		reader.RequireBytes((long)objects.Length * (version > 5 ? 20 : 16));
 		for (int i = 0; i < objects.Length; i++) objects[i] = new(reader.UInt(), reader.UInt(), reader.UInt(), reader.UInt(), version > 5 ? reader.UInt() : 0);
 		MapGroup[] groups = [];
 		if (version >= 12 && tags)
 		{
 			if (version >= 18) reader.Skip(4);
-			groups = new MapGroup[reader.Count(16384)]; reader.RequireBytes((long)groups.Length * (version >= 13 ? 20 : 16));
+			int declared = reader.Count(16384), size = version >= 13 ? 20 : 16;
+			// Genuine 1.11b act1\outdoors\trees.ds1 declares 14 groups but stores 13; keep the complete ones.
+			int stored = Math.Min(declared, reader.Remaining / size);
+			if (stored < declared) notes.Add($"group list short: declared {declared}, stored {stored}");
+			groups = new MapGroup[stored];
 			for (int i = 0; i < groups.Length; i++) groups[i] = new(reader.UInt(), reader.UInt(), reader.UInt(), reader.UInt(), version >= 13 ? reader.UInt() : 0);
 		}
-		var paths = new MapPath[version >= 14 ? reader.Count(16384) : 0];
+		MapPath[] paths;
+		if (version >= 14 && reader.Remaining == 0) { notes.Add("path block absent"); paths = []; }
+		else if (version >= 14) paths = ReadPaths(ref reader, version);
+		else if (version >= 12 && reader.Remaining >= 4)
+		{
+			// v12/v13 files may carry an NPC path block whose layout is not documented; parse it when it fits
+			// exactly, otherwise keep the map and report the bytes as unparsed (seen in genuine 1.11b swamp2.ds1).
+			var probe = reader;
+			try { paths = ReadPaths(ref probe, version); if (probe.Remaining != 0) throw new InvalidDataException("path block size mismatch"); reader = probe; }
+			catch (InvalidDataException) { notes.Add($"pre-v14 path block not parsed ({reader.Remaining} bytes)"); paths = []; reader.Skip(reader.Remaining); }
+		}
+		else paths = [];
+		AssetBinary.Require(reader.Remaining == 0, "DS1 trailing data is not supported.");
+		return new(version, width, height, act, substitution, files, layers.ToArray(), objects, groups, paths) { Notes = notes.AsReadOnly() };
+	}
+	private static MapPath[] ReadPaths(ref MapReader reader, int version)
+	{
+		var paths = new MapPath[reader.Count(16384)];
 		int points = 0;
 		for (int i = 0; i < paths.Length; i++)
 		{
@@ -94,8 +121,7 @@ public sealed class Ds1Map
 			// Keep unbound and ambiguous paths. Do not attach them to an arbitrary object.
 			paths[i] = new(x, y, Array.AsReadOnly(path));
 		}
-		AssetBinary.Require(reader.Remaining == 0, "DS1 trailing data is not supported.");
-		return new(version, width, height, act, substitution, files, layers.ToArray(), objects, groups, paths);
+		return paths;
 	}
 	private static uint[] ReadPlane(ref MapReader reader, int count)
 	{

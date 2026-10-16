@@ -39,22 +39,23 @@ internal static class TableSchemaContracts
 		{
 			var files = new Dictionary<string, string>
 			{
-				["skills.txt"] = "skill\tId\tcharclass\nAttack\t0\t\nJab\t10\tama\nFire Bolt\t36\tsor\nInner Sight\t8\tama",
-				["monstats.txt"] = "Id\tenabled\nskeleton1\t1\nExpansion\t\nnpc1\t",
-				["superuniques.txt"] = "Superunique\nBishibosh",
-				["weapons.txt"] = "name\tcode\nHand Axe\thax\nExpansion\t",
-				["armor.txt"] = "name\tcode\nCap\tcap\nHelm\thlm",
-				["misc.txt"] = "name\tcode\nRing\trin",
-				["uniqueitems.txt"] = "index\tenabled\nThe Gnasher\t1\nExpansion\t\nUnused\t0",
-				["setitems.txt"] = "index\nCiverb's Ward",
+				["skills.txt"] = "skill\tId\tcharclass\nskill_a\t0\t\nskill_b\t10\tama\nskill_c\t36\tsor\nskill_d\t8\tama",
+				["monstats.txt"] = "Id\tenabled\tnpc\tkillable\nmon_a\t1\t\t1\nExpansion\t\t\t\nnpc_a\t1\t1\t1\ntrap_a\t1\t\t\nmon_off\t\t\t1",
+				["superuniques.txt"] = "Superunique\nboss_a",
+				["weapons.txt"] = "name\tcode\tspawnable\tquest\nweapon_a\twa\t1\t\nExpansion\t\t\t\nquest_weapon\twq\t1\t1",
+				["armor.txt"] = "name\tcode\tspawnable\narmor_a\taa\t1\narmor_b\tab\t0",
+				["misc.txt"] = "name\tcode\tspawnable\nmisc_a\tma\t1",
+				["uniqueitems.txt"] = "index\tenabled\nunique_a\t1\nExpansion\t\nunique_off\t0",
+				["setitems.txt"] = "index\nset_item_a",
 				["runes.txt"] = "Name\tcomplete\nRuneword1\t\nRuneword2\t1",
-				["levels.txt"] = "Name\tId\tAct\nNull\t0\t\nRogue Encampment\t1\t0\nExpansion\t\t\nHarrogath\t109\t4",
+				["levels.txt"] = "Name\tId\tAct\nNull\t0\t\nTown A\t1\t0\nExpansion\t\t\nTown E\t109\t4\nAct 5 - Pandemonium 1\t133\t4",
 			};
 			var inv = ContentInventoryBuilder.Build(p => files.TryGetValue(p.Split('\\')[^1], out var s) ? Encoding.ASCII.GetBytes(s.Replace("\n", "\r\n")) : null);
-			Check(inv.Skills == 4 && inv.PlayerSkills == 3 && inv.SkillsByClass["ama"] == 2, "skills");
-			Check(inv.Monsters == 2 && inv.EnabledMonsters == 1 && inv.SuperUniques == 1, "monsters");
-			Check(inv.BaseItems == 4 && inv.Weapons == 1 && inv.UniqueItems == 2 && inv.EnabledUniqueItems == 1 && inv.SetItems == 1 && inv.Runewords == 2 && inv.CompleteRunewords == 1, "items");
-			Check(inv.Areas == 2 && inv.AreasByAct[1] == 1 && inv.AreasByAct[5] == 1 && inv.Quests == 0, "areas");
+			Check(inv.Rows.Skills == 4 && inv.Playable.Skills == 3 && inv.SkillsByClass["ama"] == 2, "skills");
+			Check(inv.Rows.Monsters == 4 && inv.Playable.Monsters == 1 && inv.Playable.SuperUniques == 1, "monsters drop NPCs, unkillable and disabled rows");
+			Check(inv.Rows.BaseItems == 5 && inv.Playable.BaseItems == 3 && inv.Playable.Weapons == 1, "base items drop unspawnable and quest rows");
+			Check(inv.Rows.UniqueItems == 2 && inv.Playable.UniqueItems == 1 && inv.Playable.SetItems == 1 && inv.Rows.Runewords == 2 && inv.Playable.Runewords == 1, "items");
+			Check(inv.Rows.Areas == 3 && inv.Playable.Areas == 2 && inv.UberAreas == 1 && inv.AreasByAct[1] == 1 && inv.AreasByAct[5] == 1 && inv.Playable.Quests == 0 && inv.SetDefinitions is null, "areas");
 			bool threw = false; try { ContentInventoryBuilder.Build(_ => null); } catch (FileNotFoundException) { threw = true; }
 			Check(threw, "missing table");
 		});
