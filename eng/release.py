@@ -1,5 +1,6 @@
 """Package validated exports and servers and produce a reviewable, explicitly untested GUI/online QA handoff."""
 import argparse
+import gzip
 import hashlib
 import json
 import os
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import zipfile
 
 import data_guard
@@ -136,6 +138,40 @@ def mpq_kit(output, version, commit):
     return path
 
 
+def source_date_epoch():
+    """SOURCE_DATE_EPOCH (set to the commit time by eng/release-local.py), else a fixed 2026-01-01 stamp."""
+    return max(int(os.environ.get("SOURCE_DATE_EPOCH", "1767225600")), 315532800)  # ZIP cannot go before 1980
+
+
+def reproducible_tar(stage, archive):
+    """Same bytes for the same staged tree: sorted entries, fixed owner and mtime, gzip header without time/name."""
+    epoch = source_date_epoch()
+
+    def normalize(info):
+        info.uid = info.gid = 0
+        info.uname = info.gname = ""
+        info.mtime = epoch
+        info.mode = 0o755 if info.isdir() or info.mode & 0o111 else 0o644
+        return info
+
+    with archive.open("wb") as raw, gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed, \
+            tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as target:
+        for item in sorted(stage.rglob("*"), key=lambda p: p.relative_to(stage).as_posix()):
+            target.add(item, arcname=item.relative_to(stage).as_posix(), recursive=False, filter=normalize)
+
+
+def reproducible_zip(stage, archive):
+    stamp = time.gmtime(source_date_epoch())[:6]
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as target:
+        for item in sorted(stage.rglob("*"), key=lambda p: p.relative_to(stage).as_posix()):
+            if item.is_dir():
+                continue
+            info = zipfile.ZipInfo(item.relative_to(stage).as_posix(), stamp)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = (0o100755 if item.stat().st_mode & 0o111 else 0o100644) << 16
+            target.writestr(info, item.read_bytes())
+
+
 def pack(source, output, preset, version, commit, smoke=False):
     check_version(version, allow_ci=True)
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
@@ -165,13 +201,9 @@ def pack(source, output, preset, version, commit, smoke=False):
             for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
                 shutil.copyfile(ROOT / name, stage / name)
             if preset == "Linux":
-                with tarfile.open(archive, "w:gz") as target:
-                    for item in sorted(stage.iterdir()):
-                        target.add(item, arcname=item.name)
+                reproducible_tar(stage, archive)
             else:
-                with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as target:
-                    for item in sorted(stage.rglob("*")):
-                        target.write(item, item.relative_to(stage).as_posix())
+                reproducible_zip(stage, archive)
     # Fail closed on game data anywhere in the archive, including nested archives and PCK file tables.
     guard = data_guard.scan([archive], data_guard.load_original_hashes())
     try:
