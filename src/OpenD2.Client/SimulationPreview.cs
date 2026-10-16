@@ -104,8 +104,8 @@ public partial class SimulationPreview : VBoxContainer
 		restart.Pressed += () => ConfirmRestart(NewRun); pause.Pressed += () => { SetPaused(!paused); StopInput(); Refresh(); };
 		singleStep.Pressed += () => { SetPaused(true); StopInput(); if (!verifying) { RunTick(); ShowFrame(); Refresh(); } };
 		signal.Pressed += () => Submit(CommandKind.Signal); attack.Pressed += AttackNearest; interact.Pressed += InteractNearest;
-		replay.Pressed += VerifyReplay; save.Pressed += async () => await CheckpointFile(false, ActiveSavePath);
-		load.Pressed += () => ConfirmRestart(() => _ = CheckpointFile(true, ActiveSavePath));
+		replay.Pressed += async () => { try { await VerifyReplay(); } catch (Exception error) { GD.PushError("Replay verification failed: " + error); } }; save.Pressed += () => ObserveCheckpoint(CheckpointFile(false, ActiveSavePath), "save");
+		load.Pressed += () => ConfirmRestart(() => ObserveCheckpoint(CheckpointFile(true, ActiveSavePath), "load"));
 		Smoke(); CombatSmoke(); WorldSmoke(); ItemSmoke(); SaveSmoke(); NewRun();
 		if (smokeTest) { ContentSmoke(); ContinuousSmoke(); HudSmoke(); AudioSmoke(); InventorySmoke(); GridInventorySmoke(); SkillSmoke(); PotionSmoke(); GroundItemSmoke(); }
 		OpenMenu(initial: true);
@@ -319,7 +319,7 @@ public partial class SimulationPreview : VBoxContainer
 		details.Text = $"Tick {simulation.Tick} | region {current.Region.Value}, entity {current.Id.Value}\nPosition {current.Position.X}, {current.Position.Y} / {GameSimulation.UnitsPerTile} units per navigation cell\nHP {current.Health}/{current.MaxHealth} | cooldown {current.AttackCooldown}, hit stun {current.HitStun} ticks\nReplay window {recording.Baseline.Tick}–{simulation.Tick} / rolled {recording.WindowsRolled}; commands {recording.Commands.Count}/{SimulationRecording.CommandWindow}, queued {simulation.PendingCommands} | RNG {simulation.RandomState}\nTick p99 {p99:F3} ms | dropped wall time {clock.DroppedTime.TotalMilliseconds:F1} ms\nState {simulation.ComputeStateHash()[..16]}";
 		log("simulation_metrics", $"tick={simulation.Tick}, p99_ms={p99:F3}, pending={simulation.PendingCommands}, dropped_ms={clock.DroppedTime.TotalMilliseconds:F1}");
 	}
-	private async void VerifyReplay()
+	private async Task VerifyReplay()
 	{
 		if (verifying || menuOpen) return;
 		ResetDialogue();
@@ -342,6 +342,12 @@ public partial class SimulationPreview : VBoxContainer
 			if (IsInstanceValid(this) && IsInsideTree())
 			{ verifying = false; foreach (var button in new[] { restart, pause, singleStep, attack, interact, signal, replay, pickup, equip, unequip, drop, save, load }) button.Disabled = false; Refresh(); }
 		}
+	}
+	// Button handlers cannot await; log faults that escape CheckpointFile instead of crashing or dropping them.
+	private static async void ObserveCheckpoint(Task<bool> work, string action)
+	{
+		try { await work; }
+		catch (Exception error) { GD.PushError($"Checkpoint {action} failed: " + error); }
 	}
 	private async Task<bool> CheckpointFile(bool loading, string file)
 	{
