@@ -3,6 +3,27 @@ using OpenD2.Online;
 
 internal static class PersonalHostContracts
 {
+    // Window close fires DisposeAsync without blocking; it must finish within the graceful+kill budget.
+    public static async Task DisposeAsyncContracts(string? executable)
+    {
+        var idle = new PersonalHost();
+        Check(idle.DisposeAsync().IsCompleted, "idle DisposeAsync completes synchronously");
+        await idle.DisposeAsync(); idle.Dispose();
+        try { await idle.Start("missing", "missing"); throw new Exception("Start after DisposeAsync accepted."); }
+        catch (ObjectDisposedException) { }
+        if (executable is null) return;
+        string root = Path.Combine(Path.GetTempPath(), "opend2 host dispose " + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var host = new PersonalHost();
+            await host.Start(executable, Path.Combine(root, "data"));
+            Check(host.Running, "host running before DisposeAsync");
+            var started = System.Diagnostics.Stopwatch.StartNew();
+            await host.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(20));
+            Check(!host.Running, $"DisposeAsync stopped child in {started.ElapsedMilliseconds} ms");
+        }
+        finally { try { Directory.Delete(root, true); } catch (IOException) { } }
+    }
     public static async Task Run(string executable)
     {
         string root = Path.Combine(Path.GetTempPath(), "opend2 personal host " + Guid.NewGuid().ToString("N"));

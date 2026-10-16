@@ -22,11 +22,13 @@ if (args is ["--tls-server", var networkServer, "--fixtures", var networkFixture
 }
 if (args is ["--host-server", var hostServer])
 {
+    await PersonalHostContracts.DisposeAsyncContracts(Path.GetFullPath(hostServer));
     await PersonalHostContracts.Run(Path.GetFullPath(hostServer));
     await TableOptionContracts.Run(Path.GetFullPath(hostServer));
     return;
 }
 if (args.Length != 0) throw new ArgumentException("Unknown online test arguments.");
+await PersonalHostContracts.DisposeAsyncContracts(null);
 await RoomFrameContracts.Run();
 await StreamSendDeadlineContracts.Run();
 await CheckpointContracts.Run();
