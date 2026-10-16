@@ -20,7 +20,11 @@ public sealed class CofAnimation
 		AssetBinary.Require(data[3] == 20, "Unsupported COF version.");
 		AssetBinary.Require(count is >= 1 and <= 16 && frames >= 1 && directions is >= 1 and <= 32, "Invalid COF dimensions.");
 		int eventsAt = 28 + count * 9, orderAt = eventsAt + frames;
-		AssetBinary.Require(data.Length == orderAt + directions * frames * count, "COF length does not match layers, events and order table.");
+		int table = directions * frames * count;
+		// Genuine 1.11b object COFs (objects\f9\cof\f9*.cof) with one frame pad the event block to 4 bytes.
+		if (data.Length != orderAt + table && frames < 4 && data.Length == eventsAt + 4 + table) orderAt = eventsAt + 4;
+		int orderEnd = orderAt + table;
+		AssetBinary.Require(data.Length == orderEnd, "COF length does not match layers, events and order table.");
 		var layers = new CofLayer[count]; int present = 0;
 		for (int i = 0; i < count; i++)
 		{
@@ -29,7 +33,7 @@ public sealed class CofAnimation
 			present |= 1 << component;
 			layers[i] = new CofLayer(layer[0], layer[1], layer[2], layer[3], layer[4], Encoding.ASCII.GetString(layer.Slice(5, 3)).TrimEnd('\0'));
 		}
-		for (int at = orderAt; at < data.Length; at += count)
+		for (int at = orderAt; at < orderEnd; at += count)
 		{
 			int seen = 0;
 			for (int i = 0; i < count; i++)
@@ -39,7 +43,7 @@ public sealed class CofAnimation
 				seen |= 1 << component;
 			}
 		}
-		return new CofAnimation(directions, frames, AssetBinary.U16(data, 24), layers, data.Slice(eventsAt, frames).ToArray(), data[orderAt..].ToArray());
+		return new CofAnimation(directions, frames, AssetBinary.U16(data, 24), layers, data.Slice(eventsAt, frames).ToArray(), data[orderAt..orderEnd].ToArray());
 	}
 	public ReadOnlySpan<byte> DrawOrder(int direction, int frame)
 	{

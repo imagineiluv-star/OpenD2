@@ -16,6 +16,16 @@ internal static class GenuineDataContracts
 			Check(verification.Verified, $"no manifest match; missing [{string.Join(',', verification.Missing)}] mismatched [{string.Join(',', verification.Mismatched)}]");
 			Console.WriteLine($"  detected version {verification.Version}");
 		});
+		test("genuine: every DC6/DCC/COF/DT1/DS1/TXT/TBL/palette decodes except the one known-corrupt COF", () =>
+		{
+			using var mpq = new MpqAssetSource(data);
+			var report = CorpusValidation.Run(mpq, kinds: k => k != "wav_pcm");
+			var failures = report.Kinds.SelectMany(k => k.Failures).ToArray();
+			// amblxbow.cof in genuine 1.11b does not have a COF header at all (byte 3 is not 20); the game never loads it.
+			Check(failures.All(f => f.StartsWith("data\\global\\chars\\am\\cof\\amblxbow.cof:")) && failures.Length <= 1, "unexpected failures: " + string.Join(" | ", failures.Take(5)));
+			Check(report.Kinds.Single(k => k.Kind == "dt1").UnreferencedFailures.All(f => f.Contains("Unsupported DT1 version")), "only old-version DT1 leftovers are unreferenced");
+			Console.WriteLine($"  validated {report.Passed} resources; failed {report.Failed}; unreferenced {report.Unreferenced}");
+		});
 		test("genuine: raw MPQ and converted cache return identical bytes and decode", () =>
 		{
 			string cache = Path.Combine(Path.GetTempPath(), "opend2-genuine-cache-" + Guid.NewGuid().ToString("N"));

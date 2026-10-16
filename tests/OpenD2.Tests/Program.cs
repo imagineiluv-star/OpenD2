@@ -39,6 +39,7 @@ try
 	RecordingContracts.Run(Test);
 	MpqContracts.Run(root, Test);
 	MpqPipelineContracts.Run(root, Test);
+	RealDataShapeContracts.Run(Test);
 	GenuineDataContracts.Run(Test);
 	SimulationContracts.Run(Test);
 	CombatContracts.Run(Test);
