@@ -33,12 +33,15 @@ internal static class RoomStream
             {
                 stop.Cancel(); socket.Abort();
                 try { await Task.WhenAll(receive, send); }
-                catch (OperationCanceledException) { }
-                catch (WebSocketException) { }
+                catch (OperationCanceledException) { Log(context).LogDebug("Room stream {Room} closed by cancellation.", room); }
+                catch (WebSocketException error) { Log(context).LogDebug("Room stream {Room} closed by socket error {Error}.", room, error.WebSocketErrorCode); }
             }
         }
         finally { active.TryRemove(token, out _); }
     }
+
+    private static ILogger Log(HttpContext context) =>
+        context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("OpenD2.Server.RoomStream");
 
     private static async Task Receive(WebSocket socket, CancellationToken stop)
     {
