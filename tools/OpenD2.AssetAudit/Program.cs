@@ -3,7 +3,7 @@ using OpenD2.Assets;
 
 if (args.Length == 0 || args[0] is "--help" or "-h")
 {
-	Console.WriteLine("Usage: OpenD2.AssetAudit --check-demo-music <pinned-demo-data-directory> <demo-scene.json>\n       OpenD2.AssetAudit --check-scene|--check-play-ready <game-data-directory> <scene-request.json>\n       OpenD2.AssetAudit --check-map <game-data-directory> <map-request.json>\n       OpenD2.AssetAudit --inspect-save <legacy-v96.d2s> (read-only header/checksum; no import)\n       OpenD2.AssetAudit [--probe|--decode|--decode-demo] <game-data-directory> [known-paths.txt]\n       OpenD2.AssetAudit --items-txt <game-data-directory> (lod-1.10f reference data; no gameplay import)\n       OpenD2.AssetAudit --character-txt <game-data-directory> (lod-1.10f charstats/experience/skills; no gameplay import)\n       OpenD2.AssetAudit --monsters-txt <game-data-directory> (lod-1.10f monstats: code, name key, level, experience; no gameplay import)\n       OpenD2.AssetAudit --tables-txt|--tables-bin-110f <game-data-directory>\n       OpenD2.AssetAudit --validate-all [game-data-directory] (decode every known resource kind from the MPQs; per-kind pass/fail summary; D2_DATA_PATH)\n       OpenD2.AssetAudit --verify-install [game-data-directory] (SHA-256 manifest check; directory defaults to D2_DATA_PATH)\n       OpenD2.AssetAudit --build-cache [game-data-directory] [--cache <dir>] [--png dc6,dcc] [--include <path-prefix>] [--version <id>] [--trust-hash-cache] [--max-png-files <n>] (extract/convert into a cache outside the repo; D2_ASSET_CACHE)\nJSON goes to stdout. Scan uses read-only MPQs; no resource extraction. --decode validates Palette/text TBL/DC6/DCC/COF/DT1/DS1 and TXT structure. BIN schemas require explicit --tables-bin-110f.\nExit 0: scan completed without reported errors; 3: missing archives, read, decode or reference failures; 1: fatal error; 2: usage.\nA successful scan does not establish version compatibility or complete coverage.");
+	Console.WriteLine("Usage: OpenD2.AssetAudit --check-demo-music <pinned-demo-data-directory> <demo-scene.json>\n       OpenD2.AssetAudit --check-scene|--check-play-ready <game-data-directory> <scene-request.json>\n       OpenD2.AssetAudit --check-map <game-data-directory> <map-request.json>\n       OpenD2.AssetAudit --inspect-save <legacy-v96.d2s> (read-only header/checksum; no import)\n       OpenD2.AssetAudit [--probe|--decode|--decode-demo] <game-data-directory> [known-paths.txt]\n       OpenD2.AssetAudit --items-txt <game-data-directory> (lod-1.10f reference data; no gameplay import)\n       OpenD2.AssetAudit --character-txt <game-data-directory> (lod-1.10f charstats/experience/skills; no gameplay import)\n       OpenD2.AssetAudit --monsters-txt <game-data-directory> (lod-1.10f monstats: code, name key, level, experience; no gameplay import)\n       OpenD2.AssetAudit --tables-txt|--tables-bin-110f <game-data-directory>\n       OpenD2.AssetAudit --validate-all [game-data-directory] (decode every known resource kind from the MPQs; per-kind pass/fail summary; D2_DATA_PATH)\n       OpenD2.AssetAudit --verify-install [game-data-directory] (SHA-256 manifest check; directory defaults to D2_DATA_PATH)\n       OpenD2.AssetAudit --build-cache [game-data-directory] [--cache <dir>] [--png dc6,dcc] [--include <path-prefix>] [--version <id>] [--trust-hash-cache] [--max-png-files <n>] (extract/convert into a cache outside the repo; D2_ASSET_CACHE)\n       OpenD2.AssetAudit --table-schemas|--content-inventory [game-data-directory] (semantic TXT/BIN checks; M4-01 content counts; directory defaults to D2_DATA_PATH)\nJSON goes to stdout. Scan uses read-only MPQs; no resource extraction. --decode validates Palette/text TBL/DC6/DCC/COF/DT1/DS1 and TXT structure. BIN schemas require explicit --tables-bin-110f.\nExit 0: scan completed without reported errors; 3: missing archives, read, decode or reference failures; 1: fatal error; 2: usage.\nA successful scan does not establish version compatibility or complete coverage.");
 	return args.Length == 0 ? 2 : 0;
 }
 try
@@ -40,6 +40,30 @@ try
 			errorCount = result.Errors.Count, errors = result.Errors.Take(20), seconds = Math.Round(watch.Elapsed.TotalSeconds, 1) }, new JsonSerializerOptions { WriteIndented = true }));
 		// A capped cache is incomplete (and is rebuilt next time); report it as a failure.
 		return result.PngCapped ? 3 : 0;
+	}
+	if (args[0] is "--table-schemas" or "--content-inventory")
+	{
+		string data = D2DataPaths.ResolveDataPath(args.Length > 1 ? args[1] : null) ?? throw new ArgumentException("Pass a game data directory or set D2_DATA_PATH.");
+		using var source = new MpqAssetSource(data);
+		byte[]? Read(string path) => source.TryRead(path, AssetDecoders.MaxInputBytes, out var bytes) ? bytes : null;
+		var jsonOptions = new JsonSerializerOptions { WriteIndented = true };
+		if (args[0] == "--content-inventory") { Console.WriteLine(JsonSerializer.Serialize(ContentInventoryBuilder.Build(Read), jsonOptions)); return 0; }
+		var reports = new List<TableSchemaReport>(); var bins = new List<BinConsistencyReport>();
+		foreach (var schema in TableSchemas.All)
+		{
+			if (Read("data\\global\\excel\\" + schema.File) is not { } txtBytes) { reports.Add(new(schema.File, 0, 0, 0, ["missing"], [])); continue; }
+			try { reports.Add(TableSchemas.Validate(ExcelTextTable.Parse(txtBytes), schema)); }
+			catch (InvalidDataException error) { reports.Add(new(schema.File, 0, 0, 0, [error.Message], [])); }
+		}
+		foreach (string path in source.List().Where(p => p.StartsWith("data\\global\\excel\\", StringComparison.Ordinal) && p.EndsWith(".bin", StringComparison.Ordinal)).Order(StringComparer.Ordinal))
+			if (Read(path[..^4] + ".txt") is { } txtBytes && Read(path) is { } binBytes)
+			{
+				string file = Path.GetFileName(path.Replace('\\', '/'));
+				try { bins.Add(TableSchemas.CheckBin(file, ExcelTextTable.Parse(txtBytes), binBytes)); }
+				catch (InvalidDataException error) { bins.Add(new(file, 0, 0, 0, [error.Message])); }
+			}
+		Console.WriteLine(JsonSerializer.Serialize(new { Schemas = reports, Bins = bins }, jsonOptions));
+		return reports.All(r => r.Valid) && bins.All(b => b.Errors.Count == 0) ? 0 : 3;
 	}
 	if (args[0] == "--check-demo-music")
 	{

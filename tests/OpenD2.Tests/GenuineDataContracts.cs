@@ -76,5 +76,27 @@ internal static class GenuineDataContracts
 			}
 			finally { if (Directory.Exists(cache)) Directory.Delete(cache, true); }
 		});
-	}
+			test("genuine: semantic table schemas, BIN consistency and the M4-01 content inventory", () =>
+		{
+			using var mpq = new MpqAssetSource(data);
+			byte[]? Read(string path) => mpq.TryRead(path, AssetDecoders.MaxInputBytes, out var bytes) ? bytes : null;
+			foreach (var schema in TableSchemas.All)
+			{
+				var report = TableSchemas.Validate(ExcelTextTable.Parse(Read("data\\global\\excel\\" + schema.File) ?? throw new Exception("missing " + schema.File)), schema);
+				Check(report.Valid && report.Records > 0, $"{schema.File}: {string.Join("; ", report.Errors)}");
+			}
+			int bins = 0;
+			foreach (string path in mpq.List().Where(p => p.StartsWith("data\\global\\excel\\", StringComparison.Ordinal) && p.EndsWith(".bin", StringComparison.Ordinal)))
+				if (Read(path[..^4] + ".txt") is { } txt)
+				{
+					var bin = TableSchemas.CheckBin(path, ExcelTextTable.Parse(txt), Read(path)!);
+					Check(bin.Errors.Count == 0, $"{path}: {string.Join("; ", bin.Errors)}"); bins++;
+				}
+			var inv = ContentInventoryBuilder.Build(Read);
+			var (raw, play) = (inv.Rows, inv.Playable);
+			Check(bins > 50 && play.Skills == 210 && inv.SkillsByClass.Count == 7 && play.Quests == 27 && inv.QuestsByAct[4] == 3 && inv.AreasByAct.Count == 5, $"inventory {play}");
+			Check(play.Monsters < raw.Monsters && play.BaseItems < raw.BaseItems && play.UniqueItems < raw.UniqueItems && play.Areas + inv.UberAreas == raw.Areas, "playable counts are filtered subsets");
+			Console.WriteLine($"  {bins} BINs; rows {raw}; playable {play}; uber areas {inv.UberAreas}");
+		});
+}
 }

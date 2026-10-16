@@ -24,6 +24,7 @@ try
 	AnimationContracts.Run(Test);
 	MapContracts.Run(Test);
 	TableContracts.Run(root, Test);
+	TableSchemaContracts.Run(Test);
 	PlayAssetContracts.Run(root, Test);
 	PlaySceneContracts.Run(root, Test);
 	SceneSetupContracts.Run(root, Test);
