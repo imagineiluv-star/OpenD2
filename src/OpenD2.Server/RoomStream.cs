@@ -41,7 +41,8 @@ internal static class RoomStream
     }
 
     private static ILogger Log(HttpContext context) =>
-        context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("OpenD2.Server.RoomStream");
+        (ILogger?)context.RequestServices?.GetService<ILoggerFactory>()?.CreateLogger("OpenD2.Server.RoomStream")
+        ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance; // Contract tests drive Run without a service provider.
 
     private static async Task Receive(WebSocket socket, CancellationToken stop)
     {
