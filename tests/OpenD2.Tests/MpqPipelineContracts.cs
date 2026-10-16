@@ -157,10 +157,14 @@ internal static class MpqPipelineContracts
 			string cache = Path.Combine(root, "png-cap");
 			var capped = AssetCache.Build(new MemorySource(files), "fp", cache, new AssetCacheOptions { MaxPngFiles = 3 });
 			Check(capped.PngFiles == 3 && capped.PngCapped && capped.PngBytes > 0 && capped.Errors.Count(e => e.Contains("PNG output cap")) == 1 && capped.Resources == 6, "file cap");
+			Check(!AssetCache.IsCurrent(cache, "fp", new AssetCacheOptions { MaxPngFiles = 3 }), "capped cache is stale");
+			var retry = AssetCache.Build(new MemorySource(files), "fp", cache, new AssetCacheOptions { MaxPngFiles = 3 });
+			Check(retry.Rebuilt && retry.PngCapped, "capped cache rebuilt with the same options");
 			var bytesCap = AssetCache.Build(new MemorySource(files), "fp", cache, new AssetCacheOptions { MaxPngBytes = 1 });
-			Check(bytesCap.PngFiles == 1 && bytesCap.PngCapped, "byte cap");
+			Check(bytesCap.PngFiles == 0 && bytesCap.PngBytes == 0 && bytesCap.PngCapped, "byte cap is checked before writing");
 			var free = AssetCache.Build(new MemorySource(files), "fp", cache);
 			Check(free.PngFiles == 5 && !free.PngCapped, "default cap not hit");
+			Check(AssetCache.IsCurrent(cache, "fp", new AssetCacheOptions()) && !AssetCache.Build(new MemorySource(files), "fp", cache).Rebuilt, "uncapped cache stays current");
 		});
 
 		test("data and cache paths come from settings or environment and the cache refuses Git checkouts", () =>

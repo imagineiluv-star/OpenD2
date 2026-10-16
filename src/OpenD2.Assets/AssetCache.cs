@@ -124,7 +124,9 @@ public static class AssetCache
 			using var doc = JsonDocument.Parse(File.ReadAllText(path));
 			var r = doc.RootElement;
 			return r.GetProperty("converter").GetString() == ConverterVersion && r.GetProperty("source").GetString() == sourceFingerprint
-				&& r.GetProperty("options").GetString() == options.Signature;
+				&& r.GetProperty("options").GetString() == options.Signature
+				// A cache that hit the PNG cap is incomplete: never treat it as current, so the next build retries.
+				&& !(r.TryGetProperty("pngCapped", out var capped) && capped.ValueKind == JsonValueKind.True);
 		}
 		catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { return false; }
 	}
@@ -154,7 +156,16 @@ public static class AssetCache
 				if (!capped) { capped = true; errors.Add($"PNG output cap reached ({pngs} files, {pngBytes} bytes); remaining PNGs skipped"); }
 				return false;
 			}
-			void WritePng(string path, byte[] png) { Write(path, png); pngs++; pngBytes += png.Length; }
+			// The byte cap is checked before writing, so the output never exceeds MaxPngBytes.
+			bool WritePng(string path, byte[] png)
+			{
+				if (pngBytes + png.Length > options.MaxPngBytes)
+				{
+					if (!capped) { capped = true; errors.Add($"PNG output cap reached ({pngs} files, {pngBytes} bytes); remaining PNGs skipped"); }
+					return false;
+				}
+				Write(path, png); pngs++; pngBytes += png.Length; return true;
+			}
 			foreach (string name in source.List())
 			{
 				string? kind = AssetDecoders.Kind(name);
@@ -186,7 +197,7 @@ public static class AssetCache
 								{
 									var frame = image.DecodeFrame(d, f);
 									if (frame.Width == 0 || frame.Height == 0) continue;
-									if (!PngBudget()) break; WritePng(PngPath(staging, name, d, f), PngWriter.EncodeIndexed(frame.Width, frame.Height, frame.Indices, pngPalette, frame.Opacity));
+									if (!PngBudget() || !WritePng(PngPath(staging, name, d, f), PngWriter.EncodeIndexed(frame.Width, frame.Height, frame.Indices, pngPalette, frame.Opacity))) break;
 								}
 							break;
 						case "dcc" when png && pngPalette is not null:
@@ -197,7 +208,7 @@ public static class AssetCache
 								for (int f = 0; f < frames.Count; f++)
 								{
 									if (frames[f].Width == 0 || frames[f].Height == 0) continue;
-									if (!PngBudget()) break; WritePng(PngPath(staging, name, d, f), PngWriter.EncodeIndexed(frames[f].Width, frames[f].Height, frames[f].Indices, pngPalette));
+									if (!PngBudget() || !WritePng(PngPath(staging, name, d, f), PngWriter.EncodeIndexed(frames[f].Width, frames[f].Height, frames[f].Indices, pngPalette))) break;
 								}
 							}
 							break;

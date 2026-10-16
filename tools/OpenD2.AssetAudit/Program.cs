@@ -24,14 +24,15 @@ try
 		if (!verification.Verified) { Console.Error.WriteLine("Installation does not match any known MPQ manifest; refusing to build the cache."); return 3; }
 		var png = (Option("--png") ?? "dc6").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(k => k != "none").ToHashSet();
 		string? include = Option("--include") is { } prefix ? OpenD2.Assets.MpqArchive.NormalizePath(prefix) : null;
-		var options = new AssetCacheOptions { PngKinds = png, MaxPngFiles = int.TryParse(Option("--max-png-files"), out int maxFiles) ? maxFiles : 250_000, Include = include is null ? null : n => n.StartsWith(include, StringComparison.Ordinal) };
+		var options = new AssetCacheOptions { PngKinds = png, MaxPngFiles = Option("--max-png-files") is { } maxText ? (int.TryParse(maxText, out int maxFiles) && maxFiles > 0 ? maxFiles : throw new ArgumentException("--max-png-files must be a positive integer.")) : 250_000, Include = include is null ? null : n => n.StartsWith(include, StringComparison.Ordinal) };
 		string target = Path.Combine(cache, verification.Version!);
 		using var source = new MpqAssetSource(data);
 		var watch = System.Diagnostics.Stopwatch.StartNew();
 		var result = AssetCache.Build(source, AssetCache.Fingerprint(verification.Archives) + (include is null ? "" : "|" + include), target, options);
 		Console.WriteLine(JsonSerializer.Serialize(new { version = verification.Version, cache = target, result.Rebuilt, result.Resources, result.PngFiles, result.PngBytes, result.PngCapped, result.Tables, result.Palettes,
 			errorCount = result.Errors.Count, errors = result.Errors.Take(20), seconds = Math.Round(watch.Elapsed.TotalSeconds, 1) }, new JsonSerializerOptions { WriteIndented = true }));
-		return 0;
+		// A capped cache is incomplete (and is rebuilt next time); report it as a failure.
+		return result.PngCapped ? 3 : 0;
 	}
 	if (args[0] == "--check-demo-music")
 	{
