@@ -40,6 +40,7 @@ try
 	RecordingContracts.Run(Test);
 	MpqContracts.Run(root, Test);
 	MpqPipelineContracts.Run(root, Test);
+	LegacyScreenContracts.Run(Test);
 	RealDataShapeContracts.Run(Test);
 	Pl2FontContracts.Run(Test);
 	GenuineDataContracts.Run(Test);

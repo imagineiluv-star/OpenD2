@@ -28,6 +28,13 @@ public partial class Main : Node3D
 	public override void _Ready()
 	{
 		var args = OS.GetCmdlineUserArgs();
+		if (args.Contains("--capture"))
+		{
+			SetProcess(false); SetProcessUnhandledKeyInput(false);
+			ConfigureNativeResolver();
+			GetTree().Quit(Legacy.LegacyScreen.Capture(args));
+			return;
+		}
 		if (args.Contains("--online-smoke"))
 		{
 			SetProcess(false);
@@ -63,16 +70,26 @@ public partial class Main : Node3D
 			GetTree().Quit(1);
 			return;
 		}
+		if (args.Contains("--original-mode"))
+		{
+			// Original mode is its own scene: no dev panels, no 3D camera, just the fixed legacy screen.
+			SetProcess(false);
+			// The project stretches dev UI from 1152x720; original mode needs real window pixels for whole-number scaling.
+			GetTree().Root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
+			GetWindow().MinSize = Vector2I.Zero;
+			ConfigureNativeResolver();
+			paths.EnsureCreated();
+			var saved = AppSettings.Load(paths.SettingsFile);
+			string? Option(string name) { int i = Array.IndexOf(args, name); return i >= 0 && i + 1 < args.Length ? args[i + 1] : null; }
+			string data = D2DataPaths.ResolveDataPath(string.IsNullOrWhiteSpace(saved.GameDataPath) ? null : saved.GameDataPath) ?? "";
+			var request = new LegacyCaptureRequest(Option("--scene") ?? "gameselect", LegacyResolutions.Parse(Option("--resolution") ?? "800x600"), Option("--palette") ?? "units");
+			var layer = new CanvasLayer(); AddChild(layer); layer.AddChild(new Legacy.LegacyScreen(data, request));
+			return;
+		}
 		BuildScene();
 		try
 		{
-			if (OS.HasFeature("editor"))
-			{
-				string native = OS.GetName() == "Windows" ? "opend2_mpq.dll" : OS.GetName() == "macOS" ? "libopend2_mpq.dylib" : "libopend2_mpq.so";
-				string file = ProjectSettings.GlobalizePath("res://.godot/mono/temp/bin/Debug/" + native);
-				NativeLibrary.SetDllImportResolver(typeof(MpqArchive).Assembly, (name, assembly, search) =>
-					name == "opend2_mpq" ? NativeLibrary.Load(file) : nint.Zero);
-			}
+			ConfigureNativeResolver();
 			MpqArchive.VerifyBackend();
 			paths.EnsureCreated();
 			log = new SessionLog(paths.Logs);
@@ -97,6 +114,17 @@ public partial class Main : Node3D
 			GD.PushError(error.ToString());
 			if (OS.GetCmdlineUserArgs().Contains("--smoke-test")) GetTree().Quit(1);
 		}
+	}
+
+	private static bool nativeResolverSet;
+	private static void ConfigureNativeResolver()
+	{
+		if (nativeResolverSet || !OS.HasFeature("editor")) return;
+		string native = OS.GetName() == "Windows" ? "opend2_mpq.dll" : OS.GetName() == "macOS" ? "libopend2_mpq.dylib" : "libopend2_mpq.so";
+		string file = ProjectSettings.GlobalizePath("res://.godot/mono/temp/bin/Debug/" + native);
+		NativeLibrary.SetDllImportResolver(typeof(MpqArchive).Assembly, (name, assembly, search) =>
+			name == "opend2_mpq" ? NativeLibrary.Load(file) : nint.Zero);
+		nativeResolverSet = true;
 	}
 
 	private void BuildScene()

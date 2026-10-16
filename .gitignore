@@ -72,3 +72,9 @@ artifacts/
 # Private online server accounts and checkpoints
 **/realm-data/
 /server-private/
+
+# Screen captures and golden comparison output (may contain game artwork): keep outside the repo.
+*.capture.png
+captures/
+od2-captures/
+screen-captures/
