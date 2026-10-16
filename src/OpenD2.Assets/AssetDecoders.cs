@@ -16,6 +16,9 @@ public static class AssetDecoders
 		if (path.EndsWith(".wav")) return "wav_pcm";
 		if (path.StartsWith("data\\global\\palette\\") && path.EndsWith("\\pal.dat")) return "palette";
 		if (path.StartsWith("data\\local\\lng\\") && path.EndsWith(".tbl")) return "text_tbl";
+		if (path.StartsWith("data\\global\\palette\\") && path.EndsWith("\\pal.pl2")) return "pl2";
+		// fonter.tbl and default.tbl in the font folders are text lists, not "Woo!" glyph tables.
+		if (path.StartsWith("data\\local\\font\\") && path.EndsWith(".tbl") && !path.EndsWith("\\fonter.tbl") && !path.EndsWith("\\default.tbl")) return "font_tbl";
 		return null;
 	}
 	public static void Validate(string kind, byte[] data)
@@ -36,6 +39,8 @@ public static class AssetDecoders
 				break;
 			case "palette": Palette.Parse(data); break;
 			case "text_tbl": StringTable.Parse(data); break;
+			case "pl2": Pl2Palette.Parse(data); break;
+			case "font_tbl": FontTable.Parse(data); break;
 			case "dc6":
 				var image = Dc6Image.Parse(data);
 				for (int d = 0; d < image.Directions; d++)
