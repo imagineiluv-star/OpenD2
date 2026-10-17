@@ -12,6 +12,8 @@ import tarfile
 import tempfile
 import zipfile
 
+import data_guard
+
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORMS = {"Linux": "linux-x64.tar.gz", "Windows": "windows-x64.zip", "macOS": "macos-universal.zip"}
 # The online server is published self-contained per OS runtime (macOS CI runs on arm64; an Intel Mac build is not produced).
@@ -134,7 +136,7 @@ def mpq_kit(output, version, commit):
     return path
 
 
-def pack(source, output, preset, version, commit, smoke=False):
+def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
     check_version(version, allow_ci=True)
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ValueError("A full source commit SHA is required")
@@ -170,6 +172,24 @@ def pack(source, output, preset, version, commit, smoke=False):
                 with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as target:
                     for item in sorted(stage.rglob("*")):
                         target.write(item, item.relative_to(stage).as_posix())
+    # Fail closed on game data anywhere in the archive, including nested archives and PCK file tables.
+    # A real release requires the original hash list; the untagged "ci" build or --rehearsal only warns.
+    if rehearsal is None:
+        rehearsal = version == "ci" or os.environ.get("OPEND2_RELEASE_REHEARSAL") == "1"
+    try:
+        guard = data_guard.scan([archive], data_guard.load_original_hashes(), require_original_hashes=not rehearsal,
+                                derived_hashes=data_guard.load_derived_hashes())
+        guard.check()
+    except BaseException:
+        archive.unlink(missing_ok=True)
+        raise
+    if not rehearsal and not guard.derived:
+        guard.warnings.append("no extracted asset-cache hashes (no ~/.cache/opend2/asset-cache here); copied DC6/TXT/WAV "
+                              "extracts are caught only by name and content magic")
+    for warning in guard.warnings:
+        print(f"WARNING data guard: {warning}")
+    if not guard.original:
+        print("WARNING data guard: no original hash list (rehearsal); renamed originals are caught only by name/MPQ header")
     if smoke:
         with tempfile.TemporaryDirectory(prefix="opend2-packaged-smoke-") as temporary:
             extracted = Path(temporary)
@@ -185,7 +205,8 @@ def pack(source, output, preset, version, commit, smoke=False):
                             "--folder", str(extracted)], check=True)
     metadata = {"schema_version": 1, "version": version, "commit": commit, "platform": preset,
                 "file": archive.name, "bytes": archive.stat().st_size, "sha256": sha256(archive),
-                "headless_smoke": "PASS" if smoke else "NOT_RUN"}
+                "headless_smoke": "PASS" if smoke else "NOT_RUN",
+                "data_guard": {"result": guard.result, "warnings": guard.warnings, "asset_cache_hashes": len(guard.derived), "unknown_formats": guard.unknown, "entries": guard.scanned, "original_hashes": len(guard.original)}}
     write_json(output / f"package-{preset}.json", metadata)
     mpq_kit(output, version, commit)
     return metadata
@@ -313,6 +334,7 @@ def main():
     package.add_argument("--source", type=Path)
     package.add_argument("--output", type=Path, default=ROOT / "artifacts/packages")
     package.add_argument("--smoke", action="store_true")
+    package.add_argument("--rehearsal", action="store_true", help="allow packing without the original hash list")
     handoff = commands.add_parser("prepare")
     handoff.add_argument("--folder", type=Path, default=ROOT / "artifacts/release")
     args = parser.parse_args()
@@ -320,7 +342,7 @@ def main():
         check_tag_matches_version(args.version)
     elif args.command == "pack":
         pack(args.source or ROOT / "artifacts" / args.preset, args.output, args.preset,
-             os.environ.get("RELEASE_TAG", "ci"), os.environ["SOURCE_SHA"], args.smoke)
+             os.environ.get("RELEASE_TAG", "ci"), os.environ["SOURCE_SHA"], args.smoke, True if args.rehearsal else None)
     else:
         repository = os.environ["GITHUB_REPOSITORY"]
         run_url = f"https://github.com/{repository}/actions/runs/{os.environ['GITHUB_RUN_ID']}"

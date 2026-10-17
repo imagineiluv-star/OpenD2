@@ -1,0 +1,479 @@
+"""Negative tests for the release game-data guard. Every payload here is synthetic fake bytes, never game data."""
+import hashlib
+import io
+import os
+from pathlib import Path
+import struct
+import subprocess
+import sys
+import tarfile
+import tempfile
+import unittest
+import gzip
+import zlib
+from unittest import mock
+import zipfile
+
+import data_guard
+import release
+
+_ENV_KEYS = ("D2_DATA_PATH", "OPEND2_ORIGINAL_SHA256SUMS", "OPEND2_RELEASE_REHEARSAL")
+
+
+def _hermetic_cache():
+    os.environ["OPEND2_ASSET_CACHE"] = "none"  # never hash the developer's real extracted cache
+_saved_env = {}
+
+
+def setUpModule():
+    # Hermetic: a developer's D2_DATA_PATH / hash list must not change results.
+    for key in _ENV_KEYS:
+        if key in os.environ:
+            _saved_env[key] = os.environ.pop(key)
+    _saved_env.setdefault("OPEND2_ASSET_CACHE", os.environ.get("OPEND2_ASSET_CACHE"))
+    _hermetic_cache()
+    global _saved_manifest
+    _saved_manifest = data_guard.MPQ_MANIFEST
+    data_guard.MPQ_MANIFEST = Path("/nonexistent/d2-mpq-manifest.json")  # tests pick their hash lists explicitly
+
+
+def tearDownModule():
+    data_guard.MPQ_MANIFEST = _saved_manifest
+    os.environ.pop("OPEND2_ASSET_CACHE", None)
+    os.environ.update({k: v for k, v in _saved_env.items() if v is not None})
+
+
+FAKE = b"synthetic fixture bytes, not game data"
+
+
+def fake_pck(entries, version=3, flags=2):
+    """A minimal Godot PCK (format 2 or 3+, relative file base) holding the given {path: bytes}."""
+    blobs, offsets, cursor = b"", [], 0
+    for data in entries.values():
+        offsets.append(cursor)
+        blobs += data
+        cursor += len(data)
+    header_size = 4 + 5 * 4 + 8 + (8 if version >= 3 else 0) + 16 * 4
+    table = struct.pack("<I", len(entries))
+    for (name, data), offset in zip(entries.items(), offsets):
+        raw = name.encode()
+        raw += b"\0" * (-len(raw) % 4)
+        table += struct.pack("<I", len(raw)) + raw + struct.pack("<QQ", offset, len(data)) + b"\0" * 16 + b"\0" * 4
+    if version >= 3:
+        file_base = header_size
+        head = b"GDPC" + struct.pack("<5I", version, 4, 7, 2, flags) + struct.pack("<QQ", file_base, file_base + len(blobs))
+        return head + b"\0" * 64 + blobs + table
+    file_base = header_size + len(table)
+    head = b"GDPC" + struct.pack("<5I", version, 4, 0, 0, flags) + struct.pack("<Q", file_base)
+    return head + b"\0" * 64 + table + blobs
+
+
+class DataGuardTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.export = self.root / "export"
+        self.export.mkdir()
+        (self.export / "OpenD2.x86_64").write_bytes(b"fixture executable")
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://Main.cs": b"code", "res://icon.png": b"png"}))
+
+    def blocked(self, *paths, hashes=()):
+        return data_guard.scan(paths or [self.export], hashes).blocked
+
+    def test_clean_export_passes(self):
+        self.assertEqual([], self.blocked())
+
+    def test_injected_mpq_wav_bik_and_global_paths_fail(self):
+        for name in ("d2data.mpq", "sfx/hit.wav", "video/intro.bik", "data/global/ui/cursor.dc6",
+                     "Data/Global/Excel/armor.txt", "UPPER.MPQ", "tables/string.TBL", "art/act1.Pl2"):
+            with self.subTest(name=name):
+                path = self.export / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(FAKE)
+                self.assertTrue(any(item.startswith(name) for item in self.blocked()), self.blocked())
+                path.unlink()
+
+    def test_inside_pck_including_godot_import_names(self):
+        for name in ("res://audio/hit.wav", "res://.godot/imported/hit.wav-0123abcd.sample", "res://intro.bik.import",
+                     "res://data/global/palette/act1/pal.dat"):
+            with self.subTest(name=name):
+                (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://Main.cs": b"code", name: FAKE}))
+                self.assertTrue(any("OpenD2.pck!" in item for item in self.blocked()), self.blocked())
+
+    def test_format_2_pck_and_encrypted_directory(self):
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://music/town.wav": FAKE}, version=2, flags=0))
+        self.assertTrue(any("town.wav" in item for item in self.blocked()))
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://Main.cs": b"code"}, flags=3))
+        self.assertTrue(any("could not inspect" in item for item in self.blocked()))
+
+    def test_nested_archives_and_renamed_originals_by_hash(self):
+        inner = io.BytesIO()
+        with zipfile.ZipFile(inner, "w") as archive:
+            archive.writestr("deep/speech.wav", FAKE)
+        outer = self.root / "outer.tar.gz"
+        with tarfile.open(outer, "w:gz") as archive:
+            info = tarfile.TarInfo("bundle.zip")
+            info.size = len(inner.getvalue())
+            archive.addfile(info, io.BytesIO(inner.getvalue()))
+        self.assertTrue(any("bundle.zip!deep/speech.wav" in item for item in self.blocked(outer)))
+        (self.export / "harmless.bin").write_bytes(FAKE)
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://renamed.res": FAKE}))
+        found = self.blocked(hashes={hashlib.sha256(FAKE).hexdigest()})
+        self.assertEqual(2, sum("original game file hash" in item for item in found), found)
+
+    def test_original_hashes_load_from_sums_file_or_folder_at_run_time(self):
+        sums = self.root / "SHA256SUMS"
+        sums.write_text(f"{hashlib.sha256(FAKE).hexdigest()}  fake.mpq\n")
+        self.assertEqual({hashlib.sha256(FAKE).hexdigest()}, data_guard.load_original_hashes(sums))
+        folder = self.root / "owned"
+        folder.mkdir()
+        (folder / "x.bin").write_bytes(b"other")
+        with mock.patch.dict(os.environ, {"D2_DATA_PATH": str(folder)}, clear=False):
+            os.environ.pop("OPEND2_ORIGINAL_SHA256SUMS", None)
+            self.assertEqual({hashlib.sha256(b"other").hexdigest()}, data_guard.load_original_hashes())
+
+    def test_command_exits_1_and_names_the_file(self):
+        (self.export / "d2music.mpq").write_bytes(FAKE)
+        result = subprocess.run([sys.executable, str(Path(data_guard.__file__)), str(self.export)],
+                                capture_output=True, text=True)
+        self.assertEqual(1, result.returncode)
+        self.assertIn("d2music.mpq: game-data extension .mpq", result.stderr)
+
+    def test_release_pack_refuses_and_removes_the_archive(self):
+        (self.export / "OpenD2.x86_64").chmod(0o755)
+        (self.export / "sound.wav").write_bytes(FAKE)
+        output = self.root / "out"
+        with self.assertRaises(data_guard.GameDataError):
+            release.pack(self.export, output, "Linux", "v0.1.0", "a" * 40, rehearsal=True)
+        self.assertEqual([], list(output.glob("OpenD2-*")))
+
+    def add(self, name, data):
+        path = self.export / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return path
+
+    def tar_bytes(self, mode, name="d2data.mpq", data=FAKE):
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode=mode) as archive:
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+        return buffer.getvalue()
+
+    def test_every_tar_compression_is_opened(self):
+        for mode, suffix in (("w:gz", "tgz"), ("w:bz2", "tar.bz2"), ("w:xz", "tar.xz"), ("w", "tar")):
+            with self.subTest(mode=mode):
+                path = self.add(f"bundle.{suffix}", self.tar_bytes(mode))
+                self.assertTrue(any("bundle." + suffix + "!d2data.mpq" in item for item in self.blocked()), self.blocked())
+                path.unlink()
+
+    def test_single_compressed_streams_are_expanded(self):
+        import bz2, gzip, lzma
+        for name, data in (("blob.xz", lzma.compress(b"MPQ\x1a" + FAKE)), ("blob.bz2", bz2.compress(b"MPQ\x1a" + FAKE)),
+                           ("blob.gz", gzip.compress(b"MPQ\x1a" + FAKE))):
+            with self.subTest(name=name):
+                path = self.add(name, data)
+                self.assertTrue(any("MPQ archive header" in item for item in self.blocked()), self.blocked())
+                path.unlink()
+
+    def test_prefixed_sfx_zip_is_found_by_central_directory(self):
+        inner = io.BytesIO()
+        with zipfile.ZipFile(inner, "w") as archive:
+            archive.writestr("x.wav", FAKE)
+        self.add("setup.exe", b"MZ fake stub " * 50 + inner.getvalue())
+        self.assertTrue(any("setup.exe!x.wav" in item for item in self.blocked()), self.blocked())
+
+    def test_uninspectable_formats_block(self):
+        for name, data in (("a.7z", b"7z\xbc\xaf\x27\x1c" + FAKE), ("payload", b"Rar!\x1a\x07\x00" + FAKE),
+                           ("payload2", b"\x28\xb5\x2f\xfd" + FAKE), ("x.cab", b"MSCF" + FAKE),
+                           ("renamed.rar", FAKE), ("broken.tar.xz", b"\xfd7zXZ\x00garbage")):
+            with self.subTest(name=name):
+                path = self.add(name, data)
+                found = self.blocked()
+                self.assertTrue(any(item.startswith(name) for item in found), found)
+                path.unlink()
+
+    def test_renamed_mpq_fails_by_header_without_hash_list(self):
+        for data in (b"MPQ\x1a" + FAKE, b"MPQ\x1b" + FAKE, b"\0" * 1024 + b"MPQ\x1a" + FAKE):
+            with self.subTest(data=data[:8]):
+                self.add("music.res", data)
+                self.assertTrue(any("music.res: MPQ archive header" in item for item in self.blocked()), self.blocked())
+        self.add("music.res", b"\0" * 7 + b"MPQ\x1a")  # unaligned bytes are not a header
+        self.assertEqual([], self.blocked())
+
+    def test_pck_appended_to_executable_is_scanned(self):
+        pck = fake_pck({"res://audio/hit.wav": FAKE})
+        self.add("OpenD2.x86_64", b"\x7fELF fixture" + pck + struct.pack("<Q", len(pck)) + b"GDPC")
+        self.assertTrue(any("OpenD2.x86_64#embedded.pck!audio/hit.wav" in item for item in self.blocked()), self.blocked())
+        self.add("OpenD2.x86_64", b"\x7fELF fixture" + struct.pack("<Q", 999) + b"GDPC")
+        self.assertTrue(any("could not inspect" in item for item in self.blocked()), self.blocked())
+
+    def test_zip_bomb_ratio_and_total_limits_block(self):
+        bomb = io.BytesIO()
+        with zipfile.ZipFile(bomb, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("zeros.res", b"\0" * (data_guard.RATIO_FLOOR * 4))
+        self.add("bomb.zip", bomb.getvalue())
+        self.assertTrue(any("compression ratio" in item for item in self.blocked()), self.blocked())
+        (self.export / "bomb.zip").unlink()
+        self.add("ok.tar", self.tar_bytes("w", "a.res", b"x" * 4096))
+        guard = data_guard.Guard(max_total_bytes=1000)
+        guard.path(self.export)
+        self.assertTrue(any("decompressed total" in item for item in guard.blocked), guard.blocked)
+
+    def test_name_normalisation_and_extra_extensions(self):
+        for name in ("a.wav ", "a.wav~", "a.wav.", "a.\uff57av", "ui/font16.fnt", "act1.pal", "panel.pcx",
+                     "excel/armor.bin", "Excel/Weapons.txt", "palette/pal.dat", "data/local/lng/eng/x.txt"):
+            with self.subTest(name=name):
+                path = self.add(name, FAKE)
+                self.assertTrue(self.blocked(), name)
+                path.unlink()
+
+    def test_third_party_txt_and_dat_are_not_false_positives(self):
+        for name in ("icudt72l.dat", "LICENSE.txt", "licenses/glm/copying.txt", "README.txt"):
+            self.add(name, FAKE)
+        self.assertEqual([], self.blocked())
+
+    def test_encrypted_pck_entry_and_symlinks_block(self):
+        pck = bytearray(fake_pck({"res://Main.cs": b"code"}))
+        flags_at = pck.rfind(b"\0" * 4)  # last entry flags field
+        pck[flags_at] = 1
+        (self.export / "OpenD2.pck").write_bytes(bytes(pck))
+        self.assertTrue(any("encrypted PCK entry" in item for item in self.blocked()), self.blocked())
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://Main.cs": b"code"}))
+        (self.export / "link").symlink_to(self.export)
+        self.assertTrue(any("link: symlink" in item for item in self.blocked()), self.blocked())
+
+    def test_release_requires_hash_list_and_never_reports_bare_pass_without_it(self):
+        with self.assertRaises(data_guard.MissingOriginalHashes):
+            data_guard.scan([self.export], set(), require_original_hashes=True)
+        self.assertEqual("PASS (no original hash list)", data_guard.scan([self.export]).result)
+        self.assertEqual("PASS", data_guard.scan([self.export], {"0" * 64}).result)
+        (self.export / "OpenD2.x86_64").chmod(0o755)
+        output = self.root / "out"
+        with mock.patch.dict(os.environ, {}, clear=False):
+            for key in ("OPEND2_ORIGINAL_SHA256SUMS", "D2_DATA_PATH", "OPEND2_RELEASE_REHEARSAL"):
+                os.environ.pop(key, None)
+            with self.assertRaises(data_guard.MissingOriginalHashes):
+                release.pack(self.export, output, "Linux", "v0.1.0", "a" * 40)
+            self.assertEqual([], list(output.glob("OpenD2-*")))
+
+    def test_pack_prints_the_size_warning(self):
+        (self.export / "OpenD2.x86_64").chmod(0o755)
+        output = self.root / "out"
+        with mock.patch.object(data_guard, "WARN_BYTES", 10), mock.patch("builtins.print") as printed:
+            original = data_guard.Guard.__init__.__defaults__
+            data_guard.Guard.__init__.__defaults__ = ((), 10, data_guard.MAX_TOTAL_BYTES, ())
+            try:
+                metadata = release.pack(self.export, output, "Linux", "v0.1.0", "a" * 40, rehearsal=True)
+            finally:
+                data_guard.Guard.__init__.__defaults__ = original
+        lines = [" ".join(map(str, call.args)) for call in printed.call_args_list]
+        self.assertTrue(any(line.startswith("WARNING data guard:") and "exceeds 10" in line for line in lines), lines)
+        self.assertTrue(metadata["data_guard"]["warnings"])
+        self.assertEqual("PASS (no original hash list)", metadata["data_guard"]["result"])
+    def test_wav_and_bink_detected_by_content_under_any_name(self):
+        for name, data in (("a.res", b"RIFF\x10\0\0\0WAVEfmt " + FAKE), ("b.bin", b"BIKi" + FAKE), ("c", b"KB2j" + FAKE)):
+            with self.subTest(name=name):
+                path = self.add(name, data)
+                self.assertTrue(any(item.startswith(name + ":") for item in self.blocked()), self.blocked())
+                path.unlink()
+        self.add("riff.res", b"RIFF\x10\0\0\0AVI LIST")  # other RIFF types are not WAV
+        self.add("bike.txt", b"BIKE ride")
+        self.assertEqual([], self.blocked())
+
+    def test_trailing_underscore_and_cyrillic_lookalikes(self):
+        for name in ("x.mpq_", "x.\u043cpq", "x.w\u0430v"):
+            with self.subTest(name=name):
+                path = self.add(name, FAKE)
+                self.assertTrue(self.blocked(), name)
+                path.unlink()
+        self.add("\u0442\u0435\u043a\u0441\u0442.txt", FAKE)  # Cyrillic base name, plain extension: allowed
+        self.assertEqual([], self.blocked())
+
+    def test_scan_started_inside_package_still_sees_data_global(self):
+        start = self.export / "pkg" / "data"
+        self.add("pkg/data/global/excel/foo.res", FAKE)
+        self.assertTrue(any("data/global path" in item for item in self.blocked(start)), self.blocked(start))
+
+    def test_lzma_and_compress_short_magics_are_not_false_positives(self):
+        self.add("level.res", b"]\0\0 ordinary bytes")
+        self.add("other.res", b"\x1f\x9d ordinary bytes")
+        self.assertEqual([], self.blocked())
+        self.add("x.lzma", FAKE)
+        self.assertTrue(self.blocked())
+
+    def test_hash_list_needs_a_plausible_number_of_entries(self):
+        few = {f"{i:064x}" for i in range(data_guard.MIN_ORIGINAL_HASHES - 1)}
+        with self.assertRaises(data_guard.MissingOriginalHashes) as caught:
+            data_guard.scan([self.export], few, require_original_hashes=True)
+        self.assertIn("looks incomplete", str(caught.exception))
+        self.assertIn("secret OPEND2_ORIGINAL_SHA256SUMS", str(caught.exception))
+        enough = few | {"f" * 64}
+        self.assertEqual("PASS", data_guard.scan([self.export], enough, require_original_hashes=True).result)
+
+    def test_explicit_hash_sources_ignore_the_environment(self):
+        sums = self.root / "SHA256SUMS"
+        sums.write_text(f"{'a' * 64}  d2data.mpq\n")
+        owned = self.root / "owned"
+        owned.mkdir()
+        (owned / "x").write_bytes(b"other")
+        with mock.patch.dict(os.environ, {"D2_DATA_PATH": str(owned)}):
+            self.assertEqual({"a" * 64}, data_guard.load_original_hashes(sums))
+    @staticmethod
+    def fake_dc6(directions=1, frames=2):
+        table_end = 24 + 4 * directions * frames
+        head = struct.pack("<3I", 6, 1, 0) + b"\xee" * 4 + struct.pack("<II", directions, frames)
+        return head + struct.pack("<I", table_end) + b"\0" * (4 * directions * frames - 4) + FAKE
+
+    @staticmethod
+    def fake_rscc(payload, mode=1, block=16):
+        blocks = [payload[i:i + block] for i in range(0, len(payload), block)]
+        if len(payload) % block == 0:
+            blocks.append(b"")
+        packed = [zlib.compress(b) if mode == 1 else gzip.compress(b, mtime=0) for b in blocks]
+        return b"RSCC" + struct.pack("<III", mode, block, len(payload)) + b"".join(struct.pack("<I", len(p)) for p in packed) + b"".join(packed)
+
+    def test_ogg_and_dc6_detected_by_content(self):
+        for name, data in (("music.res", b"OggS\0\x02" + FAKE), ("sprite.png", self.fake_dc6()),
+                           ("big.png", self.fake_dc6(8, 16))):
+            with self.subTest(name=name):
+                path = self.add(name, data)
+                self.assertTrue(any(item.startswith(name + ":") for item in self.blocked()), self.blocked())
+                path.unlink()
+        near = bytearray(self.fake_dc6())
+        near[24] ^= 1  # wrong first frame pointer: not a DC6
+        self.add("x.res", bytes(near))
+        self.add("y.res", b"OggSync notes")
+        self.assertEqual([], self.blocked())
+
+    def test_flattened_data_global_names(self):
+        for name in ("data_global_items_x.png", "Data-Global/x.res", "dataglobal/ui.res", "data_local_font.res"):
+            with self.subTest(name=name):
+                path = self.add(name, FAKE)
+                self.assertTrue(self.blocked(), name)
+                path.unlink()
+        self.add("metadata_globals.json", FAKE)
+        self.assertEqual([], self.blocked())
+
+    def test_raw_zlib_and_godot_rscc_are_opened(self):
+        self.add("wrapped.res", zlib.compress(b"RIFF\x10\0\0\0WAVE" + FAKE))
+        self.assertTrue(any("wrapped.res!zlib" in item for item in self.blocked()), self.blocked())
+        (self.export / "wrapped.res").unlink()
+        self.add("x\u009c.res", b"x\x9c not really zlib")  # valid header bytes, does not inflate: plain data
+        self.assertEqual([], self.blocked())
+        for mode in (1, 3):
+            with self.subTest(mode=mode):
+                (self.export / "OpenD2.pck").write_bytes(
+                    fake_pck({"res://snd.res": self.fake_rscc(b"MPQ\x1a" + FAKE * 3, mode)}))
+                self.assertTrue(any("snd.res!rscc: MPQ archive header" in item for item in self.blocked()), self.blocked())
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://snd.res": b"RSCC" + struct.pack("<III", 2, 16, 4)}))
+        self.assertTrue(any("compression mode 2" in item for item in self.blocked()), self.blocked())
+
+    def test_lzip_blocks_and_zip_symlink_entries_block(self):
+        self.add("a.res", b"LZIP\x01" + FAKE)
+        self.assertTrue(any(item.startswith("a.res:") for item in self.blocked()))
+        (self.export / "a.res").unlink()
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            info = zipfile.ZipInfo("link")
+            info.external_attr = (0o120777) << 16
+            archive.writestr(info, "../../data/x")
+        self.add("links.zip", buffer.getvalue())
+        self.assertTrue(any("links.zip!link: symlink entry" in item for item in self.blocked()), self.blocked())
+
+    def test_asset_cache_hashes_are_loaded_at_run_time(self):
+        cache = self.root / "cache" / "1.11b"
+        (cache / "png").mkdir(parents=True)
+        (cache / "cache-manifest.json").write_text('{"converter": "p1-mpq-2"}')
+        derived = b"converted sprite frame bytes (synthetic) " * 4
+        (cache / "png" / "d00_f000.png").write_bytes(derived)
+        (cache / "tiny.png").write_bytes(b"x")  # below the size floor: ignored
+        hashes = data_guard.load_derived_hashes(str(self.root / "cache"))
+        self.assertEqual({hashlib.sha256(derived).hexdigest()}, hashes)
+        other = self.root / "other"
+        other.mkdir()
+        (other / "cache-manifest.json").write_text('{"converter": "something-else"}')
+        (other / "f").write_bytes(derived)
+        self.assertEqual(set(), data_guard.load_derived_hashes(str(other)))
+        self.assertEqual(set(), data_guard.load_derived_hashes("none"))
+        self.add("icon2.png", derived)
+        found = data_guard.scan([self.export], derived_hashes=hashes).blocked
+        self.assertTrue(any("extracted asset-cache file hash" in item for item in found), found)
+    def rscc_raw(self, blocks, block_size, total):
+        packed = [zlib.compress(b) for b in blocks]
+        return (b"RSCC" + struct.pack("<III", 1, block_size, total) + b"".join(struct.pack("<I", len(p)) for p in packed)
+                + b"".join(packed))
+
+    def test_rscc_block_bomb_is_bounded_and_blocked(self):
+        bomb = self.rscc_raw([b"\0" * (300 * 1024 * 1024)], 100, 50)  # declares 50 bytes, inflates to 300 MB
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://x.res": bomb}))
+        found = self.blocked()
+        self.assertTrue(any("x.res: could not inspect" in item and "block size" in item for item in found), found)
+
+    def test_rscc_payload_hidden_past_declared_total_is_blocked(self):
+        hidden = self.rscc_raw([b"A" * 16 + b"RIFF\x10\0\0\0WAVE"], 64, 16)
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://y.res": hidden}))
+        found = self.blocked()
+        self.assertTrue(any("y.res: could not inspect" in item and "declares 16" in item for item in found), found)
+
+    def test_corrupt_rscc_and_zlib_streams_are_reported_not_raised(self):
+        good = zlib.compress(b"payload " * 8)
+        corrupt = (b"RSCC" + struct.pack("<III", 1, 64, 64) + struct.pack("<II", len(good), 0)
+                   + good[:4] + b"\xff" * (len(good) - 4))
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://z.res": corrupt}))
+        found = self.blocked()
+        self.assertTrue(any("z.res: could not inspect" in item for item in found), found)
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://Main.cs": b"code"}))
+        stream = zlib.compress(os.urandom(200000), 0)
+        self.add("cut.res", stream[:-50])  # starts fine, then ends early: flush() fails
+        found = self.blocked()
+        self.assertTrue(any("cut.res: could not inspect" in item for item in found), found)
+
+    def test_small_window_zlib_and_raw_deflate_are_opened(self):
+        wav = b"RIFF\x10\0\0\0WAVE" + FAKE + bytes(range(256))
+        for wbits in (9, 12):
+            with self.subTest(wbits=wbits):
+                packer = zlib.compressobj(9, zlib.DEFLATED, wbits)
+                self.add("w.res", packer.compress(wav) + packer.flush())
+                self.assertTrue(any("w.res!zlib" in item for item in self.blocked()), self.blocked())
+        (self.export / "w.res").unlink()
+        raw = zlib.compressobj(9, zlib.DEFLATED, -15)
+        self.add("r.res", raw.compress(wav) + raw.flush())
+        self.assertTrue(any("r.res!deflate" in item for item in self.blocked()), self.blocked())
+
+    def test_data_path_needs_an_exact_data_component(self):
+        self.add("mydata/global/x.res", FAKE)
+        self.add("metadata_global.res", FAKE)
+        self.assertEqual([], self.blocked())
+        start = self.export / "mydata"
+        self.assertEqual([], self.blocked(start))  # start folder merely ending in "data"
+
+    def test_pck_at_an_odd_offset_is_scanned(self):
+        pck = fake_pck({"res://audio/hit.wav": FAKE})
+        self.add("bundle.bin2", b"\x7fELF junk" * 7 + b"x" + pck + b"tail bytes")
+        self.assertTrue(any("bundle.bin2@" in item and "hit.wav" in item for item in self.blocked()), self.blocked())
+        self.add("bundle.bin2", b"text GDPC mention without a header")
+        self.assertEqual([], self.blocked())
+
+    def test_committed_mpq_manifest_is_the_default_hash_list(self):
+        real = _saved_manifest
+        hashes = data_guard.manifest_hashes(real)
+        self.assertGreaterEqual(len(hashes), data_guard.MIN_ORIGINAL_HASHES)
+        with mock.patch.object(data_guard, "MPQ_MANIFEST", real):
+            self.assertEqual(hashes, data_guard.load_original_hashes())
+            sums = self.root / "S"
+            sums.write_text("a" * 64 + "  x\n")
+            self.assertEqual({"a" * 64}, data_guard.load_original_hashes(sums))  # explicit list stays exact
+
+    def test_unknown_binary_formats_are_listed_not_blocked(self):
+        self.add("mystery.res", b"\x01\x02\0\0 opaque")
+        self.add("lib.so", b"\x7fELF\0\0")
+        guard = data_guard.scan([self.export])
+        self.assertEqual([], guard.blocked)
+        self.assertEqual(["mystery.res"], [u for u in guard.unknown if "mystery" in u or "lib.so" in u])
+
+
+if __name__ == "__main__":
+    unittest.main()
