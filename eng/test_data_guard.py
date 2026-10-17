@@ -91,7 +91,8 @@ class DataGuardTests(unittest.TestCase):
                 path = self.export / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(FAKE)
-                self.assertTrue(any(item.startswith(name) for item in self.blocked()), self.blocked())
+                # Case-insensitive file systems (Windows/macOS) reuse the data/global folder an earlier subtest made.
+                self.assertTrue(any(item.lower().startswith(name.lower()) for item in self.blocked()), self.blocked())
                 path.unlink()
 
     def test_inside_pck_including_godot_import_names(self):

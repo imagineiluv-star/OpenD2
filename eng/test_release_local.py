@@ -35,7 +35,8 @@ class ReleaseLocalTests(unittest.TestCase):
     def test_build_directory_is_private_unique_and_removed(self):
         with release_local.BuildDirectory() as first, release_local.BuildDirectory() as second:
             self.assertNotEqual(first, second)
-            self.assertEqual(0o700, first.stat().st_mode & 0o777)
+            if os.name != "nt":  # Windows reports synthetic permission bits
+                self.assertEqual(0o700, first.stat().st_mode & 0o777)
             self.assertTrue(first.is_relative_to(release_local.CACHE_ROOT))
         self.assertFalse(first.exists() or second.exists())
 
