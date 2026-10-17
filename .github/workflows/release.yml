@@ -58,7 +58,9 @@ jobs:
     uses: ./.github/workflows/m0.yml
     # The pack step needs the OPEND2_ORIGINAL_SHA256SUMS secret: a tagged release fails closed without the
     # original-file hash list (intended, see docs/migration/RELEASE_QA.md "Original hash list").
-    secrets: inherit
+    # Only this one secret is passed; the other repository secrets are not inherited.
+    secrets:
+      OPEND2_ORIGINAL_SHA256SUMS: ${{ secrets.OPEND2_ORIGINAL_SHA256SUMS }}
     with:
       release_tag: ${{ needs.preflight.outputs.version }}
 

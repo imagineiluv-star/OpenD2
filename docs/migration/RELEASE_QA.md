@@ -50,11 +50,19 @@ python eng/release-local.py --tag v0.1.0-rc.1 [--preset Linux --preset Windows] 
 
 태그(`vX.Y.Z`, `vX.Y.Z-rc.N`) 릴리즈는 **의도적으로** 원본 파일 SHA-256 목록이 있어야만 패키징된다. 목록이 없거나
 항목이 5개 미만이면 `release.py pack`/`release-local.py`가 `MissingOriginalHashes`로 실패하고 아카이브를 남기지 않는다.
-목록은 정품 설치본의 sha256sum 형식 파일(`<hash>  <name>`)이며 게임 파일 자체는 아니다. 저장소에는 절대 커밋하지 않는다.
+목록은 정품 설치본의 sha256sum 형식 파일(`<hash>  <basename>`, 설치 경로 없이)이며 게임 파일 자체는 아니다. 저장소에는 절대 커밋하지 않는다.
 
 - 로컬: `OPEND2_ORIGINAL_SHA256SUMS=<설치본>/SHA256SUMS` 또는 `D2_DATA_PATH=<설치본>`.
 - GitHub Actions: 저장소 Settings → Secrets → Actions에 `OPEND2_ORIGINAL_SHA256SUMS` 이름으로 목록 내용을 넣는다.
-  `release.yml`이 `secrets: inherit`로 `m0.yml`에 넘기고, pack 단계가 러너 임시 파일로 써서 사용한다.
+  `release.yml`은 이 시크릿 하나만 명시적으로 `m0.yml`에 넘긴다. `m0.yml`은 태그 릴리즈 호출(`release_tag`가 비어 있지 않고
+  `ci`가 아님)에서만 값을 주입하고, push/pull_request/`ci` 실행에는 넘기지 않는다. pack 단계는 `umask 077`에서 `mktemp`로 만든
+  임시 파일에 쓰고 `trap`으로 지운다. 값은 로그에 출력하지 않는다.
+- **추출 캐시 해시(자동):** `release.py pack`, `release-local.py`, `data_guard.py`는 실행할 때 `~/.cache/opend2/asset-cache`
+  (또는 `OPEND2_ASSET_CACHE`, `none`이면 끔) 아래의 `cache-manifest.json`(converter `p1-mpq*`)이 있는 폴더에서 64바이트 이상인 모든 파일의
+  SHA-256을 계산해 차단 목록에 더한다. 그래서 #108이 추출한 DC6/TXT/WAV와 캐시의 PNG 변환본을 그대로 복사해도 잡힌다.
+  이 해시는 커밋하지 않고 실행할 때마다 다시 만든다(약 5만 개, 수 초). 최소 5개 조건은 원본 목록에만 적용된다.
+- **남는 위험:** 변환 파생물(캐시 밖에서 다시 인코딩·크기 조정·재압축한 PNG/OGG, 다른 포맷으로 옮긴 테이블)은 이름, 매직, 해시
+  어느 것으로도 탐지할 수 없다. 이런 파일이 들어가지 않게 하는 것은 리뷰와 저장소 규칙의 몫이다. 저장소/히스토리/LFS 검사도 아직 없다.
 - 태그 없는 `ci` 빌드와 `--rehearsal`(`OPEND2_RELEASE_REHEARSAL=1`)은 경고만 하고 결과를 `PASS (no original hash list)`로 표시한다.
 
 ## GitHub Actions 실행
