@@ -99,5 +99,6 @@ internal static class GenuineDataContracts
 			Console.WriteLine($"  {bins} BINs; rows {raw}; playable {play}; uber areas {inv.UberAreas}");
 		});
 		LegacyScreenContracts.Genuine(data, test);
+		ScreenPaletteContracts.Genuine(data, test);
 }
 }

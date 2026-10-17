@@ -84,7 +84,8 @@ public partial class Main : Node3D
 				var saved = AppSettings.Load(paths.SettingsFile);
 				string? Option(string name) { int i = Array.IndexOf(args, name); return i >= 0 && i + 1 < args.Length ? args[i + 1] : null; }
 				string data = D2DataPaths.ResolveDataPath(string.IsNullOrWhiteSpace(saved.GameDataPath) ? null : saved.GameDataPath) ?? "";
-				var request = new LegacyCaptureRequest(Option("--scene") ?? "gameselect", LegacyResolutions.Parse(Option("--resolution") ?? "800x600"), Option("--palette") ?? "units");
+				var request = new LegacyCaptureRequest(Option("--scene") ?? "gameselect", LegacyResolutions.Parse(Option("--resolution") ?? "800x600"), Option("--palette") ?? ScreenPalettes.Auto,
+					Light: LegacyRenderOptions.ParseLight(Option("--light")), Gamma: LegacyRenderOptions.ParseGamma(Option("--gamma")));
 				var screen = new Legacy.LegacyScreen(data, request, LegacyScaleOptions.ParseMode(Option("--scale") ?? "fit"), LegacyScaleOptions.ParseFilter(Option("--filter") ?? "sharp"));
 				var layer = new CanvasLayer(); AddChild(layer); layer.AddChild(screen);
 				if (Option("--capture-window") is { } windowShot)
