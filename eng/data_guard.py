@@ -84,6 +84,10 @@ class Uninspectable(RuntimeError):
 MPQ_MANIFEST = Path(__file__).resolve().parents[1] / "src" / "OpenD2.Assets" / "Manifests" / "d2-mpq-manifest.json"
 
 
+class ManifestError(ValueError):
+    """The committed MPQ manifest exists but cannot be read; reported without a traceback."""
+
+
 def manifest_hashes(path=None):
     """SHA-256 of the supported MPQs from the committed d2-mpq-manifest.json (#108; hashes only, no game data)."""
     import json
@@ -91,7 +95,15 @@ def manifest_hashes(path=None):
     if not path.is_file():
         return set()
     hashes = set()
-    for version in json.loads(path.read_text(encoding="utf-8")).get("versions", []):
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        versions = document.get("versions", []) if isinstance(document, dict) else None
+        if not isinstance(versions, list) or not all(isinstance(v, dict) for v in versions):
+            raise ValueError("expected {\"versions\": [ ... ]}")
+    except (OSError, UnicodeDecodeError, ValueError) as error:
+        raise ManifestError(f"cannot read the MPQ hash manifest {path}: {error}. Restore it from git "
+                            f"(git checkout -- {path.name}) before packaging.") from None
+    for version in versions:
         if version.get("placeholder"):
             continue
         for info in version.get("files", {}).values():
@@ -122,20 +134,54 @@ def load_original_hashes(sums=None, folder=None):
     return hashes
 
 
+CACHE_VARIABLE = "D2_ASSET_CACHE"  # the app's name (src/OpenD2.Assets/D2DataPaths.cs)
+DEPRECATED_CACHE_VARIABLE = "OPEND2_ASSET_CACHE"
+
+
+def app_cache_root():
+    """The app's default cache: .NET LocalApplicationData/OpenD2/asset-cache."""
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+    return base / "OpenD2" / "asset-cache"
+
+
+def cache_roots(cache=None):
+    """Explicit argument, then D2_ASSET_CACHE, then the deprecated OPEND2_ASSET_CACHE; otherwise the app default plus the
+    legacy ~/.cache/opend2/asset-cache. "none" disables (guard only)."""
+    setting = cache
+    if setting is None:
+        setting = os.environ.get(CACHE_VARIABLE)
+    if setting is None and os.environ.get(DEPRECATED_CACHE_VARIABLE) is not None:
+        setting = os.environ[DEPRECATED_CACHE_VARIABLE]
+        print(f"WARNING {DEPRECATED_CACHE_VARIABLE} is deprecated; use {CACHE_VARIABLE}", file=sys.stderr)
+    if setting == "none":
+        return []
+    if setting:
+        return [Path(setting)]
+    legacy = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "opend2" / "asset-cache"
+    return [app_cache_root(), legacy]
+
+
 def load_derived_hashes(cache=None):
     """SHA-256 of files OpenD2 extracted into its asset cache (#108), read at run time and never committed.
 
-    Default ~/.cache/opend2/asset-cache (or OPEND2_ASSET_CACHE); OPEND2_ASSET_CACHE=none disables. Only folders with
+    Roots come from cache_roots() (D2_ASSET_CACHE like the app; D2_ASSET_CACHE=none disables). Only folders with
     a cache-manifest.json written by the p1-mpq converter count. Converted derivatives (PNG of a DC6, etc.) are hashed
     as they sit in the cache; anything re-encoded afterwards cannot be recognised (documented residual risk).
     """
-    setting = cache if cache is not None else os.environ.get("OPEND2_ASSET_CACHE")
-    if setting == "none":
-        return set()
-    root = Path(setting) if setting else Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "opend2" / "asset-cache"
     hashes = set()
-    if not root.is_dir():
-        return hashes
+    for root in cache_roots(cache):
+        if root.is_dir():
+            hashes |= _cache_hashes(root)
+    return hashes
+
+
+def _cache_hashes(root):
+    hashes = set()
     for manifest in sorted(root.rglob("cache-manifest.json")):
         try:
             import json
@@ -347,7 +393,8 @@ class Guard:
         inflater, out = zlib.decompressobj(-15), bytearray()
         try:
             out += inflater.decompress(data[:4096], 1 << 20)
-            if inflater.unconsumed_tail or (inflater.eof and len(inflater.unused_data) > 16):
+            if inflater.unconsumed_tail or (inflater.eof and len(inflater.unused_data) > 16
+                                            and not self.substantial(data, inflater, out)):
                 return False
             for offset in range(4096, len(data), 65536):
                 if inflater.eof:
@@ -357,11 +404,23 @@ class Guard:
             out += inflater.flush()
         except zlib.error:
             return False
-        if not inflater.eof or len(inflater.unused_data) > 16 or not out:
+        if not inflater.eof or not out:
+            return False
+        trailer = inflater.unused_data
+        if len(trailer) > 16 and not self.substantial(data, inflater, out):
             return False
         self.account(label, len(out), len(data))
         self.entry(f"{label}!deflate", bytes(out), depth)
+        if trailer:
+            self.entry(f"{label}!deflate-trailer", trailer, depth)
         return True
+
+    @staticmethod
+    def substantial(data, inflater, out):
+        """A raw DEFLATE stream followed by other bytes only counts when the stream itself is long (>= 1 KiB in and
+        out, allowing stored blocks); short accidental "streams" at the start of ordinary binaries must not trigger rescans."""
+        consumed = len(data) - len(inflater.unused_data)
+        return consumed >= 1024 and len(out) * 10 >= consumed * 9
 
     def inner_pcks(self, label, data, depth):
         """A PCK at an arbitrary offset (not Godot's trailer layout): parse every plausible GDPC header found."""
@@ -392,6 +451,8 @@ class Guard:
             raise Uninspectable("zlib stream is truncated")
         self.account(label, len(out), len(data))
         self.entry(f"{label}!zlib", bytes(out), depth)
+        if inflater.unused_data:  # bytes after the stream ship too: scan them like any other entry
+            self.entry(f"{label}!zlib-trailer", inflater.unused_data, depth)
 
     def rscc(self, label, data, depth):
         """Godot compressed resource (FileAccessCompressed): deflate/gzip blocks are inflated and rescanned;
@@ -526,11 +587,15 @@ def main():
     parser.add_argument("--original-sums", type=Path)
     parser.add_argument("--original-dir", type=Path)
     parser.add_argument("--require-original-hashes", action="store_true")
-    parser.add_argument("--asset-cache", help="extracted asset cache to add to the blocklist ('none' disables)")
+    parser.add_argument("--asset-cache", help="extracted asset cache to add to the blocklist ('none' disables; "
+                                              "default D2_ASSET_CACHE or the app's cache folder)")
     args = parser.parse_args()
     try:
         guard = scan(args.paths, load_original_hashes(args.original_sums, args.original_dir),
                      args.require_original_hashes, load_derived_hashes(args.asset_cache))
+    except ManifestError as error:
+        print(f"DATA GUARD FAILED: {error}", file=sys.stderr)
+        sys.exit(1)
     except MissingOriginalHashes as error:
         print(f"DATA GUARD FAILED: {error}", file=sys.stderr)
         sys.exit(1)
