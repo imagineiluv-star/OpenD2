@@ -81,10 +81,32 @@ class Uninspectable(RuntimeError):
     pass
 
 
+MPQ_MANIFEST = Path(__file__).resolve().parents[1] / "src" / "OpenD2.Assets" / "Manifests" / "d2-mpq-manifest.json"
+
+
+def manifest_hashes(path=None):
+    """SHA-256 of the supported MPQs from the committed d2-mpq-manifest.json (#108; hashes only, no game data)."""
+    import json
+    path = Path(path or MPQ_MANIFEST)
+    if not path.is_file():
+        return set()
+    hashes = set()
+    for version in json.loads(path.read_text(encoding="utf-8")).get("versions", []):
+        if version.get("placeholder"):
+            continue
+        for info in version.get("files", {}).values():
+            digest = str(info.get("sha256", "")).lower()
+            if re.fullmatch(r"[0-9a-f]{64}", digest):
+                hashes.add(digest)
+    return hashes
+
+
 def load_original_hashes(sums=None, folder=None):
-    """Explicit sums/folder arguments win; the environment is only consulted when neither is given."""
+    """Explicit sums/folder arguments win. Otherwise: the committed MPQ manifest (default, so no secret is needed),
+    plus OPEND2_ORIGINAL_SHA256SUMS / D2_DATA_PATH when set."""
     hashes = set()
     if sums is None and folder is None:
+        hashes |= manifest_hashes()
         sums = os.environ.get("OPEND2_ORIGINAL_SHA256SUMS")
         folder = os.environ.get("D2_DATA_PATH")
     if sums:
@@ -142,6 +164,7 @@ class Guard:
         self.expanded = 0
         self.blocked, self.warnings, self.scanned = [], [], 0
         self.context = {}
+        self.unknown = []
 
     @property
     def result(self):
@@ -155,7 +178,7 @@ class Guard:
         parts = PurePosixPath(lowered).parts
         leaf = parts[-1] if parts else lowered
         joined = "/".join(parts) + "/"
-        data_path = bool(re.search(r"data[/_\-. ]?(global|local)[/_\-. ]", joined))
+        data_path = bool(re.search(r"(?:^|/)data[/_\-. ]?(global|local)[/_\-. ]", joined))
         folded = leaf.translate(CONFUSABLES)
         for pattern in (EXTENSION_PATTERN, CONTEXT_PATTERN):
             hit = pattern.search(folded)
@@ -169,7 +192,7 @@ class Guard:
         if context and (data_path or leaf[:context.start()] in D2_TABLE_NAMES):
             reasons.append(f"D2 table/palette .{context.group(1)}")
         if data_path:
-            reasons.append("data/global path" if re.search(r"data[/_\-. ]?global", joined) else "data/local path")
+            reasons.append("data/global path" if re.search(r"(?:^|/)data[/_\-. ]?global", joined) else "data/local path")
         if leaf.endswith(UNINSPECTABLE_EXTENSIONS):
             reasons.append("compression/container format the guard cannot inspect")
         return reasons
@@ -267,13 +290,17 @@ class Guard:
                             continue
                         self.account(info.filename, info.file_size, info.compress_size)
                         self.entry(f"{label}!{info.filename}", archive.read(info), depth + 1)
-            elif len(data) > 2 and data[0] == 0x78 and ((data[0] << 8) | data[1]) % 31 == 0:
-                self.zlib_stream(label, data, depth + 1)
+            elif len(data) > 2 and data[0] & 0x0f == 8 and data[0] >> 4 <= 7 and ((data[0] << 8) | data[1]) % 31 == 0:
+                self.zlib_stream(label, data, depth + 1)  # RFC 1950, any window size (CMF 0x08..0x78)
+            elif not self.raw_deflate(label, data, depth + 1):
+                self.note_unknown(label, data)
             embedded = self.embedded_pck(data)
             if embedded is not None and data[:4] != b"GDPC":
                 self.pck(f"{label}#embedded.pck", embedded, depth + 1)
+            elif data[:4] != b"GDPC":
+                self.inner_pcks(label, data, depth + 1)
         except (Uninspectable, zipfile.BadZipFile, zipfile.LargeZipFile, tarfile.TarError, struct.error, EOFError,
-                OSError, RuntimeError, NotImplementedError, lzma.LZMAError, ValueError, MemoryError) as error:
+                OSError, RuntimeError, NotImplementedError, lzma.LZMAError, zlib.error, ValueError, MemoryError) as error:
             self.blocked.append(f"{label}: could not inspect archive ({error})")
 
     def tar_or_stream(self, label, data, depth):
@@ -304,6 +331,51 @@ class Guard:
         inner = re.sub(r"\.(gz|bz2|xz)$", "", label.split("!")[-1].split("/")[-1], flags=re.I) or "stream"
         self.entry(f"{label}!{inner}", bytes(out), depth)
 
+    KNOWN_MAGIC = (b"\x7fELF", b"MZ", b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa", b"\xca\xfe\xba\xbe",
+                   b"\x89PNG", b"RSRC", b"ECFG", b"GST2", b"GDST", b"RIFF", b"\xff\xd8\xff", b"GIF8", b"BSJB", b"wOF")
+
+    def note_unknown(self, label, data):
+        """Binary entries of no recognised format are not blocked (Godot/.NET ship many) but listed for review."""
+        if data and b"\0" in data[:512] and not data.startswith(self.KNOWN_MAGIC) and len(self.unknown) < 500:
+            self.unknown.append(label)
+
+    def raw_deflate(self, label, data, depth):
+        """A file that is one complete raw DEFLATE stream (no header) is inflated and rescanned. Ordinary binaries
+        fail within the first bytes or stop long before their end, so they are left alone."""
+        if len(data) < 64:
+            return False
+        inflater, out = zlib.decompressobj(-15), bytearray()
+        try:
+            out += inflater.decompress(data[:4096], 1 << 20)
+            if inflater.unconsumed_tail or (inflater.eof and len(inflater.unused_data) > 16):
+                return False
+            for offset in range(4096, len(data), 65536):
+                if inflater.eof:
+                    break
+                out += inflater.decompress(data[offset:offset + 65536])
+                self.account(label, len(out), len(data), commit=False)
+            out += inflater.flush()
+        except zlib.error:
+            return False
+        if not inflater.eof or len(inflater.unused_data) > 16 or not out:
+            return False
+        self.account(label, len(out), len(data))
+        self.entry(f"{label}!deflate", bytes(out), depth)
+        return True
+
+    def inner_pcks(self, label, data, depth):
+        """A PCK at an arbitrary offset (not Godot's trailer layout): parse every plausible GDPC header found."""
+        index, tried = data.find(b"GDPC", 1), 0
+        while index != -1 and tried < 16:
+            if len(data) >= index + 40 and struct.unpack_from("<I", data, index + 4)[0] in (2, 3):
+                tried += 1
+                before = len(self.blocked)
+                try:
+                    self.pck(f"{label}@{index}.pck", data[index:], depth)
+                except (Uninspectable, struct.error):
+                    del self.blocked[before:]  # not a real PCK header
+            index = data.find(b"GDPC", index + 1)
+
     def zlib_stream(self, label, data, depth):
         """Raw zlib (RFC 1950) payloads are opened; a valid-looking header that doesn't inflate is just data."""
         inflater, out = zlib.decompressobj(), bytearray()
@@ -316,6 +388,8 @@ class Guard:
                 raise Uninspectable(f"zlib stream does not inflate ({error})")
             self.account(label, len(out), len(data), commit=False)
         out += inflater.flush()
+        if not inflater.eof:
+            raise Uninspectable("zlib stream is truncated")
         self.account(label, len(out), len(data))
         self.entry(f"{label}!zlib", bytes(out), depth)
 
@@ -336,12 +410,23 @@ class Guard:
             sizes = struct.unpack_from(f"<{blocks}I", data, header)
             if table_end + sum(sizes) != len(data):
                 continue
-            self.account(label, total, len(data))
             out, cursor = bytearray(), table_end
             for size in sizes:
-                out += zlib.decompress(data[cursor:cursor + size], 15 if mode == RSCC_DEFLATE else 31)
+                # Each block inflates to at most block_size bytes; anything more is a bomb or hidden payload.
+                inflater = zlib.decompressobj(15 if mode == RSCC_DEFLATE else 31)
+                chunk = inflater.decompress(data[cursor:cursor + size], block_size + 1)
+                if len(chunk) > block_size or inflater.unconsumed_tail:
+                    raise Uninspectable(f"Godot RSCC block inflates beyond its {block_size}-byte block size")
+                chunk += inflater.flush(block_size + 1 - len(chunk))
+                if len(chunk) > block_size or not inflater.eof:
+                    raise Uninspectable("Godot RSCC block is truncated or oversized")
+                out += chunk
+                self.account(label, len(out), len(data), commit=False)
                 cursor += size
-            self.entry(f"{label}!rscc", bytes(out[:total]), depth)
+            if len(out) != total:
+                raise Uninspectable(f"Godot RSCC inflates to {len(out)} bytes, header declares {total}")
+            self.account(label, len(out), len(data))
+            self.entry(f"{label}!rscc", bytes(out), depth)
             return
         raise Uninspectable("Godot RSCC block table is inconsistent")
 
@@ -456,6 +541,8 @@ def main():
     if guard.blocked:
         print(f"DATA GUARD FAILED: {len(guard.blocked)} blocked of {guard.scanned} scanned", file=sys.stderr)
         sys.exit(1)
+    if guard.unknown:
+        print(f"NOTE {len(guard.unknown)} binary entries of unknown format (not blocked): " + ", ".join(guard.unknown[:20]))
     if not guard.original:
         print("WARNING no original hash list: renamed original files are only caught by name and MPQ header")
     print(f"DATA GUARD {guard.result}: {guard.scanned} entries, {len(guard.original)} original hashes, "

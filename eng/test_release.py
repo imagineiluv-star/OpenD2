@@ -124,7 +124,8 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotIn("secrets: inherit", release_yml)
         self.assertIn("OPEND2_ORIGINAL_SHA256SUMS: ${{ secrets.OPEND2_ORIGINAL_SHA256SUMS }}", release_yml)
         self.assertIn("inputs.release_tag != '' && inputs.release_tag != 'ci' && secrets.OPEND2_ORIGINAL_SHA256SUMS", m0)
-        for needle in ("umask 077", 'mktemp "$RUNNER_TEMP/', "trap 'rm -f", "unset ORIGINAL_SHA256SUMS_CONTENT"):
+        for needle in ("umask 077", 'mktemp "$RUNNER_TEMP/', "trap 'rm -f", "unset ORIGINAL_SHA256SUMS_CONTENT",
+                       "if: always()", 'rm -f "$RUNNER_TEMP"/original-sums.*'):
             self.assertIn(needle, m0)
 
     def test_candidate_names_reject_paths_and_shell_text(self):
