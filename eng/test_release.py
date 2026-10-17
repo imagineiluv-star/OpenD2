@@ -12,6 +12,10 @@ import release
 
 
 _ENV_KEYS = ("D2_DATA_PATH", "OPEND2_ORIGINAL_SHA256SUMS", "OPEND2_RELEASE_REHEARSAL")
+
+
+def _hermetic_cache():
+    os.environ["OPEND2_ASSET_CACHE"] = "none"  # never hash the developer's real extracted cache
 _saved_env = {}
 
 
@@ -20,10 +24,13 @@ def setUpModule():
     for key in _ENV_KEYS:
         if key in os.environ:
             _saved_env[key] = os.environ.pop(key)
+    _saved_env.setdefault("OPEND2_ASSET_CACHE", os.environ.get("OPEND2_ASSET_CACHE"))
+    _hermetic_cache()
 
 
 def tearDownModule():
-    os.environ.update(_saved_env)
+    os.environ.pop("OPEND2_ASSET_CACHE", None)
+    os.environ.update({k: v for k, v in _saved_env.items() if v is not None})
 
 
 class ReleaseTests(unittest.TestCase):
@@ -110,6 +117,15 @@ class ReleaseTests(unittest.TestCase):
         m0 = (release.ROOT / ".github/workflows/m0.yml").read_text()
         self.assertIn("SourceRevisionId=$GITHUB_SHA", m0)
         self.assertIn("VersionSuffix=${RELEASE_TAG#*-}", m0)
+
+    def test_hash_list_secret_is_scoped_to_tag_runs(self):
+        release_yml = (release.ROOT / ".github/workflows/release.yml").read_text()
+        m0 = (release.ROOT / ".github/workflows/m0.yml").read_text()
+        self.assertNotIn("secrets: inherit", release_yml)
+        self.assertIn("OPEND2_ORIGINAL_SHA256SUMS: ${{ secrets.OPEND2_ORIGINAL_SHA256SUMS }}", release_yml)
+        self.assertIn("inputs.release_tag != '' && inputs.release_tag != 'ci' && secrets.OPEND2_ORIGINAL_SHA256SUMS", m0)
+        for needle in ("umask 077", 'mktemp "$RUNNER_TEMP/', "trap 'rm -f", "unset ORIGINAL_SHA256SUMS_CONTENT"):
+            self.assertIn(needle, m0)
 
     def test_candidate_names_reject_paths_and_shell_text(self):
         for value in ("0.3", "v0.3", "v0.3.0-beta", "v01.2.3", "../v1.2.3-rc.1", "v1.2.3-rc.0", "v1.2.3-rc.1\n", "$(id)", "-bad", "ci"):

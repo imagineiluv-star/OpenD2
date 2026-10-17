@@ -177,7 +177,8 @@ def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
     if rehearsal is None:
         rehearsal = version == "ci" or os.environ.get("OPEND2_RELEASE_REHEARSAL") == "1"
     try:
-        guard = data_guard.scan([archive], data_guard.load_original_hashes(), require_original_hashes=not rehearsal)
+        guard = data_guard.scan([archive], data_guard.load_original_hashes(), require_original_hashes=not rehearsal,
+                                derived_hashes=data_guard.load_derived_hashes())
         guard.check()
     except BaseException:
         archive.unlink(missing_ok=True)
@@ -202,7 +203,7 @@ def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
     metadata = {"schema_version": 1, "version": version, "commit": commit, "platform": preset,
                 "file": archive.name, "bytes": archive.stat().st_size, "sha256": sha256(archive),
                 "headless_smoke": "PASS" if smoke else "NOT_RUN",
-                "data_guard": {"result": guard.result, "warnings": guard.warnings, "entries": guard.scanned, "original_hashes": len(guard.original)}}
+                "data_guard": {"result": guard.result, "warnings": guard.warnings, "asset_cache_hashes": len(guard.derived), "entries": guard.scanned, "original_hashes": len(guard.original)}}
     write_json(output / f"package-{preset}.json", metadata)
     mpq_kit(output, version, commit)
     return metadata

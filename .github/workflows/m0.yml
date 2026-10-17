@@ -10,6 +10,10 @@ on:
       release_tag:
         type: string
         default: ci
+    secrets:
+      OPEND2_ORIGINAL_SHA256SUMS:
+        description: "sha256sum-style list (<hash>  <basename>, no paths) of your own install; tag runs only"
+        required: false
 permissions:
   contents: read
 jobs:
@@ -74,13 +78,18 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.release_tag || 'ci' }}
           SOURCE_SHA: ${{ github.sha }}
-          ORIGINAL_SHA256SUMS_CONTENT: ${{ secrets.OPEND2_ORIGINAL_SHA256SUMS }}
+          # Injected only for tagged release calls; push/pull_request/"ci" runs never see it.
+          ORIGINAL_SHA256SUMS_CONTENT: ${{ inputs.release_tag != '' && inputs.release_tag != 'ci' && secrets.OPEND2_ORIGINAL_SHA256SUMS || '' }}
         shell: bash
         run: |
           if [ -n "$ORIGINAL_SHA256SUMS_CONTENT" ]; then
-            printf '%s\n' "$ORIGINAL_SHA256SUMS_CONTENT" > "$RUNNER_TEMP/original-SHA256SUMS"
-            export OPEND2_ORIGINAL_SHA256SUMS="$RUNNER_TEMP/original-SHA256SUMS"
+            umask 077
+            sums_file="$(mktemp "$RUNNER_TEMP/original-sums.XXXXXXXX")"
+            trap 'rm -f "$sums_file"' EXIT
+            printf '%s\n' "$ORIGINAL_SHA256SUMS_CONTENT" > "$sums_file"
+            export OPEND2_ORIGINAL_SHA256SUMS="$sums_file"
           fi
+          unset ORIGINAL_SHA256SUMS_CONTENT
           python eng/release.py pack --preset ${{ matrix.preset }} --smoke
       - name: Repeat Linux client initialization and audio teardown
         if: runner.os == 'Linux'

@@ -33,6 +33,7 @@ import sys
 import tarfile
 import unicodedata
 import zipfile
+import zlib
 
 BLOCKED_EXTENSIONS = (".mpq", ".wav", ".mp3", ".ogg", ".bik", ".smk", ".dc6", ".dcc", ".dt1", ".ds1", ".cof",
                       ".pl2", ".tbl", ".d2s", ".pal", ".pcx", ".fnt")
@@ -53,10 +54,13 @@ CONTEXT_PATTERN = re.compile(r"\.(txt|dat|bin)(?=$|[.\-])", re.I)
 UNINSPECTABLE_EXTENSIONS = (".7z", ".rar", ".zst", ".zstd", ".cab", ".lz4", ".lzma", ".lz", ".arj", ".ace", ".z",
                             ".sit", ".dmg", ".iso", ".wim", ".msi")
 UNINSPECTABLE_MAGIC = {b"7z\xbc\xaf\x27\x1c": "7z", b"Rar!\x1a\x07": "rar", b"\x28\xb5\x2f\xfd": "zstd",
-                       b"MSCF": "cab", b"\x04\x22\x4d\x18": "lz4", b"ISc(": "InstallShield cab"}
+                       b"MSCF": "cab", b"\x04\x22\x4d\x18": "lz4", b"ISc(": "InstallShield cab", b"LZIP": "lzip"}
 # lzma-alone ("]\0\0") and Unix compress ("\x1f\x9d") have 2-3 byte magics that hit ordinary files; those formats are
 # caught by extension (.lzma, .z) instead.
 MPQ_MAGIC = (b"MPQ\x1a", b"MPQ\x1b")
+RSCC_DEFLATE, RSCC_GZIP = 1, 3  # Godot Compression::Mode values the guard can open (zlib/gzip wrappers)
+DC6_TERMINATORS = (b"\xee\xee\xee\xee", b"\xcd\xcd\xcd\xcd")
+DERIVED_MIN_BYTES = 64  # tiny cache files (empty/1-pixel) would match unrelated payload files
 BIK_VERSIONS = b"bdfghik"
 KB2_VERSIONS = b"abdfghij"
 # A plausible install hash list has one entry per MPQ/executable (classic 1.11b: 7+ MPQs); fewer means a stub.
@@ -96,14 +100,43 @@ def load_original_hashes(sums=None, folder=None):
     return hashes
 
 
+def load_derived_hashes(cache=None):
+    """SHA-256 of files OpenD2 extracted into its asset cache (#108), read at run time and never committed.
+
+    Default ~/.cache/opend2/asset-cache (or OPEND2_ASSET_CACHE); OPEND2_ASSET_CACHE=none disables. Only folders with
+    a cache-manifest.json written by the p1-mpq converter count. Converted derivatives (PNG of a DC6, etc.) are hashed
+    as they sit in the cache; anything re-encoded afterwards cannot be recognised (documented residual risk).
+    """
+    setting = cache if cache is not None else os.environ.get("OPEND2_ASSET_CACHE")
+    if setting == "none":
+        return set()
+    root = Path(setting) if setting else Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "opend2" / "asset-cache"
+    hashes = set()
+    if not root.is_dir():
+        return hashes
+    for manifest in sorted(root.rglob("cache-manifest.json")):
+        try:
+            import json
+            if not str(json.loads(manifest.read_text(encoding="utf-8")).get("converter", "")).startswith("p1-mpq"):
+                continue
+        except (OSError, ValueError):
+            continue
+        for path in sorted(manifest.parent.rglob("*")):
+            if path.is_file() and not path.is_symlink() and path != manifest and path.stat().st_size >= DERIVED_MIN_BYTES:
+                with path.open("rb") as stream:
+                    hashes.add(hashlib.file_digest(stream, "sha256").hexdigest())
+    return hashes
+
+
 def normalize_name(name):
     name = unicodedata.normalize("NFKC", name).replace("\\", "/").lower()
     return "/".join(part.rstrip(" .~_") for part in name.split("/"))
 
 
 class Guard:
-    def __init__(self, original_hashes=(), warn_bytes=WARN_BYTES, max_total_bytes=MAX_TOTAL_BYTES):
+    def __init__(self, original_hashes=(), warn_bytes=WARN_BYTES, max_total_bytes=MAX_TOTAL_BYTES, derived_hashes=()):
         self.original = set(original_hashes)
+        self.derived = set(derived_hashes)
         self.warn_bytes = warn_bytes
         self.max_total_bytes = max_total_bytes
         self.expanded = 0
@@ -122,7 +155,7 @@ class Guard:
         parts = PurePosixPath(lowered).parts
         leaf = parts[-1] if parts else lowered
         joined = "/".join(parts) + "/"
-        data_path = "data/global/" in joined or "data/local/" in joined
+        data_path = bool(re.search(r"data[/_\-. ]?(global|local)[/_\-. ]", joined))
         folded = leaf.translate(CONFUSABLES)
         for pattern in (EXTENSION_PATTERN, CONTEXT_PATTERN):
             hit = pattern.search(folded)
@@ -136,25 +169,30 @@ class Guard:
         if context and (data_path or leaf[:context.start()] in D2_TABLE_NAMES):
             reasons.append(f"D2 table/palette .{context.group(1)}")
         if data_path:
-            reasons.append("data/global path" if "data/global/" in joined else "data/local path")
+            reasons.append("data/global path" if re.search(r"data[/_\-. ]?global", joined) else "data/local path")
         if leaf.endswith(UNINSPECTABLE_EXTENSIONS):
             reasons.append("compression/container format the guard cannot inspect")
         return reasons
 
-    def account(self, label, size, compressed=None):
+    def account(self, label, size, compressed=None, commit=True):
         if size > MAX_ENTRY_BYTES:
             raise Uninspectable(f"entry {label} expands to {size} bytes (limit {MAX_ENTRY_BYTES})")
         if compressed is not None and size > RATIO_FLOOR and size > MAX_RATIO * max(compressed, 1):
             raise Uninspectable(f"entry {label} compression ratio {size // max(compressed, 1)}:1 exceeds {MAX_RATIO}:1")
-        self.expanded += size
-        if self.expanded > self.max_total_bytes:
+        if self.expanded + size > self.max_total_bytes:
             raise Uninspectable(f"decompressed total exceeds {self.max_total_bytes} bytes")
+        if commit:
+            self.expanded += size
 
     def entry(self, label, data, depth=0):
         self.scanned += 1
         reasons = self.name_reasons(self.context.pop(label, label).split("!")[-1])
-        if self.original and hashlib.sha256(data).hexdigest() in self.original:
-            reasons.append("matches an original game file hash")
+        if self.original or self.derived:
+            digest = hashlib.sha256(data).hexdigest()
+            if digest in self.original:
+                reasons.append("matches an original game file hash")
+            if digest in self.derived:
+                reasons.append("matches an extracted asset-cache file hash")
         if self.mpq_offset(data) is not None:
             reasons.append("MPQ archive header")
         signature = self.media_signature(data)
@@ -173,7 +211,23 @@ class Guard:
         if (data[:3] == b"BIK" and data[3:4] and data[3:4] in BIK_VERSIONS) or \
                 (data[:3] == b"KB2" and data[3:4] and data[3:4] in KB2_VERSIONS):
             return "Bink video header"
+        if data[:4] == b"OggS" and data[4:5] == b"\0":
+            return "Ogg audio (OggS page)"
+        if Guard.looks_like_dc6(data):
+            return "DC6 sprite header"
         return None
+
+    @staticmethod
+    def looks_like_dc6(data):
+        # version 6, encoding 0, terminator EEEEEEEE/CDCDCDCD, 1-32 directions x 1-256 frames, and the first frame
+        # pointer lands right after the pointer table: five independent constraints, so false positives are negligible.
+        if len(data) < 28 or data[12:16] not in DC6_TERMINATORS:
+            return False
+        version, _flags, encoding, directions, frames = struct.unpack_from("<3I4xII", data, 0)
+        if version != 6 or encoding != 0 or not (1 <= directions <= 32 and 1 <= frames <= 256):
+            return False
+        table_end = 24 + 4 * directions * frames
+        return len(data) >= table_end + 4 and struct.unpack_from("<I", data, 24)[0] == table_end
 
     @staticmethod
     def mpq_offset(data):
@@ -196,6 +250,8 @@ class Guard:
                     raise Uninspectable(f"{kind} data cannot be inspected")
             if data[:4] == b"GDPC":
                 self.pck(label, data, depth + 1)
+            elif data[:4] == b"RSCC":
+                self.rscc(label, data, depth + 1)
             elif data[:2] == b"\x1f\x8b" or data[:3] == b"BZh" or data[:6] == b"\xfd7zXZ\x00" or data[257:262] == b"ustar":
                 self.tar_or_stream(label, data, depth + 1)
             elif zipfile.is_zipfile(io.BytesIO(data)):  # end-of-central-directory, so prefixed (SFX) zips count too
@@ -205,8 +261,14 @@ class Guard:
                             continue
                         if info.flag_bits & 1:
                             raise Uninspectable(f"encrypted zip entry {info.filename}")
+                        if (info.external_attr >> 16) & 0o170000 == 0o120000:
+                            self.scanned += 1
+                            self.blocked.append(f"{label}!{info.filename}: symlink entry inside zip")
+                            continue
                         self.account(info.filename, info.file_size, info.compress_size)
                         self.entry(f"{label}!{info.filename}", archive.read(info), depth + 1)
+            elif len(data) > 2 and data[0] == 0x78 and ((data[0] << 8) | data[1]) % 31 == 0:
+                self.zlib_stream(label, data, depth + 1)
             embedded = self.embedded_pck(data)
             if embedded is not None and data[:4] != b"GDPC":
                 self.pck(f"{label}#embedded.pck", embedded, depth + 1)
@@ -237,9 +299,51 @@ class Guard:
         with opener(io.BytesIO(data)) as stream:
             while chunk := stream.read(1024 * 1024):
                 out += chunk
-                self.account(label, len(out), len(data))
+                self.account(label, len(out), len(data), commit=False)
+        self.account(label, len(out), len(data))
         inner = re.sub(r"\.(gz|bz2|xz)$", "", label.split("!")[-1].split("/")[-1], flags=re.I) or "stream"
         self.entry(f"{label}!{inner}", bytes(out), depth)
+
+    def zlib_stream(self, label, data, depth):
+        """Raw zlib (RFC 1950) payloads are opened; a valid-looking header that doesn't inflate is just data."""
+        inflater, out = zlib.decompressobj(), bytearray()
+        for offset in range(0, len(data), 65536):
+            try:
+                out += inflater.decompress(data[offset:offset + 65536])
+            except zlib.error as error:
+                if offset == 0:
+                    return
+                raise Uninspectable(f"zlib stream does not inflate ({error})")
+            self.account(label, len(out), len(data), commit=False)
+        out += inflater.flush()
+        self.account(label, len(out), len(data))
+        self.entry(f"{label}!zlib", bytes(out), depth)
+
+    def rscc(self, label, data, depth):
+        """Godot compressed resource (FileAccessCompressed): deflate/gzip blocks are inflated and rescanned;
+        zstd/FastLZ/brotli blocks cannot be opened with the standard library, so they block (fail closed)."""
+        mode, block_size = struct.unpack_from("<II", data, 4)
+        if mode not in (RSCC_DEFLATE, RSCC_GZIP):
+            raise Uninspectable(f"Godot RSCC resource with compression mode {mode} cannot be inspected")
+        for total_format, header in (("<I", 16), ("<Q", 20)):
+            total, = struct.unpack_from(total_format, data, 12)
+            if block_size == 0:
+                break
+            blocks = total // block_size + 1
+            table_end = header + 4 * blocks
+            if table_end > len(data):
+                continue
+            sizes = struct.unpack_from(f"<{blocks}I", data, header)
+            if table_end + sum(sizes) != len(data):
+                continue
+            self.account(label, total, len(data))
+            out, cursor = bytearray(), table_end
+            for size in sizes:
+                out += zlib.decompress(data[cursor:cursor + size], 15 if mode == RSCC_DEFLATE else 31)
+                cursor += size
+            self.entry(f"{label}!rscc", bytes(out[:total]), depth)
+            return
+        raise Uninspectable("Godot RSCC block table is inconsistent")
 
     @staticmethod
     def embedded_pck(data):
@@ -322,10 +426,10 @@ class MissingOriginalHashes(GameDataError):
         self.blocked = [message]
 
 
-def scan(paths, original_hashes=(), require_original_hashes=False):
+def scan(paths, original_hashes=(), require_original_hashes=False, derived_hashes=()):
     if require_original_hashes and len(set(original_hashes)) < MIN_ORIGINAL_HASHES:
         raise MissingOriginalHashes(len(set(original_hashes)))
-    guard = Guard(original_hashes)
+    guard = Guard(original_hashes, derived_hashes=derived_hashes)
     for path in paths:
         guard.path(path)
     return guard
@@ -337,10 +441,11 @@ def main():
     parser.add_argument("--original-sums", type=Path)
     parser.add_argument("--original-dir", type=Path)
     parser.add_argument("--require-original-hashes", action="store_true")
+    parser.add_argument("--asset-cache", help="extracted asset cache to add to the blocklist ('none' disables)")
     args = parser.parse_args()
     try:
         guard = scan(args.paths, load_original_hashes(args.original_sums, args.original_dir),
-                     args.require_original_hashes)
+                     args.require_original_hashes, load_derived_hashes(args.asset_cache))
     except MissingOriginalHashes as error:
         print(f"DATA GUARD FAILED: {error}", file=sys.stderr)
         sys.exit(1)
@@ -353,7 +458,8 @@ def main():
         sys.exit(1)
     if not guard.original:
         print("WARNING no original hash list: renamed original files are only caught by name and MPQ header")
-    print(f"DATA GUARD {guard.result}: {guard.scanned} entries, {len(guard.original)} original hashes")
+    print(f"DATA GUARD {guard.result}: {guard.scanned} entries, {len(guard.original)} original hashes, "
+          f"{len(guard.derived)} asset-cache hashes")
 
 
 if __name__ == "__main__":

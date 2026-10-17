@@ -9,6 +9,8 @@ import sys
 import tarfile
 import tempfile
 import unittest
+import gzip
+import zlib
 from unittest import mock
 import zipfile
 
@@ -16,6 +18,10 @@ import data_guard
 import release
 
 _ENV_KEYS = ("D2_DATA_PATH", "OPEND2_ORIGINAL_SHA256SUMS", "OPEND2_RELEASE_REHEARSAL")
+
+
+def _hermetic_cache():
+    os.environ["OPEND2_ASSET_CACHE"] = "none"  # never hash the developer's real extracted cache
 _saved_env = {}
 
 
@@ -24,10 +30,13 @@ def setUpModule():
     for key in _ENV_KEYS:
         if key in os.environ:
             _saved_env[key] = os.environ.pop(key)
+    _saved_env.setdefault("OPEND2_ASSET_CACHE", os.environ.get("OPEND2_ASSET_CACHE"))
+    _hermetic_cache()
 
 
 def tearDownModule():
-    os.environ.update(_saved_env)
+    os.environ.pop("OPEND2_ASSET_CACHE", None)
+    os.environ.update({k: v for k, v in _saved_env.items() if v is not None})
 
 
 FAKE = b"synthetic fixture bytes, not game data"
@@ -251,7 +260,7 @@ class DataGuardTests(unittest.TestCase):
         output = self.root / "out"
         with mock.patch.object(data_guard, "WARN_BYTES", 10), mock.patch("builtins.print") as printed:
             original = data_guard.Guard.__init__.__defaults__
-            data_guard.Guard.__init__.__defaults__ = ((), 10, data_guard.MAX_TOTAL_BYTES)
+            data_guard.Guard.__init__.__defaults__ = ((), 10, data_guard.MAX_TOTAL_BYTES, ())
             try:
                 metadata = release.pack(self.export, output, "Linux", "v0.1.0", "a" * 40, rehearsal=True)
             finally:
@@ -308,6 +317,86 @@ class DataGuardTests(unittest.TestCase):
         (owned / "x").write_bytes(b"other")
         with mock.patch.dict(os.environ, {"D2_DATA_PATH": str(owned)}):
             self.assertEqual({"a" * 64}, data_guard.load_original_hashes(sums))
+    @staticmethod
+    def fake_dc6(directions=1, frames=2):
+        table_end = 24 + 4 * directions * frames
+        head = struct.pack("<3I", 6, 1, 0) + b"\xee" * 4 + struct.pack("<II", directions, frames)
+        return head + struct.pack("<I", table_end) + b"\0" * (4 * directions * frames - 4) + FAKE
+
+    @staticmethod
+    def fake_rscc(payload, mode=1, block=16):
+        blocks = [payload[i:i + block] for i in range(0, len(payload), block)]
+        if len(payload) % block == 0:
+            blocks.append(b"")
+        packed = [zlib.compress(b) if mode == 1 else gzip.compress(b, mtime=0) for b in blocks]
+        return b"RSCC" + struct.pack("<III", mode, block, len(payload)) + b"".join(struct.pack("<I", len(p)) for p in packed) + b"".join(packed)
+
+    def test_ogg_and_dc6_detected_by_content(self):
+        for name, data in (("music.res", b"OggS\0\x02" + FAKE), ("sprite.png", self.fake_dc6()),
+                           ("big.png", self.fake_dc6(8, 16))):
+            with self.subTest(name=name):
+                path = self.add(name, data)
+                self.assertTrue(any(item.startswith(name + ":") for item in self.blocked()), self.blocked())
+                path.unlink()
+        near = bytearray(self.fake_dc6())
+        near[24] ^= 1  # wrong first frame pointer: not a DC6
+        self.add("x.res", bytes(near))
+        self.add("y.res", b"OggSync notes")
+        self.assertEqual([], self.blocked())
+
+    def test_flattened_data_global_names(self):
+        for name in ("data_global_items_x.png", "Data-Global/x.res", "dataglobal/ui.res", "data_local_font.res"):
+            with self.subTest(name=name):
+                path = self.add(name, FAKE)
+                self.assertTrue(self.blocked(), name)
+                path.unlink()
+        self.add("metadata_globals.json", FAKE)
+        self.assertEqual([], self.blocked())
+
+    def test_raw_zlib_and_godot_rscc_are_opened(self):
+        self.add("wrapped.res", zlib.compress(b"RIFF\x10\0\0\0WAVE" + FAKE))
+        self.assertTrue(any("wrapped.res!zlib" in item for item in self.blocked()), self.blocked())
+        (self.export / "wrapped.res").unlink()
+        self.add("x\u009c.res", b"x\x9c not really zlib")  # valid header bytes, does not inflate: plain data
+        self.assertEqual([], self.blocked())
+        for mode in (1, 3):
+            with self.subTest(mode=mode):
+                (self.export / "OpenD2.pck").write_bytes(
+                    fake_pck({"res://snd.res": self.fake_rscc(b"MPQ\x1a" + FAKE * 3, mode)}))
+                self.assertTrue(any("snd.res!rscc: MPQ archive header" in item for item in self.blocked()), self.blocked())
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://snd.res": b"RSCC" + struct.pack("<III", 2, 16, 4)}))
+        self.assertTrue(any("compression mode 2" in item for item in self.blocked()), self.blocked())
+
+    def test_lzip_blocks_and_zip_symlink_entries_block(self):
+        self.add("a.res", b"LZIP\x01" + FAKE)
+        self.assertTrue(any(item.startswith("a.res:") for item in self.blocked()))
+        (self.export / "a.res").unlink()
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            info = zipfile.ZipInfo("link")
+            info.external_attr = (0o120777) << 16
+            archive.writestr(info, "../../data/x")
+        self.add("links.zip", buffer.getvalue())
+        self.assertTrue(any("links.zip!link: symlink entry" in item for item in self.blocked()), self.blocked())
+
+    def test_asset_cache_hashes_are_loaded_at_run_time(self):
+        cache = self.root / "cache" / "1.11b"
+        (cache / "png").mkdir(parents=True)
+        (cache / "cache-manifest.json").write_text('{"converter": "p1-mpq-2"}')
+        derived = b"converted sprite frame bytes (synthetic) " * 4
+        (cache / "png" / "d00_f000.png").write_bytes(derived)
+        (cache / "tiny.png").write_bytes(b"x")  # below the size floor: ignored
+        hashes = data_guard.load_derived_hashes(str(self.root / "cache"))
+        self.assertEqual({hashlib.sha256(derived).hexdigest()}, hashes)
+        other = self.root / "other"
+        other.mkdir()
+        (other / "cache-manifest.json").write_text('{"converter": "something-else"}')
+        (other / "f").write_bytes(derived)
+        self.assertEqual(set(), data_guard.load_derived_hashes(str(other)))
+        self.assertEqual(set(), data_guard.load_derived_hashes("none"))
+        self.add("icon2.png", derived)
+        found = data_guard.scan([self.export], derived_hashes=hashes).blocked
+        self.assertTrue(any("extracted asset-cache file hash" in item for item in found), found)
 
 
 if __name__ == "__main__":
