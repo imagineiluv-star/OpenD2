@@ -58,6 +58,7 @@ UNINSPECTABLE_MAGIC = {b"7z\xbc\xaf\x27\x1c": "7z", b"Rar!\x1a\x07": "rar", b"\x
 # lzma-alone ("]\0\0") and Unix compress ("\x1f\x9d") have 2-3 byte magics that hit ordinary files; those formats are
 # caught by extension (.lzma, .z) instead.
 MPQ_MAGIC = (b"MPQ\x1a", b"MPQ\x1b")
+RSCC_MAX_BLOCK = 1024 * 1024  # Godot's FileAccessCompressed default block is 4 KiB
 RSCC_DEFLATE, RSCC_GZIP = 1, 3  # Godot Compression::Mode values the guard can open (zlib/gzip wrappers)
 DC6_TERMINATORS = (b"\xee\xee\xee\xee", b"\xcd\xcd\xcd\xcd")
 DERIVED_MIN_BYTES = 64  # tiny cache files (empty/1-pixel) would match unrelated payload files
@@ -88,6 +89,27 @@ class ManifestError(ValueError):
     """The committed MPQ manifest exists but cannot be read; reported without a traceback."""
 
 
+class CacheError(ManifestError):
+    """An explicitly configured asset cache does not exist; reported (like ManifestError) without a traceback."""
+
+
+def _manifest_versions(document):
+    """Validate the manifest shape: {"versions": [{"files": {name: {"sha256": str}}}]}; anything else is corrupt."""
+    versions = document.get("versions", []) if isinstance(document, dict) else None
+    if not isinstance(versions, list) or not all(isinstance(v, dict) for v in versions):
+        raise ValueError("expected {\"versions\": [ ... ]}")
+    for version in versions:
+        files = version.get("files", {})
+        if not isinstance(files, dict):
+            raise ValueError("\"files\" must be an object of {name: {\"sha256\": ...}}")
+        for name, info in files.items():
+            if not isinstance(info, dict):
+                raise ValueError(f"file entry {name!r} must be an object")
+            if not isinstance(info.get("sha256", ""), str):
+                raise ValueError(f"file entry {name!r} has a non-string sha256")
+    return versions
+
+
 def manifest_hashes(path=None):
     """SHA-256 of the supported MPQs from the committed d2-mpq-manifest.json (#108; hashes only, no game data)."""
     import json
@@ -96,10 +118,7 @@ def manifest_hashes(path=None):
         return set()
     hashes = set()
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-        versions = document.get("versions", []) if isinstance(document, dict) else None
-        if not isinstance(versions, list) or not all(isinstance(v, dict) for v in versions):
-            raise ValueError("expected {\"versions\": [ ... ]}")
+        versions = _manifest_versions(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, UnicodeDecodeError, ValueError) as error:
         raise ManifestError(f"cannot read the MPQ hash manifest {path}: {error}. Restore it from git "
                             f"(git checkout -- {path.name}) before packaging.") from None
@@ -107,7 +126,7 @@ def manifest_hashes(path=None):
         if version.get("placeholder"):
             continue
         for info in version.get("files", {}).values():
-            digest = str(info.get("sha256", "")).lower()
+            digest = info.get("sha256", "").lower()
             if re.fullmatch(r"[0-9a-f]{64}", digest):
                 hashes.add(digest)
     return hashes
@@ -161,6 +180,10 @@ def cache_roots(cache=None):
     if setting == "none":
         return []
     if setting:
+        if not Path(setting).is_dir():
+            # A typo here would silently drop every asset-cache hash; an explicit path must exist.
+            raise CacheError(f"asset cache {setting} (from {'--asset-cache' if cache is not None else 'the environment'}) "
+                             f"is not a directory; fix the path or set {CACHE_VARIABLE}=none")
         return [Path(setting)]
     legacy = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "opend2" / "asset-cache"
     return [app_cache_root(), legacy]
@@ -367,15 +390,42 @@ class Guard:
                     elif not member.isdir():
                         self.entry(name, b"", depth)
             return
-        opener = {b"\x1f\x8b": lambda raw: gzip.GzipFile(fileobj=raw), b"BZ": bz2.BZ2File, b"\xfd7": lzma.LZMAFile}[data[:2]]
-        out = bytearray()
-        with opener(io.BytesIO(data)) as stream:
-            while chunk := stream.read(1024 * 1024):
-                out += chunk
-                self.account(label, len(out), len(data), commit=False)
+        out, trailer = bytearray(), b""
+        if data[:2] == b"\x1f\x8b":
+            with gzip.GzipFile(fileobj=io.BytesIO(data)) as stream:  # gzip itself rejects trailing garbage
+                while chunk := stream.read(1024 * 1024):
+                    out += chunk
+                    self.account(label, len(out), len(data), commit=False)
+        else:
+            trailer = self.multistream(label, data, out)
         self.account(label, len(out), len(data))
         inner = re.sub(r"\.(gz|bz2|xz)$", "", label.split("!")[-1].split("/")[-1], flags=re.I) or "stream"
         self.entry(f"{label}!{inner}", bytes(out), depth)
+        if trailer:  # BZ2File/LZMAFile silently drop bytes after the last stream; they ship too
+            self.entry(f"{label}!{'bz2' if data[:2] == b'BZ' else 'xz'}-trailer", trailer, depth)
+
+    def multistream(self, label, data, out):
+        """Inflate concatenated bz2/xz streams into out; return any bytes after the last one."""
+        bz = data[:2] == b"BZ"
+        magic = b"BZh" if bz else b"\xfd7zXZ\0"
+        rest, first = data, True
+        while first or rest.startswith(magic):
+            first = False
+            decompressor = bz2.BZ2Decompressor() if bz else lzma.LZMADecompressor(lzma.FORMAT_XZ)
+            position = 0
+            while not decompressor.eof:
+                if decompressor.needs_input:
+                    if position >= len(rest):
+                        raise Uninspectable("compressed stream is truncated")
+                    out += decompressor.decompress(rest[position:position + 65536], 1024 * 1024)
+                    position += 65536
+                else:
+                    out += decompressor.decompress(b"", 1024 * 1024)
+                self.account(label, len(out), len(data), commit=False)
+            rest = decompressor.unused_data + rest[position:]
+            if not bz:
+                rest = rest.lstrip(b"\0")  # xz stream padding
+        return rest
 
     KNOWN_MAGIC = (b"\x7fELF", b"MZ", b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa", b"\xca\xfe\xba\xbe",
                    b"\x89PNG", b"RSRC", b"ECFG", b"GST2", b"GDST", b"RIFF", b"\xff\xd8\xff", b"GIF8", b"BSJB", b"wOF")
@@ -387,27 +437,28 @@ class Guard:
 
     def raw_deflate(self, label, data, depth):
         """A file that is one complete raw DEFLATE stream (no header) is inflated and rescanned. Ordinary binaries
-        fail within the first bytes or stop long before their end, so they are left alone."""
+        fail within the first bytes or stop long before their end, so they are left alone. Streams that inflate
+        far beyond their input are held to the same ratio limit as zlib instead of being skipped."""
         if len(data) < 64:
             return False
-        inflater, out = zlib.decompressobj(-15), bytearray()
+        inflater, out, position = zlib.decompressobj(-15), bytearray(), 4096
         try:
             out += inflater.decompress(data[:4096], 1 << 20)
-            if inflater.unconsumed_tail or (inflater.eof and len(inflater.unused_data) > 16
-                                            and not self.substantial(data, inflater, out)):
-                return False
-            for offset in range(4096, len(data), 65536):
-                if inflater.eof:
+            while not inflater.eof:
+                if inflater.unconsumed_tail:
+                    out += inflater.decompress(inflater.unconsumed_tail, 1 << 20)
+                elif position < len(data):
+                    out += inflater.decompress(data[position:position + 65536], 1 << 20)
+                    position += 65536
+                else:
                     break
-                out += inflater.decompress(data[offset:offset + 65536])
                 self.account(label, len(out), len(data), commit=False)
-            out += inflater.flush()
         except zlib.error:
             return False
         if not inflater.eof or not out:
             return False
-        trailer = inflater.unused_data
-        if len(trailer) > 16 and not self.substantial(data, inflater, out):
+        trailer = inflater.unused_data + data[position:]
+        if len(trailer) > 16 and not self.substantial(len(data) - len(trailer), len(out)):
             return False
         self.account(label, len(out), len(data))
         self.entry(f"{label}!deflate", bytes(out), depth)
@@ -416,11 +467,11 @@ class Guard:
         return True
 
     @staticmethod
-    def substantial(data, inflater, out):
-        """A raw DEFLATE stream followed by other bytes only counts when the stream itself is long (>= 1 KiB in and
-        out, allowing stored blocks); short accidental "streams" at the start of ordinary binaries must not trigger rescans."""
-        consumed = len(data) - len(inflater.unused_data)
-        return consumed >= 1024 and len(out) * 10 >= consumed * 9
+    def substantial(consumed, produced):
+        """A raw DEFLATE stream followed by other bytes only counts when it cannot be an accident at the start of an
+        ordinary binary: long (>= 1 KiB in, output at least 90% of input, allowing stored blocks), or short but
+        inflating at least 16x to >= 2 KiB (back-references only resolve inside genuine compressed data)."""
+        return (consumed >= 1024 and produced * 10 >= consumed * 9) or (produced >= 2048 and produced >= 16 * consumed)
 
     def inner_pcks(self, label, data, depth):
         """A PCK at an arbitrary offset (not Godot's trailer layout): parse every plausible GDPC header found."""
@@ -460,6 +511,8 @@ class Guard:
         mode, block_size = struct.unpack_from("<II", data, 4)
         if mode not in (RSCC_DEFLATE, RSCC_GZIP):
             raise Uninspectable(f"Godot RSCC resource with compression mode {mode} cannot be inspected")
+        if block_size > RSCC_MAX_BLOCK:  # Godot writes 4 KiB blocks; a huge one is a bomb or a hand-made container
+            raise Uninspectable(f"Godot RSCC block size {block_size} exceeds {RSCC_MAX_BLOCK}")
         for total_format, header in (("<I", 16), ("<Q", 20)):
             total, = struct.unpack_from(total_format, data, 12)
             if block_size == 0:
@@ -472,7 +525,7 @@ class Guard:
             if table_end + sum(sizes) != len(data):
                 continue
             out, cursor = bytearray(), table_end
-            for size in sizes:
+            for number, size in enumerate(sizes):
                 # Each block inflates to at most block_size bytes; anything more is a bomb or hidden payload.
                 inflater = zlib.decompressobj(15 if mode == RSCC_DEFLATE else 31)
                 chunk = inflater.decompress(data[cursor:cursor + size], block_size + 1)
@@ -483,6 +536,8 @@ class Guard:
                     raise Uninspectable("Godot RSCC block is truncated or oversized")
                 out += chunk
                 self.account(label, len(out), len(data), commit=False)
+                if inflater.unused_data:  # Godot never pads blocks; bytes after a block's stream ship too
+                    self.entry(f"{label}!rscc-block{number}-trailer", inflater.unused_data, depth)
                 cursor += size
             if len(out) != total:
                 raise Uninspectable(f"Godot RSCC inflates to {len(out)} bytes, header declares {total}")
