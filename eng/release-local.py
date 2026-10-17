@@ -268,7 +268,7 @@ def assemble(args, version, tag, presets, head, output, log, build_root):
         "schema_version": 1, "version": tag, "commit": head, "date": date, "phase": phase(version),
         "rehearsal": args.rehearsal, "toolchain": toolchain, "packages": packages,
         "data_guard": {"result": guard.result, "warnings": guard.warnings, "entries": guard.scanned, "original_hashes": len(originals),
-                       "asset_cache_hashes": len(derived)}})
+                       "asset_cache_hashes": len(derived), "unknown_formats": guard.unknown}})
     notes = (ROOT / "docs/release/NOTES_TEMPLATE.md").read_text(encoding="utf-8").format(
         tag=tag, date=date, commit=head, phase=phase(version),
         summary=("**REHEARSAL BUILD – not a published release.**\n\n" if args.rehearsal else "") +
