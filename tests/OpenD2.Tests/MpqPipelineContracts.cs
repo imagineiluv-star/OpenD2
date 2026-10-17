@@ -85,6 +85,8 @@ internal static class MpqPipelineContracts
 			var files = new Dictionary<string, byte[]>
 			{
 				["data\\global\\palette\\act1\\pal.dat"] = PaletteBytes(),
+				["data\\global\\palette\\units\\pal.dat"] = PaletteBytes().Select(b => (byte)(b ^ 0x0f)).ToArray(),
+				["data\\global\\tiles\\act1\\town\\floor.dc6"] = LegacyFormatContracts.Dc6(),
 				["data\\global\\excel\\levels.txt"] = Encoding.Latin1.GetBytes("Name\tId\r\nRogue Encampment\t1\r\n"),
 				["data\\global\\ui\\panel\\sample.dc6"] = LegacyFormatContracts.Dc6(),
 				["data\\global\\ui\\panel\\broken.dc6"] = [1, 2, 3],
@@ -93,9 +95,16 @@ internal static class MpqPipelineContracts
 			string cache = Path.Combine(root, "asset-cache", "1.0t");
 			using var source = new MemorySource(files);
 			var first = AssetCache.Build(source, "fingerprint-1", cache);
-			Check(first.Rebuilt && first.Palettes == 1 && first.Tables == 1 && first.PngFiles == 1 && first.Errors.Count == 1 && first.Errors[0].Contains("broken.dc6"), "first build");
+			Check(first.Rebuilt && first.Palettes == 2 && first.Tables == 1 && first.PngFiles == 2 && first.Errors.Count == 1 && first.Errors[0].Contains("broken.dc6"), "first build");
 			Check(File.Exists(Path.Combine(cache, "png", "data", "global", "ui", "panel", "sample.dc6", "d00_f000.png")), "dc6 png");
 			Check(File.Exists(Path.Combine(cache, "palettes", "act1.png")), "palette swatch");
+			// P2-2: no fixed act1; UI art converts with units, act tiles with their act (palette is part of the cache signature).
+			string manifestText = File.ReadAllText(Path.Combine(cache, AssetCache.ManifestName));
+			Check(manifestText.Contains("\"units\": ") && manifestText.Contains("\"act1\": 1") && manifestText.Contains("auto:" + ScreenPalettes.RulesVersion), "per-resource PNG palettes " + manifestText);
+			var uiPng = PngReader.DecodeRgb(File.ReadAllBytes(Path.Combine(cache, "png", "data", "global", "ui", "panel", "sample.dc6", "d00_f000.png")));
+			var tilePng = PngReader.DecodeRgb(File.ReadAllBytes(Path.Combine(cache, "png", "data", "global", "tiles", "act1", "town", "floor.dc6", "d00_f000.png")));
+			Check(!uiPng.Rgb.AsSpan().SequenceEqual(tilePng.Rgb), "same frame, different palettes");
+			Check(new AssetCacheOptions { PngPalette = "act1" }.Signature != new AssetCacheOptions().Signature, "palette in cache key");
 			Check(File.ReadAllText(Path.Combine(cache, "tables", "levels.tsv")) == "Name\tId\nRogue Encampment\t1\n", "normalized table");
 			Check(AssetCache.TablePath(cache, "data\\global\\excel\\levels.txt") != AssetCache.TablePath(cache, "data\\global\\excel\\expansion\\levels.txt")
 				&& AssetCache.TablePath(cache, "data\\global\\excel\\expansion\\levels.txt").EndsWith(Path.Combine("tables", "expansion", "levels.tsv")), "same-named tables do not collide");
@@ -152,7 +161,7 @@ internal static class MpqPipelineContracts
 			foreach (var name in new[] { "panel.dc6", "com10", "conin", "a.b" }) Check(!AssetCache.IsUnsafeSegment(name), "safe " + name);
 			try { AssetCache.RawPath(root, "data\\global\\ui.\\a.dc6"); throw new Exception("trailing dot accepted"); } catch (ArgumentException) { }
 			try { AssetCache.RawPath(root, "data\\global\\CONOUT$\\a.dc6"); throw new Exception("CONOUT$ accepted"); } catch (ArgumentException) { }
-			var files = new Dictionary<string, byte[]> { ["data\\global\\palette\\act1\\pal.dat"] = PaletteBytes() };
+			var files = new Dictionary<string, byte[]> { ["data\\global\\palette\\units\\pal.dat"] = PaletteBytes() };
 			for (int i = 0; i < 5; i++) files[$"data\\global\\ui\\p{i}.dc6"] = LegacyFormatContracts.Dc6();
 			string cache = Path.Combine(root, "png-cap");
 			var capped = AssetCache.Build(new MemorySource(files), "fp", cache, new AssetCacheOptions { MaxPngFiles = 3 });

@@ -45,6 +45,7 @@ try
 	GodotWindowContracts.Run(Test);
 	RealDataShapeContracts.Run(Test);
 	Pl2FontContracts.Run(Test);
+	ScreenPaletteContracts.Run(Test);
 	GenuineDataContracts.Run(Test);
 	SimulationContracts.Run(Test);
 	CombatContracts.Run(Test);

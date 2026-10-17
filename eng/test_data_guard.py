@@ -21,7 +21,7 @@ _ENV_KEYS = ("D2_DATA_PATH", "OPEND2_ORIGINAL_SHA256SUMS", "OPEND2_RELEASE_REHEA
 
 
 def _hermetic_cache():
-    os.environ["OPEND2_ASSET_CACHE"] = "none"  # never hash the developer's real extracted cache
+    os.environ["D2_ASSET_CACHE"] = "none"  # never hash the developer's real extracted cache
 _saved_env = {}
 
 
@@ -30,7 +30,7 @@ def setUpModule():
     for key in _ENV_KEYS:
         if key in os.environ:
             _saved_env[key] = os.environ.pop(key)
-    _saved_env.setdefault("OPEND2_ASSET_CACHE", os.environ.get("OPEND2_ASSET_CACHE"))
+    _saved_env.setdefault("D2_ASSET_CACHE", os.environ.get("D2_ASSET_CACHE"))
     _hermetic_cache()
     global _saved_manifest
     _saved_manifest = data_guard.MPQ_MANIFEST
@@ -39,7 +39,7 @@ def setUpModule():
 
 def tearDownModule():
     data_guard.MPQ_MANIFEST = _saved_manifest
-    os.environ.pop("OPEND2_ASSET_CACHE", None)
+    os.environ.pop("D2_ASSET_CACHE", None)
     os.environ.update({k: v for k, v in _saved_env.items() if v is not None})
 
 
@@ -91,7 +91,8 @@ class DataGuardTests(unittest.TestCase):
                 path = self.export / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(FAKE)
-                self.assertTrue(any(item.startswith(name) for item in self.blocked()), self.blocked())
+                # Case-insensitive file systems (Windows/macOS) reuse the data/global folder an earlier subtest made.
+                self.assertTrue(any(item.lower().startswith(name.lower()) for item in self.blocked()), self.blocked())
                 path.unlink()
 
     def test_inside_pck_including_godot_import_names(self):
@@ -473,6 +474,52 @@ class DataGuardTests(unittest.TestCase):
         guard = data_guard.scan([self.export])
         self.assertEqual([], guard.blocked)
         self.assertEqual(["mystery.res"], [u for u in guard.unknown if "mystery" in u or "lib.so" in u])
+    def test_trailing_bytes_after_zlib_and_raw_deflate_are_scanned(self):
+        ogg = b"OggS\0\x02" + FAKE
+        for name, tail in (("t1.res", ogg), ("t2.res", gzip.compress(b"MPQ\x1a" + FAKE, mtime=0)),
+                           ("t3.res", zlib.compress(b"MPQ\x1a" + FAKE))):
+            with self.subTest(name=name):
+                path = self.add(name, zlib.compress(b"harmless text " * 20) + tail)
+                self.assertTrue(any(item.startswith(name + "!zlib-trailer") for item in self.blocked()), self.blocked())
+                path.unlink()
+        raw = zlib.compressobj(9, zlib.DEFLATED, -15)
+        body = b"".join(hashlib.sha256(bytes([i])).digest() for i in range(64))  # incompressible: >= 1 KiB stream
+        self.add("t4.res", raw.compress(body) + raw.flush() + ogg)
+        self.assertTrue(any(item.startswith("t4.res!deflate-trailer") for item in self.blocked()), self.blocked())
+
+    def test_corrupt_mpq_manifest_gives_a_clear_error(self):
+        broken = self.root / "d2-mpq-manifest.json"
+        for text in ("{ not json", "", "[1, 2]"):
+            with self.subTest(text=text):
+                broken.write_text(text)
+                with self.assertRaises(data_guard.ManifestError) as caught:
+                    data_guard.manifest_hashes(broken)
+                self.assertIn("cannot read the MPQ hash manifest", str(caught.exception))
+        result = subprocess.run([sys.executable, "-c", "import sys, data_guard; from pathlib import Path; "
+                                 f"data_guard.MPQ_MANIFEST = Path({str(broken)!r}); sys.argv = ['g', {str(self.export)!r}]; "
+                                 "data_guard.main()"], cwd=Path(data_guard.__file__).parent, capture_output=True, text=True,
+                                env=dict(os.environ, D2_ASSET_CACHE="none"))
+        self.assertEqual(1, result.returncode)
+        self.assertIn("DATA GUARD FAILED: cannot read the MPQ hash manifest", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_cache_variable_matches_the_app_with_deprecated_alias(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            for key in ("D2_ASSET_CACHE", "OPEND2_ASSET_CACHE"):
+                os.environ.pop(key, None)
+            roots = data_guard.cache_roots()
+            self.assertEqual(data_guard.app_cache_root(), roots[0])
+            self.assertTrue(str(roots[0]).endswith(os.path.join("OpenD2", "asset-cache")))
+            os.environ["OPEND2_ASSET_CACHE"] = str(self.root / "old")
+            with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+                self.assertEqual([self.root / "old"], data_guard.cache_roots())
+            self.assertIn("deprecated", err.getvalue())
+            os.environ["D2_ASSET_CACHE"] = str(self.root / "new")
+            self.assertEqual([self.root / "new"], data_guard.cache_roots())
+            os.environ["D2_ASSET_CACHE"] = "none"
+            self.assertEqual([], data_guard.cache_roots())
+        source = (Path(data_guard.__file__).resolve().parents[1] / "src/OpenD2.Assets/D2DataPaths.cs").read_text()
+        self.assertIn(f'CachePathVariable = "{data_guard.CACHE_VARIABLE}"', source)
 
 
 if __name__ == "__main__":

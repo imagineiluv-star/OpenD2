@@ -66,12 +66,16 @@ public sealed record AssetCacheOptions
 	public IReadOnlySet<string> RawKinds { get; init; } = new HashSet<string> { "palette", "excel_txt", "text_tbl", "dc6", "dcc", "cof", "dt1", "ds1" };
 	/// <summary>Image kinds converted to PNG. DCC is opt-in: decoding every direction of every DCC is slow and large.</summary>
 	public IReadOnlySet<string> PngKinds { get; init; } = new HashSet<string> { "dc6" };
-	public string PngPalette { get; init; } = "act1";
+	/// <summary>
+	/// Palette for PNG conversion. Null (default) picks one per resource with <see cref="ScreenPalettes.ForAssetPath"/>
+	/// (act tiles use their act, front-end and UI art units/fechar/loading/sky); a name forces that palette for every PNG.
+	/// </summary>
+	public string? PngPalette { get; init; }
 	public Func<string, bool>? Include { get; init; }
 	/// <summary>Total PNG output caps; once either is reached no further PNGs are written and the result reports PngCapped.</summary>
 	public int MaxPngFiles { get; init; } = 250_000;
 	public long MaxPngBytes { get; init; } = 4L * 1024 * 1024 * 1024;
-	public string Signature => $"{string.Join(',', RawKinds.Order(StringComparer.Ordinal))}|{string.Join(',', PngKinds.Order(StringComparer.Ordinal))}|{PngPalette}|{MaxPngFiles}|{MaxPngBytes}";
+	public string Signature => $"{string.Join(',', RawKinds.Order(StringComparer.Ordinal))}|{string.Join(',', PngKinds.Order(StringComparer.Ordinal))}|{PngPalette ?? "auto:" + ScreenPalettes.RulesVersion}|{MaxPngFiles}|{MaxPngBytes}";
 }
 
 public sealed record AssetCacheResult(bool Rebuilt, int Resources, int PngFiles, int Tables, int Palettes, IReadOnlyList<string> Errors)
@@ -84,7 +88,8 @@ public sealed record AssetCacheResult(bool Rebuilt, int Resources, int PngFiles,
 // source fingerprint (the archives' SHA-256), converter version or options change.
 public static class AssetCache
 {
-	public const string ConverterVersion = "p1-mpq-3";
+	// p1-mpq-4: PNG palette chosen per resource (ScreenPalettes) instead of a fixed act1.
+	public const string ConverterVersion = "p1-mpq-4";
 	public const string ManifestName = "cache-manifest.json";
 	private const int MaxErrors = 200;
 
@@ -158,8 +163,16 @@ public static class AssetCache
 		var errors = new List<string>(); int resources = 0, pngs = 0, tables = 0, palettes = 0; long pngBytes = 0; bool capped = false;
 		try
 		{
-			Palette? pngPalette = null;
-			if (options.PngKinds.Count > 0 && source.TryRead($"data\\global\\palette\\{options.PngPalette}\\pal.dat", 768, out var pal)) pngPalette = Palette.Parse(pal);
+			string? forced = options.PngPalette is null ? null : ScreenPalettes.Validate(options.PngPalette);
+			var pngPalettes = new Dictionary<string, Palette?>(StringComparer.Ordinal); var pngPaletteUse = new SortedDictionary<string, int>(StringComparer.Ordinal);
+			Palette? PngPaletteFor(string resource)
+			{
+				string n = forced ?? ScreenPalettes.ForAssetPath(resource);
+				if (!pngPalettes.TryGetValue(n, out var p))
+					pngPalettes[n] = p = source.TryRead(ScreenPalettes.DatPath(n), 768, out var pal) ? Palette.Parse(pal) : null;
+				if (p is not null) pngPaletteUse[n] = pngPaletteUse.GetValueOrDefault(n) + 1;
+				return p;
+			}
 			bool PngBudget()
 			{
 				if (pngs < options.MaxPngFiles && pngBytes < options.MaxPngBytes) return true;
@@ -200,7 +213,7 @@ public static class AssetCache
 							string text = Encoding.Latin1.GetString(data).Replace("\r\n", "\n");
 							Write(TablePath(staging, name), Encoding.UTF8.GetBytes(text));
 							tables++; break;
-						case "dc6" when png && pngPalette is not null:
+						case "dc6" when png && PngPaletteFor(name) is { } pngPalette:
 							var image = Dc6Image.Parse(data);
 							for (int d = 0; d < image.Directions; d++)
 								for (int f = 0; f < image.FramesPerDirection; f++)
@@ -210,7 +223,7 @@ public static class AssetCache
 									if (!PngBudget() || !WritePng(PngPath(staging, name, d, f), PngWriter.EncodeIndexed(frame.Width, frame.Height, frame.Indices, pngPalette, frame.Opacity))) break;
 								}
 							break;
-						case "dcc" when png && pngPalette is not null:
+						case "dcc" when png && PngPaletteFor(name) is { } dccPalette:
 							var animation = DccAnimation.Parse(data);
 							for (int d = 0; d < animation.Directions; d++)
 							{
@@ -218,7 +231,7 @@ public static class AssetCache
 								for (int f = 0; f < frames.Count; f++)
 								{
 									if (frames[f].Width == 0 || frames[f].Height == 0) continue;
-									if (!PngBudget() || !WritePng(PngPath(staging, name, d, f), PngWriter.EncodeIndexed(frames[f].Width, frames[f].Height, frames[f].Indices, pngPalette))) break;
+									if (!PngBudget() || !WritePng(PngPath(staging, name, d, f), PngWriter.EncodeIndexed(frames[f].Width, frames[f].Height, frames[f].Indices, dccPalette))) break;
 								}
 							}
 							break;
@@ -230,7 +243,7 @@ public static class AssetCache
 				}
 			}
 			var manifest = new { converter = ConverterVersion, source = sourceFingerprint, options = options.Signature, built = DateTimeOffset.UtcNow,
-				resources, pngs, pngBytes, pngCapped = capped, tables, palettes, errors };
+				resources, pngs, pngBytes, pngCapped = capped, tables, palettes, pngPalettes = pngPaletteUse, errors };
 			File.WriteAllText(Path.Combine(staging, ManifestName), JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
 			RequireReplaceable(cacheDirectory); // re-check under the lock right before deleting
 			if (Directory.Exists(cacheDirectory)) Directory.Delete(cacheDirectory, recursive: true);

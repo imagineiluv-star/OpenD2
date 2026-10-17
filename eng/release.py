@@ -143,15 +143,17 @@ def source_date_epoch():
     return max(int(os.environ.get("SOURCE_DATE_EPOCH", "1767225600")), 315532800)  # ZIP cannot go before 1980
 
 
-def reproducible_tar(stage, archive):
-    """Same bytes for the same staged tree: sorted entries, fixed owner and mtime, gzip header without time/name."""
+def reproducible_tar(stage, archive, executables=()):
+    """Same bytes for the same staged tree: sorted entries, fixed owner and mtime, gzip header without time/name.
+    executables: arcnames forced to 0755 (Windows has no execute bit to read)."""
     epoch = source_date_epoch()
 
     def normalize(info):
         info.uid = info.gid = 0
         info.uname = info.gname = ""
         info.mtime = epoch
-        info.mode = 0o755 if info.isdir() or info.mode & 0o111 else 0o644
+        executable = info.mode & 0o111 or info.name in executables
+        info.mode = 0o755 if info.isdir() or executable else 0o644
         return info
 
     with archive.open("wb") as raw, gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed, \
@@ -193,7 +195,8 @@ def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
         executable = source / ("OpenD2.x86_64" if preset == "Linux" else "OpenD2.exe")
         if not executable.is_file() or not list(source.glob("*.pck")):
             raise ValueError("Export must include its executable and PCK")
-        if preset == "Linux" and not executable.stat().st_mode & 0o111:
+        # NTFS has no execute bit: on Windows the Linux executable (and native .so files) get 0755 in the tar instead.
+        if preset == "Linux" and os.name != "nt" and not executable.stat().st_mode & 0o111:
             raise ValueError("Linux executable has no execute permission")
         with tempfile.TemporaryDirectory(prefix="opend2-package-") as temporary:
             stage = Path(temporary) / "payload"
@@ -201,7 +204,9 @@ def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
             for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
                 shutil.copyfile(ROOT / name, stage / name)
             if preset == "Linux":
-                reproducible_tar(stage, archive)
+                forced = () if os.name != "nt" else {executable.name, *(p.relative_to(stage).as_posix()
+                                                                       for p in stage.rglob("*.so*") if p.is_file())}
+                reproducible_tar(stage, archive, forced)
             else:
                 reproducible_zip(stage, archive)
     # Fail closed on game data anywhere in the archive, including nested archives and PCK file tables.
@@ -412,4 +417,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except data_guard.ManifestError as error:
+        raise SystemExit(f"FAILED: {error}") from None

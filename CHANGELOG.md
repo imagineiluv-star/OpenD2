@@ -15,13 +15,9 @@ in a MINOR release but must be listed here.
 
 ### Added
 
-- Root `VERSION` file as the single version source for MSBuild (`VersionPrefix`, `InformationalVersion`), Godot
-  `config/version` (`eng/version.py`) and release tags; `eng/release.py check-version` accepts stable tags and fails
-  when the tag differs from `VERSION`.
-- Release game-data guard (`eng/data_guard.py`): extensions, `data/global/` paths, run-time original hashes, nested
-  archives and Godot PCK contents; `eng/release.py pack` refuses a payload that fails it.
-- Local release script `eng/release-local.py` (no CI) with reproducible archives, `SHA256SUMS`, manifest and
-  `docs/release/NOTES_TEMPLATE.md`; this changelog.
+- Per-screen and per-act palette rules (auto palette), PL2 light (0-31) and 25/50/75/additive/multiplicative blend in
+  the original-mode render path, `--gamma` ramp; asset cache PNG palette chosen per resource instead of fixed act1
+  (P2-2).
 
 ## [0.1.0] - Unreleased
 
@@ -30,6 +26,13 @@ their synthetic-preview and online work (through #102) is the baseline this vers
 
 ### Added
 
+- Root `VERSION` file as the single version source for MSBuild (`VersionPrefix`, `InformationalVersion`), Godot
+  `config/version` (`eng/version.py`) and release tags; `eng/release.py check-version` accepts stable tags and fails
+  when the tag differs from `VERSION`.
+- Release game-data guard (`eng/data_guard.py`): extensions, `data/global/` paths, run-time original hashes, nested
+  archives and Godot PCK contents; `eng/release.py pack` refuses a payload that fails it.
+- Local release script `eng/release-local.py` (no CI) with reproducible archives, `SHA256SUMS`, manifest and
+  `docs/release/NOTES_TEMPLATE.md`; this changelog.
 - P1 MPQ migration pipeline: `D2_DATA_PATH`, per-version MPQ SHA-256 manifest, extraction/PNG cache outside the
   repository, cache-aware asset reads, synthetic and genuine-data tests (#108).
 - P1 resource validation across genuine 1.11b data, with DS1/COF/DC6/TXT shape fixes it found (#109).

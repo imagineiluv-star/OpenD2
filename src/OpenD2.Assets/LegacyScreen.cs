@@ -78,8 +78,18 @@ public sealed class LegacyFrameBuffer
 	public void Clear() { Array.Clear(Indices); Array.Clear(Coverage); }
 
 	/// <summary>Draws a decoded frame with its top-left corner at (x, y), clipped to the surface. Transparent pixels are skipped.</summary>
-	public void Draw(Dc6Frame frame, int x, int y)
+	public void Draw(Dc6Frame frame, int x, int y) => Draw(frame, x, y, LegacyDrawEffect.None, null);
+
+	/// <summary>
+	/// Draws with the original's 8-bit compositing: the source index goes through the PL2 light table, then through the
+	/// blend table against the destination index (an uncovered destination counts as index 0, black). Light and blend
+	/// need <paramref name="pl2"/>; a plain opaque draw does not.
+	/// </summary>
+	public void Draw(Dc6Frame frame, int x, int y, LegacyDrawEffect effect, Pl2Palette? pl2)
 	{
+		if (effect.NeedsPl2 && pl2 is null) throw new ArgumentException("Light and blend effects need the palette's pal.pl2.");
+		if (effect.Light is { } level && (uint)level >= Pl2Palette.LightLevels) throw new ArgumentOutOfRangeException(nameof(effect), "Light level must be 0-31.");
+		bool blend = effect.Blend != LegacyBlendMode.Opaque; var mode = blend ? LegacyDrawEffect.ToPl2(effect.Blend) : default;
 		for (int row = 0; row < frame.Height; row++)
 		{
 			int sy = y + row; if ((uint)sy >= (uint)Height) continue;
@@ -87,9 +97,19 @@ public sealed class LegacyFrameBuffer
 			{
 				int sx = x + col; if ((uint)sx >= (uint)Width) continue;
 				int src = row * frame.Width + col; if (frame.Opacity[src] == 0) continue;
-				int dst = sy * Width + sx; Indices[dst] = frame.Indices[src]; Coverage[dst] = 255;
+				int dst = sy * Width + sx; byte index = frame.Indices[src];
+				if (effect.Light is { } l) index = pl2!.ApplyLight(index, l);
+				if (blend) index = pl2!.Blend(mode, index, Coverage[dst] != 0 ? Indices[dst] : (byte)0);
+				Indices[dst] = index; Coverage[dst] = 255;
 			}
 		}
+	}
+
+	/// <summary>Remaps every covered pixel through a PL2 light level (whole-screen lighting, as the world uses).</summary>
+	public void ApplyLight(Pl2Palette pl2, int level)
+	{
+		if ((uint)level >= Pl2Palette.LightLevels) throw new ArgumentOutOfRangeException(nameof(level), "Light level must be 0-31.");
+		for (int i = 0; i < Indices.Length; i++) if (Coverage[i] != 0) Indices[i] = pl2.ApplyLight(Indices[i], level);
 	}
 
 	/// <summary>
@@ -109,11 +129,19 @@ public sealed class LegacyFrameBuffer
 	}
 
 	/// <summary>RGB24 through a palette; uncovered pixels are (0,0,0).</summary>
-	public byte[] ToRgb(Palette palette)
+	public byte[] ToRgb(Palette palette) => ToRgb(palette, null);
+
+	/// <summary>RGB24 through a palette and an optional <see cref="LegacyGamma"/> ramp; uncovered pixels stay (0,0,0).</summary>
+	public byte[] ToRgb(Palette palette, byte[]? gamma)
 	{
+		if (gamma is not null && gamma.Length != 256) throw new ArgumentException("Gamma table must have 256 entries.");
 		var rgba = palette.ToRgba(Indices, Coverage); var rgb = new byte[Width * Height * 3];
 		for (int i = 0, n = Width * Height; i < n; i++)
-			if (Coverage[i] != 0) { rgb[i * 3] = rgba[i * 4]; rgb[i * 3 + 1] = rgba[i * 4 + 1]; rgb[i * 3 + 2] = rgba[i * 4 + 2]; }
+			if (Coverage[i] != 0)
+			{
+				rgb[i * 3] = rgba[i * 4]; rgb[i * 3 + 1] = rgba[i * 4 + 1]; rgb[i * 3 + 2] = rgba[i * 4 + 2];
+				if (gamma is not null) { rgb[i * 3] = gamma[rgb[i * 3]]; rgb[i * 3 + 1] = gamma[rgb[i * 3 + 1]]; rgb[i * 3 + 2] = gamma[rgb[i * 3 + 2]]; }
+			}
 		return rgb;
 	}
 
@@ -179,8 +207,13 @@ public sealed class LegacyFrameBuffer
 	}
 }
 
-/// <summary>Without a window size the capture is the internal 800x600/640x480 buffer (scale options do not apply); with one it is the presented window.</summary>
-public sealed record LegacyCaptureRequest(string Scene, LegacyResolution Resolution, string Palette, int Seed = 0, int Tick = 0, int? WindowWidth = null, int? WindowHeight = null, LegacyScaleMode ScaleMode = LegacyScaleMode.Fit, LegacyScaleFilter Filter = LegacyScaleFilter.Sharp);
+/// <summary>
+/// Without a window size the capture is the internal 800x600/640x480 buffer (scale options do not apply); with one it is the presented window.
+/// Palette "auto" picks the screen's <see cref="ScreenPalettes"/> rule. Light (0-31) remaps the screen through the palette's PL2
+/// light table; Gamma applies the <see cref="LegacyGamma"/> ramp to the final RGB (1.0 = unchanged).
+/// </summary>
+public sealed record LegacyCaptureRequest(string Scene, LegacyResolution Resolution, string Palette = ScreenPalettes.Auto, int Seed = 0, int Tick = 0, int? WindowWidth = null, int? WindowHeight = null, LegacyScaleMode ScaleMode = LegacyScaleMode.Fit, LegacyScaleFilter Filter = LegacyScaleFilter.Sharp,
+	int? Light = null, double Gamma = LegacyGamma.Default);
 public sealed record LegacyCapture(int Width, int Height, byte[] Rgb, LetterboxLayout? Layout, IReadOnlyList<string> Sources);
 
 /// <summary>Renders the named original-mode screens for headless capture. Static screens ignore Seed and Tick.</summary>
@@ -195,18 +228,25 @@ public static class LegacyScreenRenderer
 	public static LegacyCapture Render(LegacyCaptureRequest request, Func<string, byte[]> read)
 	{
 		if (!Scenes.TryGetValue(request.Scene, out var path)) throw new ArgumentException($"Unknown scene '{request.Scene}'. Known: {string.Join(", ", Scenes.Keys)}.");
-		if (request.Palette.Length == 0 || !request.Palette.All(c => char.IsAsciiLetterOrDigit(c))) throw new ArgumentException("Palette must be a palette folder name such as units or act1.");
-		string palettePath = $"data\\global\\palette\\{request.Palette}\\pal.dat";
+		string name = ScreenPalettes.Resolve(request.Palette, request.Scene);
+		string palettePath = ScreenPalettes.DatPath(name);
 		var palette = Palette.Parse(read(palettePath));
+		var gamma = LegacyGamma.IsIdentity(request.Gamma) ? null : LegacyGamma.Table(request.Gamma);
+		var sources = new List<string> { path, palettePath };
 		var screen = new LegacyFrameBuffer(request.Resolution);
 		screen.DrawTiledBackground(Dc6Image.Parse(read(path)));
-		var rgb = screen.ToRgb(palette);
+		if (request.Light is { } light)
+		{
+			string pl2Path = ScreenPalettes.Pl2Path(name);
+			screen.ApplyLight(Pl2Palette.Parse(read(pl2Path)), light); sources.Add(pl2Path);
+		}
+		var rgb = screen.ToRgb(palette, gamma);
 		if (request.WindowWidth is { } ww && request.WindowHeight is { } wh)
 		{
 			var layout = LetterboxLayout.Fit(ww, wh, screen.Width, screen.Height, request.ScaleMode);
-			return new(ww, wh, LegacyFrameBuffer.Present(rgb, screen.Width, screen.Height, layout, request.Filter), layout, [path, palettePath]);
+			return new(ww, wh, LegacyFrameBuffer.Present(rgb, screen.Width, screen.Height, layout, request.Filter), layout, sources);
 		}
-		return new(screen.Width, screen.Height, rgb, null, [path, palettePath]);
+		return new(screen.Width, screen.Height, rgb, null, sources);
 	}
 
 	public static byte[] EncodePng(LegacyCapture capture)
