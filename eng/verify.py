@@ -18,7 +18,7 @@ for name in ("Core", "Assets", "Npc", "Online"):
     assert refs == ([] if name == "Core" else ["../OpenD2.Core/OpenD2.Core.csproj"]), refs
     assert not list(project.iter("Reference")), "Direct DLL reference requires review"
     for source in sorted(folder.rglob("*.cs")):
-        if {"bin", "obj"} & set(source.relative_to(folder).parts):
+        if source.relative_to(folder).parts[0] in ("bin", "obj"):  # the SDK only excludes the project's own bin/obj
             continue
         found = engine_references(source.read_text(encoding="utf-8"))
         assert not found, f"Engine dependency: {source}: {found[:3]}"

@@ -20,6 +20,8 @@ in a MINOR release but must be listed here.
   (P2-2, partially complete: the lighting MAE/SSIM comparison against original captures moves to P2-2b).
 
 ### Changed
+- `eng/verify.py`: preprocessor directive lines can no longer open a comment/string (`#region /*`), and `.cs` files in
+  nested `bin`/`obj` folders (which the SDK compiles) are checked; only the project's own `bin`/`obj` are skipped.
 - Data guard: WAV/Ogg/Bink/DC6/MPQ headers are also found after a prefix (each candidate structurally checked, e.g.
   Ogg page CRC), and every gzip/bz2/xz member is scanned on its own.
 - P2-2 follow-up: independent palette reference script `eng/palette_reference.py` with reference hashes for all 18
