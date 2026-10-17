@@ -16,7 +16,7 @@ _ENV_KEYS = ("D2_DATA_PATH", "OPEND2_ORIGINAL_SHA256SUMS", "OPEND2_RELEASE_REHEA
 
 
 def _hermetic_cache():
-    os.environ["OPEND2_ASSET_CACHE"] = "none"  # never hash the developer's real extracted cache
+    os.environ["D2_ASSET_CACHE"] = "none"  # never hash the developer's real extracted cache
 _saved_env = {}
 
 
@@ -25,12 +25,12 @@ def setUpModule():
     for key in _ENV_KEYS:
         if key in os.environ:
             _saved_env[key] = os.environ.pop(key)
-    _saved_env.setdefault("OPEND2_ASSET_CACHE", os.environ.get("OPEND2_ASSET_CACHE"))
+    _saved_env.setdefault("D2_ASSET_CACHE", os.environ.get("D2_ASSET_CACHE"))
     _hermetic_cache()
 
 
 def tearDownModule():
-    os.environ.pop("OPEND2_ASSET_CACHE", None)
+    os.environ.pop("D2_ASSET_CACHE", None)
     os.environ.update({k: v for k, v in _saved_env.items() if v is not None})
 
 

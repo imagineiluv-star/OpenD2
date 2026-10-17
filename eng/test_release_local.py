@@ -9,7 +9,7 @@ release_local = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release_local)
 for _key in ("D2_DATA_PATH", "OPEND2_ORIGINAL_SHA256SUMS", "OPEND2_RELEASE_REHEARSAL"):
     os.environ.pop(_key, None)
-os.environ["OPEND2_ASSET_CACHE"] = "none"  # hermetic; this module runs no subprocess that needs them
+os.environ["D2_ASSET_CACHE"] = "none"  # hermetic; this module runs no subprocess that needs them
 NPC = "FAIL NPC bundled native runtime executes and invalid model startup cleans up for retry: boom"
 
 

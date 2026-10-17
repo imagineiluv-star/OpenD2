@@ -412,4 +412,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except data_guard.ManifestError as error:
+        raise SystemExit(f"FAILED: {error}") from None
