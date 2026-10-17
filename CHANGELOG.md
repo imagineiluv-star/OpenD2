@@ -13,6 +13,17 @@ in a MINOR release but must be listed here.
 
 ## [Unreleased]
 
+### Changed
+- Release tooling: `eng/verify.py` checks code inside interpolated-string holes and `"Godot.*"` type-name strings,
+  `\uXXXX` identifier escapes and sub-folders; the data guard validates the MPQ manifest shape, bounds RSCC block size,
+  scans bytes after streams inside RSCC blocks, after short high-ratio raw deflate and after bz2/xz streams, rejects an
+  explicitly configured asset cache that does not exist, and Linux packages built on Windows mark every ELF/`#!` file 0755.
+
+## [0.1.0] - Unreleased
+
+First versioned release. Versioning restarted here; the earlier `v0.2.0-rc.1`-`rc.4` preview tags were removed and
+their synthetic-preview and online work (through #102) is the baseline this version builds on.
+
 ### Added
 
 - Root `VERSION` file as the single version source for MSBuild (`VersionPrefix`, `InformationalVersion`), Godot
@@ -22,14 +33,6 @@ in a MINOR release but must be listed here.
   archives and Godot PCK contents; `eng/release.py pack` refuses a payload that fails it.
 - Local release script `eng/release-local.py` (no CI) with reproducible archives, `SHA256SUMS`, manifest and
   `docs/release/NOTES_TEMPLATE.md`; this changelog.
-
-## [0.1.0] - Unreleased
-
-First versioned release. Versioning restarted here; the earlier `v0.2.0-rc.1`-`rc.4` preview tags were removed and
-their synthetic-preview and online work (through #102) is the baseline this version builds on.
-
-### Added
-
 - P1 MPQ migration pipeline: `D2_DATA_PATH`, per-version MPQ SHA-256 manifest, extraction/PNG cache outside the
   repository, cache-aware asset reads, synthetic and genuine-data tests (#108).
 - P1 resource validation across genuine 1.11b data, with DS1/COF/DC6/TXT shape fixes it found (#109).

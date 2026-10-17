@@ -143,15 +143,17 @@ def source_date_epoch():
     return max(int(os.environ.get("SOURCE_DATE_EPOCH", "1767225600")), 315532800)  # ZIP cannot go before 1980
 
 
-def reproducible_tar(stage, archive):
-    """Same bytes for the same staged tree: sorted entries, fixed owner and mtime, gzip header without time/name."""
+def reproducible_tar(stage, archive, executables=()):
+    """Same bytes for the same staged tree: sorted entries, fixed owner and mtime, gzip header without time/name.
+    executables: arcnames forced to 0755 (Windows has no execute bit to read)."""
     epoch = source_date_epoch()
 
     def normalize(info):
         info.uid = info.gid = 0
         info.uname = info.gname = ""
         info.mtime = epoch
-        info.mode = 0o755 if info.isdir() or info.mode & 0o111 else 0o644
+        executable = info.mode & 0o111 or info.name in executables
+        info.mode = 0o755 if info.isdir() or executable else 0o644
         return info
 
     with archive.open("wb") as raw, gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed, \
@@ -170,6 +172,19 @@ def reproducible_zip(stage, archive):
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = (0o100755 if item.stat().st_mode & 0o111 else 0o100644) << 16
             target.writestr(info, item.read_bytes())
+
+
+def linux_binaries(stage):
+    """Arcnames to mark 0755 when packing Linux on Windows (NTFS keeps no execute bit): every ELF file (the game,
+    llama-server and other bundled tools, native .so libraries) and every #! script."""
+    found = set()
+    for path in stage.rglob("*"):
+        if path.is_file() and not path.is_symlink():
+            with path.open("rb") as stream:
+                head = stream.read(4)
+            if head == b"\x7fELF" or head[:2] == b"#!":
+                found.add(path.relative_to(stage).as_posix())
+    return found
 
 
 def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
@@ -193,7 +208,8 @@ def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
         executable = source / ("OpenD2.x86_64" if preset == "Linux" else "OpenD2.exe")
         if not executable.is_file() or not list(source.glob("*.pck")):
             raise ValueError("Export must include its executable and PCK")
-        if preset == "Linux" and not executable.stat().st_mode & 0o111:
+        # NTFS has no execute bit: on Windows the Linux executable (and native .so files) get 0755 in the tar instead.
+        if preset == "Linux" and os.name != "nt" and not executable.stat().st_mode & 0o111:
             raise ValueError("Linux executable has no execute permission")
         with tempfile.TemporaryDirectory(prefix="opend2-package-") as temporary:
             stage = Path(temporary) / "payload"
@@ -201,7 +217,8 @@ def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
             for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
                 shutil.copyfile(ROOT / name, stage / name)
             if preset == "Linux":
-                reproducible_tar(stage, archive)
+                forced = () if os.name != "nt" else {executable.name, *linux_binaries(stage)}
+                reproducible_tar(stage, archive, forced)
             else:
                 reproducible_zip(stage, archive)
     # Fail closed on game data anywhere in the archive, including nested archives and PCK file tables.
@@ -216,8 +233,9 @@ def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
         archive.unlink(missing_ok=True)
         raise
     if not rehearsal and not guard.derived:
-        guard.warnings.append("no extracted asset-cache hashes (no ~/.cache/opend2/asset-cache here); copied DC6/TXT/WAV "
-                              "extracts are caught only by name and content magic")
+        looked = ", ".join(str(root) for root in data_guard.cache_roots()) or f"disabled by {data_guard.CACHE_VARIABLE}=none"
+        guard.warnings.append(f"no extracted asset-cache hashes (looked in: {looked}; set {data_guard.CACHE_VARIABLE} to "
+                              "the cache the client used); copied DC6/TXT/WAV extracts are caught only by name and content magic")
     for warning in guard.warnings:
         print(f"WARNING data guard: {warning}")
     if not guard.original:
@@ -412,4 +430,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except data_guard.ManifestError as error:
+        raise SystemExit(f"FAILED: {error}") from None

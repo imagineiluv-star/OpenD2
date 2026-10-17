@@ -9,7 +9,9 @@ import sys
 import tarfile
 import tempfile
 import unittest
+import bz2
 import gzip
+import lzma
 import zlib
 from unittest import mock
 import zipfile
@@ -21,7 +23,7 @@ _ENV_KEYS = ("D2_DATA_PATH", "OPEND2_ORIGINAL_SHA256SUMS", "OPEND2_RELEASE_REHEA
 
 
 def _hermetic_cache():
-    os.environ["OPEND2_ASSET_CACHE"] = "none"  # never hash the developer's real extracted cache
+    os.environ["D2_ASSET_CACHE"] = "none"  # never hash the developer's real extracted cache
 _saved_env = {}
 
 
@@ -30,7 +32,7 @@ def setUpModule():
     for key in _ENV_KEYS:
         if key in os.environ:
             _saved_env[key] = os.environ.pop(key)
-    _saved_env.setdefault("OPEND2_ASSET_CACHE", os.environ.get("OPEND2_ASSET_CACHE"))
+    _saved_env.setdefault("D2_ASSET_CACHE", os.environ.get("D2_ASSET_CACHE"))
     _hermetic_cache()
     global _saved_manifest
     _saved_manifest = data_guard.MPQ_MANIFEST
@@ -39,7 +41,7 @@ def setUpModule():
 
 def tearDownModule():
     data_guard.MPQ_MANIFEST = _saved_manifest
-    os.environ.pop("OPEND2_ASSET_CACHE", None)
+    os.environ.pop("D2_ASSET_CACHE", None)
     os.environ.update({k: v for k, v in _saved_env.items() if v is not None})
 
 
@@ -91,7 +93,8 @@ class DataGuardTests(unittest.TestCase):
                 path = self.export / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(FAKE)
-                self.assertTrue(any(item.startswith(name) for item in self.blocked()), self.blocked())
+                # Case-insensitive file systems (Windows/macOS) reuse the data/global folder an earlier subtest made.
+                self.assertTrue(any(item.lower().startswith(name.lower()) for item in self.blocked()), self.blocked())
                 path.unlink()
 
     def test_inside_pck_including_godot_import_names(self):
@@ -473,6 +476,128 @@ class DataGuardTests(unittest.TestCase):
         guard = data_guard.scan([self.export])
         self.assertEqual([], guard.blocked)
         self.assertEqual(["mystery.res"], [u for u in guard.unknown if "mystery" in u or "lib.so" in u])
+    def test_trailing_bytes_after_zlib_and_raw_deflate_are_scanned(self):
+        ogg = b"OggS\0\x02" + FAKE
+        for name, tail in (("t1.res", ogg), ("t2.res", gzip.compress(b"MPQ\x1a" + FAKE, mtime=0)),
+                           ("t3.res", zlib.compress(b"MPQ\x1a" + FAKE))):
+            with self.subTest(name=name):
+                path = self.add(name, zlib.compress(b"harmless text " * 20) + tail)
+                self.assertTrue(any(item.startswith(name + "!zlib-trailer") for item in self.blocked()), self.blocked())
+                path.unlink()
+        raw = zlib.compressobj(9, zlib.DEFLATED, -15)
+        body = b"".join(hashlib.sha256(bytes([i])).digest() for i in range(64))  # incompressible: >= 1 KiB stream
+        self.add("t4.res", raw.compress(body) + raw.flush() + ogg)
+        self.assertTrue(any(item.startswith("t4.res!deflate-trailer") for item in self.blocked()), self.blocked())
+
+    def test_corrupt_mpq_manifest_gives_a_clear_error(self):
+        broken = self.root / "d2-mpq-manifest.json"
+        for text in ("{ not json", "", "[1, 2]"):
+            with self.subTest(text=text):
+                broken.write_text(text)
+                with self.assertRaises(data_guard.ManifestError) as caught:
+                    data_guard.manifest_hashes(broken)
+                self.assertIn("cannot read the MPQ hash manifest", str(caught.exception))
+        result = subprocess.run([sys.executable, "-c", "import sys, data_guard; from pathlib import Path; "
+                                 f"data_guard.MPQ_MANIFEST = Path({str(broken)!r}); sys.argv = ['g', {str(self.export)!r}]; "
+                                 "data_guard.main()"], cwd=Path(data_guard.__file__).parent, capture_output=True, text=True,
+                                env=dict(os.environ, D2_ASSET_CACHE="none"))
+        self.assertEqual(1, result.returncode)
+        self.assertIn("DATA GUARD FAILED: cannot read the MPQ hash manifest", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_cache_variable_matches_the_app_with_deprecated_alias(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            for key in ("D2_ASSET_CACHE", "OPEND2_ASSET_CACHE"):
+                os.environ.pop(key, None)
+            roots = data_guard.cache_roots()
+            self.assertEqual(data_guard.app_cache_root(), roots[0])
+            self.assertTrue(str(roots[0]).endswith(os.path.join("OpenD2", "asset-cache")))
+            (self.root / "old").mkdir()
+            (self.root / "new").mkdir()
+            os.environ["OPEND2_ASSET_CACHE"] = str(self.root / "old")
+            with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+                self.assertEqual([self.root / "old"], data_guard.cache_roots())
+            self.assertIn("deprecated", err.getvalue())
+            os.environ["D2_ASSET_CACHE"] = str(self.root / "new")
+            self.assertEqual([self.root / "new"], data_guard.cache_roots())
+            os.environ["D2_ASSET_CACHE"] = "none"
+            self.assertEqual([], data_guard.cache_roots())
+        source = (Path(data_guard.__file__).resolve().parents[1] / "src/OpenD2.Assets/D2DataPaths.cs").read_text()
+        self.assertIn(f'CachePathVariable = "{data_guard.CACHE_VARIABLE}"', source)
+
+
+    def test_manifest_with_wrong_inner_types_is_a_manifest_error(self):
+        broken = self.root / "d2-mpq-manifest.json"
+        for text in ('{"versions": [{"files": null}]}', '{"versions": [{"files": [1]}]}',
+                     '{"versions": [{"files": {"a.mpq": 5}}]}', '{"versions": [{"files": {"a.mpq": "abc"}}]}',
+                     '{"versions": [{"files": {"a.mpq": {"sha256": 7}}}]}'):
+            with self.subTest(text=text):
+                broken.write_text(text)
+                with self.assertRaises(data_guard.ManifestError):
+                    data_guard.manifest_hashes(broken)
+        broken.write_text('{"versions": [{"files": {"a.mpq": {"sha256": "' + "B" * 64 + '"}}}, {"placeholder": true}]}')
+        self.assertEqual({"b" * 64}, data_guard.manifest_hashes(broken))
+
+    def test_explicit_missing_asset_cache_is_an_error(self):
+        missing = str(self.root / "no-such-cache")
+        with self.assertRaises(data_guard.CacheError):
+            data_guard.load_derived_hashes(missing)
+        with mock.patch.dict(os.environ, {"D2_ASSET_CACHE": missing}):
+            with self.assertRaises(data_guard.CacheError) as caught:
+                data_guard.load_derived_hashes()
+            self.assertIn("D2_ASSET_CACHE=none", str(caught.exception))
+        result = subprocess.run([sys.executable, "data_guard.py", "--asset-cache", missing, str(self.export)],
+                                cwd=Path(data_guard.__file__).parent, capture_output=True, text=True)
+        self.assertEqual(1, result.returncode)
+        self.assertIn("is not a directory", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_rscc_block_size_has_an_upper_bound(self):
+        huge = self.rscc_raw([b"x" * 64], 64 * 1024 * 1024, 64)
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://h.res": huge}))
+        found = self.blocked()
+        self.assertTrue(any("h.res: could not inspect" in item and "exceeds" in item for item in found), found)
+
+    def test_bytes_after_a_stream_inside_an_rscc_block_are_scanned(self):
+        packed = zlib.compress(b"A" * 16) + b"OggS\0\x02" + FAKE
+        rscc = b"RSCC" + struct.pack("<IIII", 1, 64, 16, len(packed)) + packed
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://b.res": rscc}))
+        found = self.blocked()
+        self.assertTrue(any("b.res!rscc-block0-trailer" in item for item in found), found)
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://b.res": self.fake_rscc(b"plain text " * 20)}))
+        self.assertEqual([], self.blocked())
+
+    def test_short_highly_compressed_raw_deflate_trailer_is_scanned(self):
+        raw = zlib.compressobj(9, zlib.DEFLATED, -15)
+        stream = raw.compress(b"\0" * 4000) + raw.flush()  # a few dozen bytes inflating 4000
+        self.assertLess(len(stream), 1024)
+        self.add("s.res", stream + b"OggS\0\x02" + FAKE)
+        self.assertTrue(any(item.startswith("s.res!deflate-trailer") for item in self.blocked()), self.blocked())
+
+    def test_raw_deflate_far_beyond_its_input_hits_the_ratio_limit(self):
+        raw = zlib.compressobj(9, zlib.DEFLATED, -15)
+        self.add("big.res", raw.compress(b"MPQ\x1a" + b"\0" * (300 * 1024 * 1024)) + raw.flush())
+        found = self.blocked()
+        self.assertTrue(any("big.res: could not inspect" in item and "ratio" in item for item in found), found)
+
+    def test_bytes_after_bz2_and_xz_streams_are_scanned(self):
+        ogg = b"OggS\0\x02" + FAKE
+        for name, compress in (("a.bin.bz2", bz2.compress), ("a.bin.xz", lzma.compress)):
+            with self.subTest(name=name):
+                path = self.add(name, compress(b"harmless " * 50) + compress(b"second stream") + ogg)
+                found = self.blocked()
+                self.assertTrue(any("-trailer" in item and item.startswith(name) for item in found), found)
+                path.write_bytes(compress(b"harmless " * 50) + compress(b"second stream"))
+                self.assertEqual([], self.blocked())
+                path.unlink()
+
+    def test_random_blobs_do_not_trigger_short_deflate_rescans(self):
+        import random
+        rng = random.Random(1017)
+        guard = data_guard.Guard()
+        hits = sum(bool(guard.raw_deflate("r", rng.randbytes(rng.choice((80, 300, 2000, 9000))), 0)) for _ in range(3000))
+        self.assertEqual([], guard.blocked)
+        self.assertEqual(0, hits)
 
 
 if __name__ == "__main__":

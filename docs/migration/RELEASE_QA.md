@@ -67,10 +67,13 @@ python eng/release-local.py --tag v0.1.0-rc.1 [--preset Linux --preset Windows] 
   (`release.yml`은 아무 브랜치에서나 dispatch할 수 있고 그 브랜치의 `m0.yml`/`release.py`를 쓴다). 경계가 필요하면 시크릿을 태그·master만
   허용하는 GitHub Environment(`release`)에 둔다. 내용은 MPQ 해시라 커밋된 매니페스트와 겹치며 민감도는 낮다. pack 단계는 `umask 077`에서 `mktemp`로 만든
   임시 파일에 쓰고 `trap`으로 지운다. 값은 로그에 출력하지 않는다.
-- **추출 캐시 해시(자동):** `release.py pack`, `release-local.py`, `data_guard.py`는 실행할 때 `~/.cache/opend2/asset-cache`
-  (또는 `OPEND2_ASSET_CACHE`, `none`이면 끔) 아래의 `cache-manifest.json`(converter `p1-mpq*`)이 있는 폴더에서 64바이트 이상인 모든 파일의
+- **추출 캐시 해시(자동):** `release.py pack`, `release-local.py`, `data_guard.py`는 실행할 때 앱과 같은 변수 `D2_ASSET_CACHE`가 가리키는 폴더,
+  없으면 앱 기본 폴더(LocalApplicationData/`OpenD2/asset-cache`, Linux `~/.local/share/OpenD2/asset-cache`)와 예전 기본값
+  `~/.cache/opend2/asset-cache`를 둘 다 본다(`D2_ASSET_CACHE=none`이면 끈다(가드 전용). `OPEND2_ASSET_CACHE`는 경고와 함께 받는 옛 이름이다). 그 아래의 `cache-manifest.json`(converter `p1-mpq*`)이 있는 폴더에서 64바이트 이상인 모든 파일의
   SHA-256을 계산해 차단 목록에 더한다. 그래서 #108이 추출한 DC6/TXT/WAV와 캐시의 PNG 변환본을 그대로 복사해도 잡힌다.
   이 해시는 커밋하지 않고 실행할 때마다 다시 만든다(약 5만 개, 수 초). 최소 5개 조건은 원본 목록에만 적용된다.
+  `D2_ASSET_CACHE`나 `--asset-cache`로 **직접 지정한** 경로가 폴더가 아니면 오타로 보고 `FAILED`로 멈춘다(traceback 없음). 캐시 없이 돌리려면 `none`을 쓴다.
+  캐시 해시가 0개일 때의 경고는 실제로 찾아본 경로와 `D2_ASSET_CACHE`를 함께 출력한다.
 - 태그 릴리즈에서 추출 캐시 해시가 0개면(CI 러너처럼 캐시가 없을 때) 경고를 출력하고 매니페스트 `warnings`에 남긴다.
   형식을 알 수 없는 바이너리 엔트리는 차단하지 않지만 `unknown_formats` 목록으로 기록해 릴리즈마다 차이를 리뷰할 수 있게 한다.
 - **남는 위험:** 변환 파생물(캐시 밖에서 다시 인코딩·크기 조정·재압축한 PNG/OGG, 다른 포맷으로 옮긴 테이블)은 이름, 매직, 해시
@@ -178,7 +181,7 @@ PLAY-01~06은 원본 지도·충돌·DCC/COF 표현·클릭 경로·연속 세�
 
 ```sh
 python -m unittest discover -s eng -p 'test_*.py' -v
-python eng/release.py check-version v0.2.0-rc.1
+python eng/release.py check-version v0.1.0-rc.1   # 첫 새 버전; 태그의 X.Y.Z는 VERSION과 같아야 한다
 ```
 
 패키징 시험은 작은 가짜 파일을 사용하며 실제 게임 통과 증거가 아니다.
@@ -190,8 +193,9 @@ PLAY-07 기준 패키징 10개와 다운로드 경계 6개를 함께 실행한�
 2026-10-08 로컬 검증: 패키징 계약 10/10, 기존 게임 계약 228/228, Linux release export와
 압축 해제 후 실행 성공. actionlint 1.7.12로 두 workflow 문법/식 검사를 통과했다.
 Windows에서는 POSIX 권한 검사를 건너뛰며 해당 검사는 Linux/macOS에서 수행한다.
-이후 [v0.2.0-rc.1](https://github.com/imagineiluv-star/OpenD2/releases/tag/v0.2.0-rc.1)을
-[3개 OS 릴리즈 검증](https://github.com/imagineiluv-star/OpenD2/actions/runs/37800399047) 후 발행했다.
+이후 (버전 관리 재시작 전의 기록) 옛 `v0.2.0-rc.1`을
+[3개 OS 릴리즈 검증](https://github.com/imagineiluv-star/OpenD2/actions/runs/37800399047) 후 발행했다. 이 태그는 삭제됐고,
+위 규칙에 따라 그 rc 번호는 다시 쓰지 않는다(0.2.0 rc는 `rc.5`부터).
 이 버전은 PLAY-01~07 이전이다. 새 기능 시험에는 이후 master로 새 rc를 생성해야 한다.
 Grok Bot/실제 원본 데이터 GUI 시험은 아직 수행하지 않았다.
 
