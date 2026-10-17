@@ -115,8 +115,8 @@ public partial class LegacyScreen : Control
 			string output = System.IO.Path.GetFullPath(Option("--out") ?? throw new ArgumentException("--out is required."));
 			D2DataPaths.RequireOutsideGit(System.IO.Path.GetDirectoryName(output)!);
 			string data = D2DataPaths.ResolveDataPath(Option("--data")) ?? throw new ArgumentException("Pass --data or set D2_DATA_PATH.");
-			var request = new LegacyCaptureRequest(Option("--capture") ?? "gameselect", LegacyResolutions.Parse(Option("--resolution") ?? "800x600"), Option("--palette") ?? "units",
-				int.Parse(Option("--seed") ?? "0"), int.Parse(Option("--tick") ?? "0"));
+			var request = new LegacyCaptureRequest(Option("--capture") ?? "gameselect", LegacyResolutions.Parse(Option("--resolution") ?? "800x600"), Option("--palette") ?? ScreenPalettes.Auto,
+				int.Parse(Option("--seed") ?? "0"), int.Parse(Option("--tick") ?? "0"), Light: LegacyRenderOptions.ParseLight(Option("--light")), Gamma: LegacyRenderOptions.ParseGamma(Option("--gamma")));
 			using var source = new MpqAssetSource(data);
 			byte[] Read(string path) => source.TryRead(path, AssetDecoders.MaxInputBytes, out var bytes) ? bytes : throw new System.IO.FileNotFoundException("Missing " + path);
 			var png = LegacyScreenRenderer.EncodePng(LegacyScreenRenderer.Render(request, Read));
