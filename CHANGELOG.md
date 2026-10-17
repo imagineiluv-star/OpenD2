@@ -13,6 +13,12 @@ in a MINOR release but must be listed here.
 
 ## [Unreleased]
 
+### Added
+
+- Per-screen and per-act palette rules (auto palette), PL2 light (0-31) and 25/50/75/additive/multiplicative blend in
+  the original-mode render path, `--gamma` ramp; asset cache PNG palette chosen per resource instead of fixed act1
+  (P2-2).
+
 ## [0.1.0] - Unreleased
 
 First versioned release. Versioning restarted here; the earlier `v0.2.0-rc.1`-`rc.4` preview tags were removed and
