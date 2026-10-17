@@ -1,6 +1,6 @@
 """Build a release on this machine without GitHub Actions; never tags, pushes or uploads.
 
-  python eng/release-local.py [--tag v0.1.0] [--preset Linux --preset Windows] [--skip-tests] [--rehearsal]
+  python eng/release-local.py [--tag v0.1.0] [--preset Linux --preset Windows] [--skip-tests] [--rehearsal] [--verify-reproducible]
 
 1. Preflight: clean work tree, the tag matches VERSION and, when the tag exists, HEAD is the tagged commit
    (--rehearsal allows an untagged HEAD and marks the notes as a rehearsal).
@@ -15,6 +15,8 @@
    directory first and renamed into place only when every step passed; a failed run leaves nothing behind.
    A real release requires the original hash list; --rehearsal only warns without it.
 5. The Godot editor and export template versions must match eng/toolchain.json and are recorded in the manifest.
+   The SHA-256 of every prebuilt runtime copied from .local-tools (native/dist, llama/dist) is recorded too.
+6. --verify-reproducible builds twice in separate private trees and fails unless both SHA256SUMS are identical.
 Publishing stays a manual step for the maintainer: `git tag -a`, `gh release create`.
 """
 import argparse
@@ -153,6 +155,10 @@ def build(build_root, head, tag, presets, skip_tests, log):
                DOTNET_NOLOGO="1", LC_ALL="C.UTF-8", LANG="C.UTF-8", TZ="UTC")
     godot = (tools / "godot-path.txt").read_text(encoding="utf-8").strip()
     toolchain = godot_toolchain(godot, presets, env)
+    # Prebuilt runtimes are copied, not rebuilt here: record exactly which bytes went in.
+    toolchain["prebuilt_sha256"] = {
+        path.relative_to(source / ".local-tools").as_posix(): sha256_file(path)
+        for path in sorted((source / ".local-tools").rglob("*")) if path.is_file()} if (source / ".local-tools").is_dir() else {}
     if run(["dotnet", "build", "OpenD2.sln", "-c", "Release", "-m:1", "-p:BuildInParallel=false"], source, env, log):
         raise SystemExit(f"dotnet build failed; see {log}")
     if not skip_tests:
@@ -194,6 +200,8 @@ def main():
     parser.add_argument("--output", type=Path, default=ROOT.parent / "opend2-release")
     parser.add_argument("--skip-tests", action="store_true")
     parser.add_argument("--rehearsal", action="store_true", help="Allow an untagged HEAD (notes say REHEARSAL)")
+    parser.add_argument("--verify-reproducible", action="store_true",
+                        help="Build twice in separate private trees, require identical SHA256SUMS, keep the first")
     args = parser.parse_args()
     version = release.read_version()
     tag = args.tag or f"v{version}"
@@ -210,9 +218,17 @@ def main():
     os.umask(0o022)
     final = output
     output = Path(tempfile.mkdtemp(prefix=f".{tag}.partial-", dir=final.parent))
+    second = Path(tempfile.mkdtemp(prefix=f".{tag}.verify-", dir=final.parent)) if args.verify_reproducible else None
     try:
         with BuildDirectory() as build_root:
             assemble(args, version, tag, presets, head, output, log, build_root)
+        if second is not None:
+            with BuildDirectory() as build_root:
+                assemble(args, version, tag, presets, head, second, log, build_root)
+            differing = compare_sums(output / "SHA256SUMS", second / "SHA256SUMS")
+            if differing:
+                raise SystemExit("NOT REPRODUCIBLE: two builds of the same commit differ in " + ", ".join(differing))
+            print("REPRODUCIBLE: two independent builds produced identical SHA256SUMS")
         if final.exists():
             raise SystemExit(f"{final} appeared during the build; this run's result was discarded")
         output.chmod(0o755)
@@ -220,18 +236,30 @@ def main():
     except BaseException:
         shutil.rmtree(output, ignore_errors=True)
         raise
+    finally:
+        if second is not None:
+            shutil.rmtree(second, ignore_errors=True)
     print((final / "SHA256SUMS").read_text(encoding="utf-8"), end="")
     print(f"LOCAL RELEASE OK {final}")
+
+
+def compare_sums(first, second):
+    """Names whose hashes differ (or exist on one side only) between two SHA256SUMS files."""
+    def read(path):
+        return dict(reversed(line.split("  ", 1)) for line in path.read_text(encoding="utf-8").splitlines() if line)
+    a, b = read(first), read(second)
+    return sorted(name for name in a.keys() | b.keys() if a.get(name) != b.get(name))
 
 
 def assemble(args, version, tag, presets, head, output, log, build_root):
     exports, env, toolchain = build(build_root, head, tag, presets, args.skip_tests, log)
     os.environ["SOURCE_DATE_EPOCH"] = env["SOURCE_DATE_EPOCH"]
     originals = data_guard.load_original_hashes()
+    derived = data_guard.load_derived_hashes()
     packages = [release.pack(exports[preset], output, preset, tag, head, rehearsal=args.rehearsal) for preset in presets]
     # Re-scan the final folder (packages and kit) as a whole before anything is hashed for publication.
     guard = data_guard.scan([p for p in sorted(output.iterdir()) if p.is_file()], originals,
-                            require_original_hashes=not args.rehearsal)
+                            require_original_hashes=not args.rehearsal, derived_hashes=derived)
     guard.check()
     for preset in presets:
         (output / f"package-{preset}.json").unlink()
@@ -239,7 +267,8 @@ def assemble(args, version, tag, presets, head, output, log, build_root):
     release.write_json(output / "release-manifest.json", {
         "schema_version": 1, "version": tag, "commit": head, "date": date, "phase": phase(version),
         "rehearsal": args.rehearsal, "toolchain": toolchain, "packages": packages,
-        "data_guard": {"result": guard.result, "warnings": guard.warnings, "entries": guard.scanned, "original_hashes": len(originals)}})
+        "data_guard": {"result": guard.result, "warnings": guard.warnings, "entries": guard.scanned, "original_hashes": len(originals),
+                       "asset_cache_hashes": len(derived)}})
     notes = (ROOT / "docs/release/NOTES_TEMPLATE.md").read_text(encoding="utf-8").format(
         tag=tag, date=date, commit=head, phase=phase(version),
         summary=("**REHEARSAL BUILD – not a published release.**\n\n" if args.rehearsal else "") +

@@ -16,6 +16,9 @@
   태그는 master 병합 커밋에 **annotated 태그**(`git tag -a`)로 현우님이 직접 만든다. 봇은 태그·릴리즈를 만들지 않는다.
 - 단계별 버전: 0.1.0 = P1 원본 데이터 완료 + P2-1 기본 틀, 0.2.0 = P2, 0.3.0 = P3, 0.4.0 = P4, 0.5~0.9 = P5, 1.0.0 = 1.14d와 동일.
   단계 완료는 MINOR, 단계 안의 버그 수정은 PATCH, 정식 전 사전 검증은 `-rc.N`. 변경은 [CHANGELOG](../../CHANGELOG.md) `[Unreleased]`에 PR마다 적는다.
+- **rc 번호는 재사용하지 않는다.** 예전에 공개했다가 지운 `v0.2.0-rc.1`~`rc.4`가 있으므로 P2의 0.2.0 rc는 `v0.2.0-rc.5`부터 쓴다.
+  일반 규칙: 한 번이라도 push했던 태그 이름(지운 것 포함)은 다시 쓰지 않는다. 옛 태그가 남은 클론은
+  `git fetch --prune --prune-tags origin`으로 정리한다(남아 있으면 preflight가 "points at" 오류로 막는다).
 
 ## 로컬 릴리즈 (Actions 없이)
 
@@ -42,6 +45,9 @@ python eng/release-local.py --tag v0.1.0-rc.1 [--preset Linux --preset Windows] 
    넘는 압축은 차단한다. 원본 해시는 저장소에 두지 않고 `OPEND2_ORIGINAL_SHA256SUMS` 또는 `D2_DATA_PATH`에서 읽으며, **정식 릴리즈에서는 필수**
    (`--rehearsal`/`ci` 빌드는 경고만, 결과는 `PASS (no original hash list)`). 50MB 초과 파일은 경고로 출력하고 manifest에 남긴다.
 6. 모든 결과는 임시 폴더에 만들고 전부 성공했을 때만 `../opend2-release/<태그>/`로 이름을 바꾼다. 실패하면 아무것도 남지 않는다.
+- `--verify-reproducible`: 서로 다른 비공개 빌드 트리에서 두 번 빌드하고 `SHA256SUMS`가 완전히 같아야 통과한다(다르면 파일 이름을
+  출력하고 아무것도 남기지 않는다). v0.1.0 같은 태그를 달기 전에 한 번 실행한다. manifest `toolchain.prebuilt_sha256`에는 복사해 넣은
+  `.local-tools/native/dist`, `llama/dist` 바이너리의 SHA-256이 기록된다(여기서 다시 빌드하지 않으므로).
 7. 결과는 저장소 밖 `../opend2-release/<태그>/`에 `SHA256SUMS`, `release-manifest.json`, `RELEASE_NOTES.md`([템플릿](../release/NOTES_TEMPLATE.md),
    CHANGELOG 해당 절 포함)로 남는다. 업로드는 현우님이 `gh release create <태그> --verify-tag ../opend2-release/<태그>/*`로 직접 한다.
 

@@ -8,7 +8,8 @@ spec = importlib.util.spec_from_file_location("release_local", Path(__file__).wi
 release_local = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release_local)
 for _key in ("D2_DATA_PATH", "OPEND2_ORIGINAL_SHA256SUMS", "OPEND2_RELEASE_REHEARSAL"):
-    os.environ.pop(_key, None)  # hermetic; this module runs no subprocess that needs them
+    os.environ.pop(_key, None)
+os.environ["OPEND2_ASSET_CACHE"] = "none"  # hermetic; this module runs no subprocess that needs them
 NPC = "FAIL NPC bundled native runtime executes and invalid model startup cleans up for retry: boom"
 
 
@@ -21,6 +22,15 @@ class ReleaseLocalTests(unittest.TestCase):
         self.assertFalse(ok(1, f"{NPC}\nFAIL Other contract: x\n463/465 passed\n")[0])
         self.assertFalse(ok(1, f"{NPC}\n463/465 passed\n")[0], "a failure without a FAIL line")
         self.assertFalse(ok(1, "FAIL Something mentioning NPC bundled native runtime executes\n0/1 passed\n")[0])
+
+    def test_compare_sums_names_every_difference(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            a, b = Path(folder) / "a", Path(folder) / "b"
+            a.write_text("11  x.tar.gz\n22  notes.md\n33  only-a\n")
+            b.write_text("11  x.tar.gz\n99  notes.md\n44  only-b\n")
+            self.assertEqual(["notes.md", "only-a", "only-b"], release_local.compare_sums(a, b))
+            self.assertEqual([], release_local.compare_sums(a, a))
 
     def test_build_directory_is_private_unique_and_removed(self):
         with release_local.BuildDirectory() as first, release_local.BuildDirectory() as second:
