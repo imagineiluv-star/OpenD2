@@ -13,6 +13,12 @@ in a MINOR release but must be listed here.
 
 ## [Unreleased]
 
+### Changed
+- Release tooling: `eng/verify.py` checks code inside interpolated-string holes and `"Godot.*"` type-name strings,
+  `\uXXXX` identifier escapes and sub-folders; the data guard validates the MPQ manifest shape, bounds RSCC block size,
+  scans bytes after streams inside RSCC blocks, after short high-ratio raw deflate and after bz2/xz streams, rejects an
+  explicitly configured asset cache that does not exist, and Linux packages built on Windows mark every ELF/`#!` file 0755.
+
 ## [0.1.0] - Unreleased
 
 First versioned release. Versioning restarted here; the earlier `v0.2.0-rc.1`-`rc.4` preview tags were removed and
