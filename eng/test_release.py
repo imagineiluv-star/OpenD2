@@ -1,4 +1,5 @@
 """Release boundary tests using tiny fake exports; never presented as game QA."""
+import io
 import json
 import os
 from pathlib import Path
@@ -142,6 +143,35 @@ class ReleaseTests(unittest.TestCase):
             self.assertTrue(archive.getmember("OpenD2.x86_64").mode & 0o111)
             self.assertEqual(b"fixture runtime", archive.extractfile("data/runtime/dependency.bin").read())
             self.assertIn("THIRD_PARTY_NOTICES.md", archive.getnames())
+
+    def test_linux_binaries_get_0755_when_the_file_system_has_no_execute_bit(self):
+        # What pack() does on Windows: NTFS reports no execute bit, so ELF files and #! scripts are marked by content.
+        stage = self.output / "stage"
+        (stage / "data/npc").mkdir(parents=True)
+        files = {"OpenD2.x86_64": b"\x7fELF game", "data/npc/llama-server": b"\x7fELF llama (synthetic)",
+                 "data/npc/libggml.so": b"\x7fELF lib", "run.sh": b"#!/bin/sh\n", "OpenD2.pck": b"GDPC fixture",
+                 "README.txt": b"text"}
+        for name, data in files.items():
+            (stage / name).write_bytes(data)
+            (stage / name).chmod(0o644)
+        forced = release.linux_binaries(stage)
+        self.assertEqual({"OpenD2.x86_64", "data/npc/llama-server", "data/npc/libggml.so", "run.sh"}, forced)
+        archive = self.output / "t.tar.gz"
+        release.reproducible_tar(stage, archive, forced)
+        with tarfile.open(archive) as tar:
+            modes = {m.name: m.mode for m in tar.getmembers() if m.isfile()}
+        self.assertEqual(0o755, modes["data/npc/llama-server"])
+        self.assertEqual(0o755, modes["OpenD2.x86_64"])
+        self.assertEqual(0o644, modes["OpenD2.pck"])
+        self.assertEqual(0o644, modes["README.txt"])
+
+    def test_missing_cache_warning_names_the_real_cache_setting(self):
+        hashes = {format(i, "064x") for i in range(20)}
+        with mock.patch.object(release.data_guard, "load_original_hashes", return_value=hashes), \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            release.pack(self.fixture("Windows"), self.output, "Windows", self.version, self.commit, rehearsal=False)
+        self.assertIn("D2_ASSET_CACHE", out.getvalue())
+        self.assertNotIn("~/.cache/opend2/asset-cache here", out.getvalue())
 
     def test_windows_archive_keeps_the_entire_export(self):
         metadata = release.pack(self.fixture("Windows"), self.output, "Windows", self.version, self.commit)

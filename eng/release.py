@@ -174,6 +174,19 @@ def reproducible_zip(stage, archive):
             target.writestr(info, item.read_bytes())
 
 
+def linux_binaries(stage):
+    """Arcnames to mark 0755 when packing Linux on Windows (NTFS keeps no execute bit): every ELF file (the game,
+    llama-server and other bundled tools, native .so libraries) and every #! script."""
+    found = set()
+    for path in stage.rglob("*"):
+        if path.is_file() and not path.is_symlink():
+            with path.open("rb") as stream:
+                head = stream.read(4)
+            if head == b"\x7fELF" or head[:2] == b"#!":
+                found.add(path.relative_to(stage).as_posix())
+    return found
+
+
 def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
     check_version(version, allow_ci=True)
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
@@ -204,8 +217,7 @@ def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
             for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
                 shutil.copyfile(ROOT / name, stage / name)
             if preset == "Linux":
-                forced = () if os.name != "nt" else {executable.name, *(p.relative_to(stage).as_posix()
-                                                                       for p in stage.rglob("*.so*") if p.is_file())}
+                forced = () if os.name != "nt" else {executable.name, *linux_binaries(stage)}
                 reproducible_tar(stage, archive, forced)
             else:
                 reproducible_zip(stage, archive)
@@ -221,8 +233,9 @@ def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
         archive.unlink(missing_ok=True)
         raise
     if not rehearsal and not guard.derived:
-        guard.warnings.append("no extracted asset-cache hashes (no ~/.cache/opend2/asset-cache here); copied DC6/TXT/WAV "
-                              "extracts are caught only by name and content magic")
+        looked = ", ".join(str(root) for root in data_guard.cache_roots()) or f"disabled by {data_guard.CACHE_VARIABLE}=none"
+        guard.warnings.append(f"no extracted asset-cache hashes (looked in: {looked}; set {data_guard.CACHE_VARIABLE} to "
+                              "the cache the client used); copied DC6/TXT/WAV extracts are caught only by name and content magic")
     for warning in guard.warnings:
         print(f"WARNING data guard: {warning}")
     if not guard.original:

@@ -72,6 +72,8 @@ python eng/release-local.py --tag v0.1.0-rc.1 [--preset Linux --preset Windows] 
   `~/.cache/opend2/asset-cache`를 둘 다 본다(`D2_ASSET_CACHE=none`이면 끈다(가드 전용). `OPEND2_ASSET_CACHE`는 경고와 함께 받는 옛 이름이다). 그 아래의 `cache-manifest.json`(converter `p1-mpq*`)이 있는 폴더에서 64바이트 이상인 모든 파일의
   SHA-256을 계산해 차단 목록에 더한다. 그래서 #108이 추출한 DC6/TXT/WAV와 캐시의 PNG 변환본을 그대로 복사해도 잡힌다.
   이 해시는 커밋하지 않고 실행할 때마다 다시 만든다(약 5만 개, 수 초). 최소 5개 조건은 원본 목록에만 적용된다.
+  `D2_ASSET_CACHE`나 `--asset-cache`로 **직접 지정한** 경로가 폴더가 아니면 오타로 보고 `FAILED`로 멈춘다(traceback 없음). 캐시 없이 돌리려면 `none`을 쓴다.
+  캐시 해시가 0개일 때의 경고는 실제로 찾아본 경로와 `D2_ASSET_CACHE`를 함께 출력한다.
 - 태그 릴리즈에서 추출 캐시 해시가 0개면(CI 러너처럼 캐시가 없을 때) 경고를 출력하고 매니페스트 `warnings`에 남긴다.
   형식을 알 수 없는 바이너리 엔트리는 차단하지 않지만 `unknown_formats` 목록으로 기록해 릴리즈마다 차이를 리뷰할 수 있게 한다.
 - **남는 위험:** 변환 파생물(캐시 밖에서 다시 인코딩·크기 조정·재압축한 PNG/OGG, 다른 포맷으로 옮긴 테이블)은 이름, 매직, 해시
