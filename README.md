@@ -22,7 +22,7 @@ The [PLAY integration work](docs/migration/PLAY_INTEGRATION.md) connects explici
 
 [PLAY-16](docs/migration/PLAY_16_RESULTS.md) adds health/mana potions, four belt slots, bag/belt swaps, 1–4 hotkeys and bounded consumption records. New monster kills retain their gear drop and add a potion. Full resources and rejected uses preserve the item. Save schema 5 / rules 8 verifies v1–v4 saves before upgrading, without moving existing v2/v3 items or resetting v3 mana. Recovery amounts and belt behavior remain preview rules.
 
-See [release testing](docs/migration/RELEASE_QA.md) for packaged builds and the separate synthetic, legacy-scene and two-hour GUI acceptance cases. `v0.2.0-rc.3` includes the basic HUD, audio, inventory and startup menu. PLAY-08 through PLAY-16 require newer CI packages or a future release.
+See [release testing](docs/migration/RELEASE_QA.md) for packaged builds and the separate synthetic, legacy-scene and two-hour GUI acceptance cases. Versioning restarted at **0.1.0** (P1 original data + P2-1 foundation); the root [`VERSION`](VERSION) file is the single version source, changes are listed in [CHANGELOG.md](CHANGELOG.md), and `python eng/release-local.py` builds a reproducible, game-data-checked release locally without CI. The earlier `v0.2.0-rc.*` preview tags were deleted.
 
 The historical image and CMake/TCP-IP instructions below describe the original C++ project. They are not evidence of C# GUI gameplay acceptance.
 
