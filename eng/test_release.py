@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import tarfile
 import tempfile
 import unittest
@@ -152,6 +153,23 @@ class ReleaseTests(unittest.TestCase):
         source = self.fixture("macOS")
         metadata = release.pack(source, self.output, "macOS", self.version, self.commit)
         self.assertEqual((source / "OpenD2.zip").read_bytes(), (self.output / metadata["file"]).read_bytes())
+
+    def test_notes_branch_on_candidate_and_stable_tags(self):
+        self.assertEqual("v0.1.0-rc.2", release.previous_tag("v0.1.0", ["v0.1.0-rc.1", "v0.1.0-rc.2", "v0.2.0", "junk"]))
+        self.assertEqual("v0.1.0", release.previous_tag("v0.2.0-rc.1", ["v0.1.0", "v0.1.0-rc.3"]))
+        self.assertIsNone(release.previous_tag("v0.1.0", []))
+        for version, candidate in (("v0.1.0-rc.1", True), ("v0.1.0", False)):
+            with self.subTest(version=version):
+                self.version = version
+                shutil.rmtree(self.output, ignore_errors=True)
+                self.packages()
+                self.servers()
+                with mock.patch.object(release, "previous_tag", return_value=None):
+                    self.prepare()
+                notes = (self.output / "RELEASE_NOTES.md").read_text()
+                self.assertNotIn("rc.4", notes)
+                self.assertEqual(candidate, "experimental release candidate" in notes)
+                self.assertEqual(candidate, "GUI QA pending" in notes.splitlines()[0])
 
     def test_complete_handoff_is_pending_and_all_checksums_match(self):
         self.packages()

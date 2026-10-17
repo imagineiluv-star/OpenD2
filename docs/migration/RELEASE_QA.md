@@ -2,7 +2,55 @@
 
 작업 ID: RELEASE-QA-01. 기준: 2026-10-08, xAI Grok Bot 공식 문서.
 범위: **3개 OS 패키지 생성·재실행 검사·prerelease 발행·봇에 전달할 시험 자료**.
-워크플로 성공은 GUI 테스트 완료를 뜻하지 않는다. Bot 실행·결과 자동 회수·정식 버전 승격은 미구현이다.
+워크플로 성공은 GUI 테스트 완료를 뜻하지 않는다. Bot 실행·결과 자동 회수는 미구현이다.
+이전 `v0.2.0-rc.*` 태그는 삭제됐고 버전 관리는 0.1.0부터 다시 시작했다(아래 [버전 관리](#versioning)).
+
+<a id="versioning"></a>
+## 버전 관리
+
+- **단일 소스는 루트 `VERSION`**(`X.Y.Z`, 현재 `0.1.0`)이다. `Directory.Build.props`가 이 파일을 읽어 `VersionPrefix`를 정하고,
+  `-p:VersionSuffix=rc.1 -p:SourceRevisionId=<sha>`(또는 같은 이름의 환경 변수)로 빌드하면 어셈블리 `InformationalVersion`이
+  `0.1.0-rc.1+<sha>`가 된다. Godot `config/version`은 `python eng/version.py sync`로 맞추고 `eng/version.py check`와
+  `eng/test_release.py`가 어긋남을 실패로 잡는다. 다른 곳에 버전 숫자를 적지 않는다.
+- 태그는 `vX.Y.Z` 또는 `vX.Y.Z-rc.N`이며 `python eng/release.py check-version <태그>`는 태그의 X.Y.Z가 `VERSION`과 다르면 실패한다.
+  태그는 master 병합 커밋에 **annotated 태그**(`git tag -a`)로 현우님이 직접 만든다. 봇은 태그·릴리즈를 만들지 않는다.
+- 단계별 버전: 0.1.0 = P1 원본 데이터 완료 + P2-1 기본 틀, 0.2.0 = P2, 0.3.0 = P3, 0.4.0 = P4, 0.5~0.9 = P5, 1.0.0 = 1.14d와 동일.
+  단계 완료는 MINOR, 단계 안의 버그 수정은 PATCH, 정식 전 사전 검증은 `-rc.N`. 변경은 [CHANGELOG](../../CHANGELOG.md) `[Unreleased]`에 PR마다 적는다.
+- **rc 번호는 재사용하지 않는다.** 예전에 공개했다가 지운 `v0.2.0-rc.1`~`rc.4`가 있으므로 P2의 0.2.0 rc는 `v0.2.0-rc.5`부터 쓴다.
+  일반 규칙: 한 번이라도 push했던 태그 이름(지운 것 포함)은 다시 쓰지 않는다. 옛 태그가 남은 클론은
+  `git fetch --prune --prune-tags origin`으로 정리한다(남아 있으면 preflight가 "points at" 오류로 막는다).
+
+## 로컬 릴리즈 (Actions 없이)
+
+```
+python eng/release-local.py --tag v0.1.0-rc.1 [--preset Linux --preset Windows] [--skip-tests] [--rehearsal]
+```
+
+1. 작업 트리가 깨끗하고, 태그가 `VERSION`과 맞고, 태그가 있으면 HEAD가 그 태그 커밋이며 annotated인지 확인한다.
+   태그 전 시험은 `--rehearsal`(노트에 REHEARSAL 표시).
+2. `eng/version.py check`로 `VERSION`과 Godot 설정이 맞는지 보고, Godot 편집기·export 템플릿 버전이 `eng/toolchain.json`과
+   같은지 확인한다(버전과 템플릿 SHA-256은 manifest `toolchain`에 기록).
+3. `git archive`로 HEAD를 `~/.cache/opend2/release-build/` 아래 실행마다 새로 만드는 비공개(0700) 임시 폴더에 풀고,
+   `SOURCE_DATE_EPOCH`=커밋 시각, `LC_ALL=C.UTF-8`, `TZ=UTC`, `PathMap`으로 Release 빌드·테스트(테스트 단계 출력과 요약 줄로 판정,
+   알려진 실패는 NPC 번들 런타임 하나만 허용)·Godot export를 한다. 동시에 두 번 실행해도 서로 덮어쓰지 않고, 임시 경로는 결과물에 남지 않는다.
+4. 정렬·소유자·시각을 고정한 tar.gz/ZIP으로 묶는다. 같은 머신에서 같은 커밋을 두 번 빌드하면 `SHA256SUMS`가 같다
+   네이티브 MPQ 라이브러리는 `-ffile-prefix-map`으로 빌드해 체크아웃 경로가 들어가지 않으므로 다른 경로의 클론에서도 같다
+   (zip/gzip 바이트는 zlib 버전에 따라 달라질 수 있어 "같은 툴체인·같은 머신" 재현만 보장). 검증: 두 번 `--rehearsal`로 빌드해
+   `diff a/SHA256SUMS b/SHA256SUMS`.
+5. **릴리즈 페이로드 게임 데이터 차단**(`eng/data_guard.py`, 저장소 히스토리 검사는 아님): 확장자(.mpq .wav .mp3 .ogg .bik .smk .dc6 .dcc
+   .dt1 .ds1 .cof .pl2 .tbl .d2s .pal .pcx .fnt, NFKC 정규화·끝 공백/마침표/~ 무시, Godot 가져오기 이름 포함), `.txt/.dat/.bin`은
+   `data/global|local` 경로이거나 D2 테이블 이름일 때만(라이선스 txt, ICU `icudt*.dat` 오탐 방지), MPQ 헤더(`MPQ\x1A/\x1B`), WAV(`RIFF....WAVE`)·Bink(`BIK`/`KB2`) 헤더(확장자와 무관), 끝의 `_`와 키릴/그리스 문자로 위장한 확장자,
+   zip(EOCD 기준, 앞에 바이트가 붙은 SFX 포함)·tar(gz/bz2/xz)·단일 gz/bz2/xz·PCK(독립 파일과 실행 파일 끝에 붙은 PCK), 원본 SHA-256을
+   검사한다. 해석할 수 없는 형식(7z, rar, zstd, cab 등), 암호화된 PCK/zip 항목, 심볼릭 링크, 압축 해제 상한(항목 1GB, 합계 4GB, 비율 200:1)을
+   넘는 압축은 차단한다. 원본 해시는 저장소에 두지 않고 `OPEND2_ORIGINAL_SHA256SUMS` 또는 `D2_DATA_PATH`에서 읽으며, **정식 릴리즈에서는 필수**
+   (`--rehearsal`/`ci` 빌드는 경고만, 결과는 `PASS (no original hash list)`). 50MB 초과 파일은 경고로 출력하고 manifest에 남긴다.
+6. 모든 결과는 임시 폴더에 만들고 전부 성공했을 때만 `../opend2-release/<태그>/`로 이름을 바꾼다. 실패하면 아무것도 남지 않는다.
+- `--verify-reproducible`: 서로 다른 비공개 빌드 트리에서 두 번 빌드하고 `SHA256SUMS`가 완전히 같아야 통과한다(다르면 파일 이름을
+  출력하고 아무것도 남기지 않는다). v0.1.0 같은 태그를 달기 전에 한 번 실행한다. manifest `toolchain.prebuilt_sha256`에는 복사해 넣은
+  `.local-tools/native/dist`, `llama/dist` 바이너리의 SHA-256이 기록된다(여기서 다시 빌드하지 않으므로).
+7. 결과는 저장소 밖 `../opend2-release/<태그>/`에 `SHA256SUMS`, `release-manifest.json`, `RELEASE_NOTES.md`([템플릿](../release/NOTES_TEMPLATE.md),
+   CHANGELOG 해당 절 포함)로 남는다. 업로드는 현우님이 `gh release create <태그> --verify-tag ../opend2-release/<태그>/*`로 직접 한다.
+
 
 ## Original hash list (원본 해시 목록, 태그 릴리즈 필수)
 
@@ -32,11 +80,10 @@
 ## GitHub Actions 실행
 
 1. Actions → **Release candidate and QA handoff** → **Run workflow**.
-2. `master` 선택. 새 `version`에 `v0.2.0-rc.1` 같은 값을 입력한다.
+2. `master` 선택. 새 `version`에 `VERSION`과 맞는 `v0.1.0-rc.1` 같은 값을 입력한다.
 3. `publish=false`는 검증과 자료 생성만 수행한다. 실행 결과의 `OpenD2-<version>-release`
    아티팩트를 받는다. `publish=true`는 동일 파일을 공개 GitHub **prerelease**로 발행한다.
-4. 또는 master에 포함된 커밋에 `vX.Y.Z-rc.N` 태그를 push하면 자동으로 prerelease를 만든다.
-   정식 `vX.Y.Z` 태그로는 실행되지 않는다. 기존 파일은 덮어쓰지 않으며 재발행은 새 rc 번호를 사용한다.
+4. 또는 master에 포함된 커밋에 `vX.Y.Z-rc.N`이나 `vX.Y.Z` 태그를 push하면 실행된다. 태그가 `VERSION`과 다르면 preflight에서 실패한다. 기존 파일은 덮어쓰지 않으며 재발행은 새 rc 번호를 사용한다.
 
 기존 `m0.yml`을 `workflow_call`로 재사용한다. 세 OS의 locked restore·계약 테스트·Godot 검사·export,
 압축을 풀어 실행하는 검사까지 성공해야 발행한다. Linux는 실행 권한을 보존하는 tar.gz,
@@ -46,7 +93,7 @@ Windows는 ZIP, macOS는 Godot ZIP 원본 바이트를 사용한다.
 
 `release-manifest.json`은 버전·소스 SHA·빌드 URL·파일 해시/크기를 기록한다.
 PLAY-07부터 manifest/result는 기본 `synthetic_preview` GUI, 원본 scene GUI, 2시간 soak 상태를 분리한다.
-**rc.5부터 schema 3**이며 온라인 서버 패키지(`server_packages`)와 별도의 `online_qa_status`/`online_case_ids`(QA-15~18)를 추가한다.
+**manifest schema 3**(이전 체계의 rc.5 후보 계획부터)이며 온라인 서버 패키지(`server_packages`)와 별도의 `online_qa_status`/`online_case_ids`(QA-15~18)를 추가한다.
 개별 package 메타데이터는 schema 1을 유지한다. 기존 결과 수집기가 있다면 schema 3을 읽도록 수정하고 누락 상태를 통과로 추정하지 않는다.
 `LEGACY_PLAY_SETUP.md`에 scene JSON·아트 방향·좌표·사전검사 방법을 함께 첨부한다.
 `SHA256SUMS`는 패키지와 지침/메타데이터를 포함한다. GUI QA는 `NOT_RUN`으로 시작한다.
@@ -159,7 +206,7 @@ Grok Bot/실제 원본 데이터 GUI 시험은 아직 수행하지 않았다.
 - [GitHub CLI release create](https://cli.github.com/manual/gh_release_create)
 
 
-### rc.5 준비 — 서버 패키지와 온라인 QA 계획
+### (이전 체계, 태그 삭제됨) 서버 패키지와 온라인 QA 계획 — 옛 rc.5 후보
 
 릴리스에 **self-contained 온라인 서버**가 `OpenD2-<버전>-server-<runtime>.zip`(linux-x64, win-x64, osx-arm64)으로 포함된다. 서버 압축은 CI의 `validate`가
 압축을 푼 서버를 실제로 실행해 TLS, 두 패키지 클라이언트의 게임플레이·재접속, 협동 월드, 네트워크 장애, 32개 스트림(Arena·월드) 검사를 통과한 뒤에만
@@ -171,7 +218,7 @@ Grok Bot/실제 원본 데이터 GUI 시험은 아직 수행하지 않았다.
 
 서버 패키지에는 이후 추가된 직업·레벨·스킬, 몬스터 종류, 방 경험치 표시, Open 파일 형식 4가 들어 있고 `/health`에 `characterProgress`·`monsterKinds`·`tables`가 추가됐다. 서버 폴더의 문서에 [CHARACTER_PROGRESSION](CHARACTER_PROGRESSION.md)과 [MONSTER_KINDS](MONSTER_KINDS.md)가 함께 들어가고, 운영자는 `--tables <폴더>`로 본인이 꺼낸 표를 읽게 할 수 있다. 이 숫자들은 모두 미리보기이며 원본 값이 아니다. 시험 지침은 [RC5_QA](RC5_QA.md)의 "rc.4 이후 이 후보에 들어간 것"과 QA-16~18에 있다.
 
-### rc.4 준비 — PLAY-17 QA 계획
+### (이전 체계, 태그 삭제됨) PLAY-17 QA 계획 — 옛 rc.4 후보
 
 새 후보는 필수 QA-11~14(격자 가방·마나/강타·물약/벨트·선택 줍기)를 포함한다.
 manifest/result schema 2에 `qa_plan=PLAY-17`을 추가하고 manifest의 `required_case_ids`를 명시한다.

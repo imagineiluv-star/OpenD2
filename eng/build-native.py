@@ -21,6 +21,10 @@ actual = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"]
 assert actual == lock["commit"]
 assert not subprocess.check_output(["git", "-C", str(source), "status", "--porcelain"], text=True).strip(), "Native dependency has local changes"
 args = ["cmake", "-S", str(root / "native"), "-B", str(build), "-DCMAKE_BUILD_TYPE=Release", "-DSTORMLIB_SOURCE=" + str(source)]
+if platform.system() != "Windows":
+    # No checkout path in the binary (__FILE__, debug info): identical bytes from any clone location.
+    prefix_map = f"-ffile-prefix-map={root}=. -fdebug-prefix-map={root}=. -fmacro-prefix-map={root}=."
+    args += ["-DCMAKE_C_FLAGS=" + prefix_map, "-DCMAKE_CXX_FLAGS=" + prefix_map]
 if platform.system() == "Darwin":
     args += ["-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"]
 elif platform.system() == "Windows":
