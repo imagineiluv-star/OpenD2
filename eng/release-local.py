@@ -184,7 +184,9 @@ class BuildDirectory:
 
     def __enter__(self):
         CACHE_ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if CACHE_ROOT.is_symlink() or CACHE_ROOT.stat().st_uid != os.getuid():
+        # Ownership is a POSIX concept; on Windows the per-user %LOCALAPPDATA%/XDG cache is already private.
+        owner_ok = not hasattr(os, "getuid") or CACHE_ROOT.stat().st_uid == os.getuid()
+        if CACHE_ROOT.is_symlink() or not owner_ok:
             raise SystemExit(f"{CACHE_ROOT} is not a private directory owned by you")
         self.path = Path(tempfile.mkdtemp(prefix="build-", dir=CACHE_ROOT))
         return self.path
@@ -283,4 +285,7 @@ def assemble(args, version, tag, presets, head, output, log, build_root):
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except data_guard.ManifestError as error:
+        raise SystemExit(f"FAILED: {error}") from None

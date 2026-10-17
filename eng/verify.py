@@ -1,7 +1,21 @@
 """Repository boundary and accidental asset checks. Run from any directory."""
 from pathlib import Path
+import re
 import subprocess
 import xml.etree.ElementTree as ET
+
+# C# comments, char literals and (verbatim/interpolated/raw) strings; prose may mention the engine, code may not.
+CSHARP_NON_CODE = re.compile(
+    r'//[^\n]*|/\*.*?\*/'
+    r'|\$*"{3,}.*?"{3,}'                       # raw string literals
+    r'|\$?@\$?"(?:[^"]|"")*"'                   # verbatim strings
+    r'|\$?"(?:[^"\\\n]|\\.)*"'                 # regular / interpolated strings
+    r"|'(?:[^'\\\n]|\\.)+'", re.S)
+
+
+def csharp_code(text):
+    return CSHARP_NON_CODE.sub(" ", text)
+
 
 root = Path(__file__).resolve().parents[1]
 for name in ("Core", "Assets", "Npc", "Online"):
@@ -13,7 +27,8 @@ for name in ("Core", "Assets", "Npc", "Online"):
     assert refs == ([] if name == "Core" else ["../OpenD2.Core/OpenD2.Core.csproj"]), refs
     assert not list(project.iter("Reference")), "Direct DLL reference requires review"
     for source in folder.glob("*.cs"):
-        assert "Godot" not in source.read_text(encoding="utf-8"), f"Engine dependency: {source}"
+        assert not re.search(r"\bGodot\b", csharp_code(source.read_text(encoding="utf-8"))), \
+            f"Engine dependency: {source}"
 # Restrict only NEW migration trees; inherited C++ native binaries remain recorded debt.
 paths = subprocess.check_output(["git", "ls-files", "--cached", "--others", "--exclude-standard"], cwd=root, text=True).splitlines()
 for item in paths:
