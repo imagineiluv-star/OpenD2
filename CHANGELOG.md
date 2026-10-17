@@ -13,6 +13,12 @@ in a MINOR release but must be listed here.
 
 ## [Unreleased]
 
+### Added
+
+- Per-screen and per-act palette rules (auto palette), PL2 light (0-31) and 25/50/75/additive/multiplicative blend in
+  the original-mode render path, `--gamma` ramp; asset cache PNG palette chosen per resource instead of fixed act1
+  (P2-2, partially complete: the lighting MAE/SSIM comparison against original captures moves to P2-2b).
+
 ### Changed
 - Release tooling: `eng/verify.py` checks code inside interpolated-string holes and `"Godot.*"` type-name strings,
   `\uXXXX` identifier escapes and sub-folders; the data guard validates the MPQ manifest shape, bounds RSCC block size,

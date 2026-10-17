@@ -1,5 +1,9 @@
 # P2-2 화면별 팔레트, PL2 조명·블렌드, 감마
 
+**상태: 부분 완료.** 팔레트 규칙, PL2 조명·블렌드 연결, 감마, act1/units 13,769px 재현은 끝났다.
+원작 캡처 대비 조명 MAE ≤ 3 / SSIM ≥ 0.98(Rogue Encampment 고정 지점)은 **P2-2b**로 분리해 월드 렌더 단계에서 한다
+([작업계획](WORK_PLAN.md)). 조명 방향(0 = 가장 어두움)과 감마 단계도 아직 원작으로 검증하지 않았다.
+
 ## 팔레트 선택 규칙 (`ScreenPalettes`)
 원작 클라이언트의 `PAL_*` 사용처(`Shared/D2Shared.hpp`, `Modcode/Client/UI/Menus/*.cpp`, `Panels/*.cpp`)를 따른다.
 
