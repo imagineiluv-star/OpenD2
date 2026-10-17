@@ -283,4 +283,7 @@ def assemble(args, version, tag, presets, head, output, log, build_root):
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except data_guard.ManifestError as error:
+        raise SystemExit(f"FAILED: {error}") from None
