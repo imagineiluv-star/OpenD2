@@ -41,3 +41,12 @@
 - charselect 기본값: units → fechar로 바뀌어 RGB 해시가 `c85bab3e…69f5`(units)에서 `aec740fb…8a8f`(fechar)로 바뀐다. 둘 다 독립 파이썬 기준과 100% 일치한다.
 - act1 + light 12 gameselect: `47be175a…30f2`(파이썬 기준이 원시 PL2 오프셋 `1024 + level*256`로 직접 계산).
 - 에셋 캐시: converter `p1-mpq-4`, UI DC6 PNG가 act1 대신 units로 바뀐다.
+
+## 파이썬 기준 렌더러 (`eng/palette_reference.py`)
+- OpenD2 코드를 쓰지 않는 독립 구현이다: DC6를 직접 디코드하고, 800x600에 행 우선으로 이어 붙이고, 원시 `pal.dat`(BGR)와 원시 PL2 조명 오프셋
+  `1024 + level*256`으로 RGB를 만든 뒤 SHA-256만 출력한다. 게임 파일은 쓰지 않는다.
+- 입력은 저장소 밖에 만든 원본 파일 폴더다(`OpenD2.AssetAudit --build-cache ... --include "data\global\palette" --png none`와
+  `--include "data\global\ui\frontend"`의 `raw/`). 이 캐시 목록에는 `pal.pl2`가 없을 수 있어 `--light`에는 `--pl2-file`을 쓴다.
+- 1.11b gameselect 배경을 18개 원작 팔레트 전부로 렌더한 해시를 `ScreenPaletteContracts.GameSelectPaletteRgbSha256`에 두고,
+  genuine 테스트가 C# 렌더 결과와 100% 같은지 확인한다. 기존 units/act1/fechar/charselect-units 해시도 이 스크립트로 다시 나온다.
+- 에셋 캐시는 팔레트를 읽지 못해 PNG를 건너뛰면 `errors`에 팔레트마다 한 줄(건너뛴 개수 포함)을 남긴다.

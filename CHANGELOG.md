@@ -20,6 +20,10 @@ in a MINOR release but must be listed here.
   (P2-2, partially complete: the lighting MAE/SSIM comparison against original captures moves to P2-2b).
 
 ### Changed
+- Data guard: WAV/Ogg/Bink/DC6/MPQ headers are also found after a prefix (each candidate structurally checked, e.g.
+  Ogg page CRC), and every gzip/bz2/xz member is scanned on its own.
+- P2-2 follow-up: independent palette reference script `eng/palette_reference.py` with reference hashes for all 18
+  original palettes; the asset cache reports PNGs skipped because their palette could not be read.
 - Release tooling: `eng/verify.py` checks code inside interpolated-string holes and `"Godot.*"` type-name strings,
   `\uXXXX` identifier escapes and sub-folders; the data guard validates the MPQ manifest shape, bounds RSCC block size,
   scans bytes after streams inside RSCC blocks, after short high-ratio raw deflate and after bz2/xz streams, rejects an

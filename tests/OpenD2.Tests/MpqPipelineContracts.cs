@@ -80,6 +80,21 @@ internal static class MpqPipelineContracts
 			try { PngWriter.EncodeRgba(2, 2, rgba[..15]); throw new Exception("short buffer accepted"); } catch (ArgumentException) { }
 		});
 
+		test("asset cache records skipped PNGs when their palette cannot be read", () =>
+		{
+			var files = new Dictionary<string, byte[]>
+			{
+				["data\\global\\palette\\units\\pal.dat"] = PaletteBytes(),
+				["data\\global\\tiles\\act3\\jungle\\a.dc6"] = LegacyFormatContracts.Dc6(),
+				["data\\global\\tiles\\act3\\jungle\\b.dc6"] = LegacyFormatContracts.Dc6(),
+				["data\\global\\ui\\panel\\sample.dc6"] = LegacyFormatContracts.Dc6(),
+			};
+			using var source = new MemorySource(files);
+			var result = AssetCache.Build(source, "fingerprint-missing-palette", Path.Combine(root, "asset-cache-missing-palette", "1.0t"));
+			Check(result.PngFiles == 1, $"only the units PNG converts ({result.PngFiles})");
+			Check(result.Errors.Count == 1 && result.Errors[0].Contains("act3") && result.Errors[0].Contains("2 PNG conversion(s) skipped"), string.Join(" | ", result.Errors));
+		});
+
 		test("asset cache converts DC6, palettes and tables, rebuilds only on source change, and is readable by the engine", () =>
 		{
 			var files = new Dictionary<string, byte[]>

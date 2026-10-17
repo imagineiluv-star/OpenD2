@@ -165,12 +165,19 @@ public static class AssetCache
 		{
 			string? forced = options.PngPalette is null ? null : ScreenPalettes.Validate(options.PngPalette);
 			var pngPalettes = new Dictionary<string, Palette?>(StringComparer.Ordinal); var pngPaletteUse = new SortedDictionary<string, int>(StringComparer.Ordinal);
+			// A palette that cannot be read skips every PNG that needs it; report it once per palette with the count.
+			var paletteFailures = new Dictionary<string, string>(StringComparer.Ordinal); var pngPaletteSkips = new SortedDictionary<string, int>(StringComparer.Ordinal);
 			Palette? PngPaletteFor(string resource)
 			{
 				string n = forced ?? ScreenPalettes.ForAssetPath(resource);
 				if (!pngPalettes.TryGetValue(n, out var p))
-					pngPalettes[n] = p = source.TryRead(ScreenPalettes.DatPath(n), 768, out var pal) ? Palette.Parse(pal) : null;
+				{
+					try { p = source.TryRead(ScreenPalettes.DatPath(n), 768, out var pal) ? Palette.Parse(pal) : null; if (p is null) paletteFailures[n] = "missing"; }
+					catch (Exception e) when (e is InvalidDataException or MpqException or IOException) { p = null; paletteFailures[n] = e.Message; }
+					pngPalettes[n] = p;
+				}
 				if (p is not null) pngPaletteUse[n] = pngPaletteUse.GetValueOrDefault(n) + 1;
+				else pngPaletteSkips[n] = pngPaletteSkips.GetValueOrDefault(n) + 1;
 				return p;
 			}
 			bool PngBudget()
@@ -242,6 +249,8 @@ public static class AssetCache
 					if (errors.Count < MaxErrors) errors.Add($"{name}: {e.GetType().Name}: {e.Message}");
 				}
 			}
+			foreach (var (name, count) in pngPaletteSkips)
+				errors.Add($"palette {ScreenPalettes.DatPath(name)} could not be read ({paletteFailures[name]}); {count} PNG conversion(s) skipped");
 			var manifest = new { converter = ConverterVersion, source = sourceFingerprint, options = options.Signature, built = DateTimeOffset.UtcNow,
 				resources, pngs, pngBytes, pngCapped = capped, tables, palettes, pngPalettes = pngPaletteUse, errors };
 			File.WriteAllText(Path.Combine(staging, ManifestName), JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
