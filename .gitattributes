@@ -1,0 +1,6 @@
+# Same bytes on every OS: git archive (eng/release-local.py) must not export CRLF under core.autocrlf.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.zip binary
+*.so binary
