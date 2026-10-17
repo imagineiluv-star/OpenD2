@@ -215,6 +215,9 @@ def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
     except BaseException:
         archive.unlink(missing_ok=True)
         raise
+    if not rehearsal and not guard.derived:
+        guard.warnings.append("no extracted asset-cache hashes (no ~/.cache/opend2/asset-cache here); copied DC6/TXT/WAV "
+                              "extracts are caught only by name and content magic")
     for warning in guard.warnings:
         print(f"WARNING data guard: {warning}")
     if not guard.original:
@@ -235,7 +238,7 @@ def pack(source, output, preset, version, commit, smoke=False, rehearsal=None):
     metadata = {"schema_version": 1, "version": version, "commit": commit, "platform": preset,
                 "file": archive.name, "bytes": archive.stat().st_size, "sha256": sha256(archive),
                 "headless_smoke": "PASS" if smoke else "NOT_RUN",
-                "data_guard": {"result": guard.result, "warnings": guard.warnings, "asset_cache_hashes": len(guard.derived), "entries": guard.scanned, "original_hashes": len(guard.original)}}
+                "data_guard": {"result": guard.result, "warnings": guard.warnings, "asset_cache_hashes": len(guard.derived), "unknown_formats": guard.unknown, "entries": guard.scanned, "original_hashes": len(guard.original)}}
     write_json(output / f"package-{preset}.json", metadata)
     mpq_kit(output, version, commit)
     return metadata

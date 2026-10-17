@@ -12,7 +12,7 @@ on:
         default: ci
     secrets:
       OPEND2_ORIGINAL_SHA256SUMS:
-        description: "sha256sum-style list (<hash>  <basename>, no paths) of your own install; tag runs only"
+        description: "sha256sum-style list (<hash>  <basename>, no paths) of your own install; optional, adds to the committed MPQ manifest"
         required: false
 permissions:
   contents: read
@@ -71,26 +71,31 @@ jobs:
       - name: Build, contracts, headless smoke and export
         run: python eng/validate.py --export ${{ matrix.preset }}
       - name: Archive and smoke the extracted release package
-        # Tagged releases REQUIRE the original-file hash list (intended): the data guard refuses to pack a real tag
-        # without it. Store the sha256sum-style list of your own install (not the files) as the repository secret
-        # OPEND2_ORIGINAL_SHA256SUMS; it is written to a runner temp file and never committed. Untagged "ci" builds
-        # only warn ("PASS (no original hash list)").
+        # Tagged releases REQUIRE an original-file hash list (intended). The committed MPQ manifest
+        # (src/OpenD2.Assets/Manifests/d2-mpq-manifest.json, hashes only) is the default list, so no secret is needed.
+        # The optional OPEND2_ORIGINAL_SHA256SUMS secret adds more hashes. Release calls get it: this guards against
+        # accidents, it is not a security boundary (release.yml can be dispatched from any branch). For a hard
+        # boundary, put the secret in a GitHub Environment limited to tags/master.
         env:
           RELEASE_TAG: ${{ inputs.release_tag || 'ci' }}
           SOURCE_SHA: ${{ github.sha }}
-          # Injected only for tagged release calls; push/pull_request/"ci" runs never see it.
+          # Injected only when called by release.yml with a real tag; push/pull_request/"ci" runs never see it.
           ORIGINAL_SHA256SUMS_CONTENT: ${{ inputs.release_tag != '' && inputs.release_tag != 'ci' && secrets.OPEND2_ORIGINAL_SHA256SUMS || '' }}
         shell: bash
         run: |
           if [ -n "$ORIGINAL_SHA256SUMS_CONTENT" ]; then
             umask 077
             sums_file="$(mktemp "$RUNNER_TEMP/original-sums.XXXXXXXX")"
-            trap 'rm -f "$sums_file"' EXIT
+            trap 'rm -f "$sums_file"' EXIT INT TERM HUP
             printf '%s\n' "$ORIGINAL_SHA256SUMS_CONTENT" > "$sums_file"
             export OPEND2_ORIGINAL_SHA256SUMS="$sums_file"
           fi
           unset ORIGINAL_SHA256SUMS_CONTENT
           python eng/release.py pack --preset ${{ matrix.preset }} --smoke
+      - name: Remove hash-list temp files (self-hosted runners keep RUNNER_TEMP if the step was killed)
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP"/original-sums.*
       - name: Repeat Linux client initialization and audio teardown
         if: runner.os == 'Linux'
         run: python eng/smoke-export.py Linux --iterations 8

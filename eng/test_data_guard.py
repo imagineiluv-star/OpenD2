@@ -32,9 +32,13 @@ def setUpModule():
             _saved_env[key] = os.environ.pop(key)
     _saved_env.setdefault("OPEND2_ASSET_CACHE", os.environ.get("OPEND2_ASSET_CACHE"))
     _hermetic_cache()
+    global _saved_manifest
+    _saved_manifest = data_guard.MPQ_MANIFEST
+    data_guard.MPQ_MANIFEST = Path("/nonexistent/d2-mpq-manifest.json")  # tests pick their hash lists explicitly
 
 
 def tearDownModule():
+    data_guard.MPQ_MANIFEST = _saved_manifest
     os.environ.pop("OPEND2_ASSET_CACHE", None)
     os.environ.update({k: v for k, v in _saved_env.items() if v is not None})
 
@@ -397,6 +401,78 @@ class DataGuardTests(unittest.TestCase):
         self.add("icon2.png", derived)
         found = data_guard.scan([self.export], derived_hashes=hashes).blocked
         self.assertTrue(any("extracted asset-cache file hash" in item for item in found), found)
+    def rscc_raw(self, blocks, block_size, total):
+        packed = [zlib.compress(b) for b in blocks]
+        return (b"RSCC" + struct.pack("<III", 1, block_size, total) + b"".join(struct.pack("<I", len(p)) for p in packed)
+                + b"".join(packed))
+
+    def test_rscc_block_bomb_is_bounded_and_blocked(self):
+        bomb = self.rscc_raw([b"\0" * (300 * 1024 * 1024)], 100, 50)  # declares 50 bytes, inflates to 300 MB
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://x.res": bomb}))
+        found = self.blocked()
+        self.assertTrue(any("x.res: could not inspect" in item and "block size" in item for item in found), found)
+
+    def test_rscc_payload_hidden_past_declared_total_is_blocked(self):
+        hidden = self.rscc_raw([b"A" * 16 + b"RIFF\x10\0\0\0WAVE"], 64, 16)
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://y.res": hidden}))
+        found = self.blocked()
+        self.assertTrue(any("y.res: could not inspect" in item and "declares 16" in item for item in found), found)
+
+    def test_corrupt_rscc_and_zlib_streams_are_reported_not_raised(self):
+        good = zlib.compress(b"payload " * 8)
+        corrupt = (b"RSCC" + struct.pack("<III", 1, 64, 64) + struct.pack("<II", len(good), 0)
+                   + good[:4] + b"\xff" * (len(good) - 4))
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://z.res": corrupt}))
+        found = self.blocked()
+        self.assertTrue(any("z.res: could not inspect" in item for item in found), found)
+        (self.export / "OpenD2.pck").write_bytes(fake_pck({"res://Main.cs": b"code"}))
+        stream = zlib.compress(os.urandom(200000), 0)
+        self.add("cut.res", stream[:-50])  # starts fine, then ends early: flush() fails
+        found = self.blocked()
+        self.assertTrue(any("cut.res: could not inspect" in item for item in found), found)
+
+    def test_small_window_zlib_and_raw_deflate_are_opened(self):
+        wav = b"RIFF\x10\0\0\0WAVE" + FAKE + bytes(range(256))
+        for wbits in (9, 12):
+            with self.subTest(wbits=wbits):
+                packer = zlib.compressobj(9, zlib.DEFLATED, wbits)
+                self.add("w.res", packer.compress(wav) + packer.flush())
+                self.assertTrue(any("w.res!zlib" in item for item in self.blocked()), self.blocked())
+        (self.export / "w.res").unlink()
+        raw = zlib.compressobj(9, zlib.DEFLATED, -15)
+        self.add("r.res", raw.compress(wav) + raw.flush())
+        self.assertTrue(any("r.res!deflate" in item for item in self.blocked()), self.blocked())
+
+    def test_data_path_needs_an_exact_data_component(self):
+        self.add("mydata/global/x.res", FAKE)
+        self.add("metadata_global.res", FAKE)
+        self.assertEqual([], self.blocked())
+        start = self.export / "mydata"
+        self.assertEqual([], self.blocked(start))  # start folder merely ending in "data"
+
+    def test_pck_at_an_odd_offset_is_scanned(self):
+        pck = fake_pck({"res://audio/hit.wav": FAKE})
+        self.add("bundle.bin2", b"\x7fELF junk" * 7 + b"x" + pck + b"tail bytes")
+        self.assertTrue(any("bundle.bin2@" in item and "hit.wav" in item for item in self.blocked()), self.blocked())
+        self.add("bundle.bin2", b"text GDPC mention without a header")
+        self.assertEqual([], self.blocked())
+
+    def test_committed_mpq_manifest_is_the_default_hash_list(self):
+        real = _saved_manifest
+        hashes = data_guard.manifest_hashes(real)
+        self.assertGreaterEqual(len(hashes), data_guard.MIN_ORIGINAL_HASHES)
+        with mock.patch.object(data_guard, "MPQ_MANIFEST", real):
+            self.assertEqual(hashes, data_guard.load_original_hashes())
+            sums = self.root / "S"
+            sums.write_text("a" * 64 + "  x\n")
+            self.assertEqual({"a" * 64}, data_guard.load_original_hashes(sums))  # explicit list stays exact
+
+    def test_unknown_binary_formats_are_listed_not_blocked(self):
+        self.add("mystery.res", b"\x01\x02\0\0 opaque")
+        self.add("lib.so", b"\x7fELF\0\0")
+        guard = data_guard.scan([self.export])
+        self.assertEqual([], guard.blocked)
+        self.assertEqual(["mystery.res"], [u for u in guard.unknown if "mystery" in u or "lib.so" in u])
 
 
 if __name__ == "__main__":
