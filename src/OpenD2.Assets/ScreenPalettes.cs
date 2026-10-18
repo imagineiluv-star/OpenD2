@@ -92,7 +92,9 @@ public static class LegacyGamma
 /// <summary>
 /// How a sprite is composited in the 8-bit back buffer, using the act's PL2 tables like the original: the source index
 /// is first remapped through the light table (0 = darkest, 31 = full brightness), then combined with the destination
-/// index through a 256x256 blend table (25/50/75% transparency, additive, multiplicative). Opaque = plain copy.
+/// index through a 256x256 blend table looked up as [source * 256 + destination] (the 1st/2nd/3rd PL2 alpha tables,
+/// additive, multiplicative). Opaque = plain copy. With that lookup the 1st table weights the source 25% and the
+/// destination 75%; whether the original indexes [source][destination] is unverified (docs/migration/P2_2_SCREEN_PALETTES.md).
 /// </summary>
 public enum LegacyBlendMode { Opaque, Trans25, Trans50, Trans75, Additive, Multiplicative }
 

@@ -23,7 +23,14 @@ def _code(text, i, code, strings, closing):
     depth, n = 0, len(text)
     while i < n:
         c = text[i]
-        if text.startswith("//", i):
+        if c == "#" and not text[text.rfind("\n", 0, i) + 1:i].strip():
+            # Preprocessor directive: the rest of the line is directive text (a region label, a symbol), never the
+            # start of a comment or string; "#region /*" must not hide the code up to a later "*/".
+            end = text.find("\n", i)
+            end = n if end == -1 else end
+            code.append(" ")
+            i = end
+        elif text.startswith("//", i):
             end = text.find("\n", i)
             i = n if end == -1 else end
             code.append(" ")

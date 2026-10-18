@@ -102,10 +102,32 @@ internal static class ScreenPaletteContracts
 		});
 	}
 
-	// Independent Python reference (own DC6 decoder, raw pal.dat BGR, raw PL2 light offset 1024 + level*256), 1.11b data.
+	// Independent Python reference eng/palette_reference.py (own DC6 decoder, raw pal.dat BGR, raw PL2 light offset 1024 + level*256), 1.11b data.
 	public const string CharSelectFecharRgbSha256 = "aec740fbee30445062193e0bed896ae9b28b4808d0fdc55bc9690f7e330d8a8f";
 	public const string CharSelectUnitsRgbSha256 = "c85bab3e2a8831ef0678ddc14460a50d8703eecb4630a84abfc14a59288b69f5";
 	public const string GameSelectAct1Light12RgbSha256 = "47be175a9669227e8649db4b21bd11a68e1b891b150748f7a11aae62a29e30f2";
+	// gameselect background with every original palette, from eng/palette_reference.py (1.11b; hashes only).
+	public static readonly IReadOnlyDictionary<string, string> GameSelectPaletteRgbSha256 = new Dictionary<string, string>
+	{
+		["act1"] = "4bc657d0cb93ad1c1ef91b521e3ac93706ae78b6c0919aef1924fcd06ee32106",
+		["act2"] = "6a01cd45acb5feec9060a4a73bef10d5de510cd47295f2518a22e63319c96ace",
+		["act3"] = "20e53e5416412513406888fed92a69aaba0ede77cbdfe1983a5cbab27797ff29",
+		["act4"] = "46df3c6ac31c0f3f649a6dc6a507b5ce1690a07802688cdf5c88804f5c8819a7",
+		["act5"] = "e51c133b8b431adc71020d0047ef6bbcfb6deb0927eb45b1768d7b7c0a3ba57b",
+		["endgame"] = "8fe0f9f7df174bbcd9682813b8b6fe59a0bbc72952a589c9eb12c402e6a310e1",
+		["endgame2"] = "1bb4c3d99526bdee7a31aea8210581a0c1ed938fa76f61c0c78107a4003b9583",
+		["fechar"] = "4bac7793103176c1521ffd24e425b4bace8aa403e9c168b2441d2d7b83eef92f",
+		["loading"] = "eee451577337237696c38a9b57bb80d93908a36183ee1bbe163b3adbf650c7dd",
+		["menu0"] = "c3e832aafe2020233a4561242921f56e33f5ecf6d08b660657346294f94dc150",
+		["menu1"] = "7173da58499be27bed7065f761c44bcbce74eb8bb8285651d8f6aaee03ea31ae",
+		["menu2"] = "c62220f34c8256a6a98c6b12c13cc783c5994c44aa666741f67bbb7a47e97827",
+		["menu3"] = "c9f7998570368fb152532a8b33c1c5c54f7a71ce591d917af1db30d3a693ce02",
+		["menu4"] = "902d7ab0f1983a2ba2d419ea5846003bbe11156e509ee3180f0f17374792ae62",
+		["sky"] = "0f64860b609d9edddffc2569312855397b04c36c14afe3c542b8c4a9dac5d9e3",
+		["static"] = "f7744714308912db251f51be038adeaa600c1e5d3ed7c72cb615ee702a53cbc5",
+		["trademark"] = "75ee593226f5cf491d7a85ee85582bf186eb5f89aebe90cab864d2b7da0fdebd",
+		["units"] = "9ec1529c911158ec76fc96854bb774f8edeb660b2884d014d554ff6ffd4fd02f",
+	};
 
 	public static void Genuine(string data, Action<string, Action> test)
 	{
@@ -122,6 +144,17 @@ internal static class ScreenPaletteContracts
 			var lit = LegacyScreenRenderer.Render(new LegacyCaptureRequest("gameselect", LegacyResolution.R800x600, "act1", Light: 12), Read);
 			Check(Hash(lit) == GameSelectAct1Light12RgbSha256, $"act1 light 12 {Hash(lit)}");
 			Check(Hash(LegacyScreenRenderer.Render(new LegacyCaptureRequest("gameselect", LegacyResolution.R800x600, "act1", Light: 12), Read)) == Hash(lit), "deterministic");
+		});
+		test("genuine: gameselect with each of the 18 original palettes matches eng/palette_reference.py 100%", () =>
+		{
+			using var mpq = new MpqAssetSource(data);
+			byte[] Read(string p) => mpq.TryRead(p, AssetDecoders.MaxInputBytes, out var b) ? b : throw new FileNotFoundException(p);
+			Check(GameSelectPaletteRgbSha256.Keys.Order(StringComparer.Ordinal).SequenceEqual(ScreenPalettes.Names.Order(StringComparer.Ordinal)), "every palette has a reference hash");
+			foreach (var (name, expected) in GameSelectPaletteRgbSha256)
+			{
+				string actual = Convert.ToHexStringLower(SHA256.HashData(LegacyScreenRenderer.Render(new LegacyCaptureRequest("gameselect", LegacyResolution.R800x600, name), Read).Rgb));
+				Check(actual == expected, $"{name} {actual}");
+			}
 		});
 		test("genuine: act1 PL2 blend of a UI sprite over the game-select background equals direct table lookups", () =>
 		{

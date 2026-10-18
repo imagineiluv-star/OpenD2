@@ -78,6 +78,26 @@ PCK_ENCRYPTED_DIRECTORY = 1
 PCK_ENCRYPTED_FILE = 1
 
 
+def _ogg_crc_table():
+    table = []
+    for byte in range(256):
+        value = byte << 24
+        for _ in range(8):
+            value = ((value << 1) ^ 0x04C11DB7 if value & 0x80000000 else value << 1) & 0xFFFFFFFF
+        table.append(value)
+    return table
+
+
+_OGG_TABLE = _ogg_crc_table()
+
+
+def _ogg_crc(page):
+    crc = 0
+    for byte in page:
+        crc = ((crc << 8) & 0xFFFFFFFF) ^ _OGG_TABLE[(crc >> 24) ^ byte]
+    return crc
+
+
 class Uninspectable(RuntimeError):
     pass
 
@@ -290,6 +310,10 @@ class Guard:
         signature = self.media_signature(data)
         if signature:
             reasons.append(signature)
+        else:
+            embedded = self.embedded_media(data)
+            if embedded:
+                reasons.append(f"{embedded[1]} at offset {embedded[0]}")
         if len(data) > self.warn_bytes:
             self.warnings.append(f"{label}: {len(data)} bytes exceeds {self.warn_bytes}")
         if reasons:
@@ -307,6 +331,78 @@ class Guard:
             return "Ogg audio (OggS page)"
         if Guard.looks_like_dc6(data):
             return "DC6 sprite header"
+        return None
+
+    EMBED_CANDIDATES = 4096  # per magic and entry: bounded work on huge binaries
+
+    @classmethod
+    def embedded_media(cls, data):
+        """Media headers after a prefix (b"x" + WAV, a later member, a hand-made blob). Each candidate must pass a
+        structural check (WAV chunk ids, Ogg page CRC, Bink size/dimensions, DC6 pointer table, MPQ header fields)
+        so ordinary binaries that merely contain the four magic bytes are not blocked."""
+        checks = ((b"RIFF", cls._wav_at), (b"OggS", cls._ogg_at), (b"BIK", cls._bink_at),
+                  (b"KB2", cls._bink_at), (b"MPQ\x1a", cls._mpq_at))
+        for magic, check in checks:
+            index, tried = data.find(magic, 1), 0
+            limit = cls.EMBED_CANDIDATES if magic != b"OggS" else 256  # the Ogg CRC is computed in Python
+            while index != -1 and tried < limit:
+                tried += 1
+                kind = check(data, index)
+                if kind:
+                    return index, kind
+                index = data.find(magic, index + 1)
+        for terminator in DC6_TERMINATORS:  # DC6 has no magic: anchor on the terminator 12 bytes in
+            index, tried = data.find(terminator, 13), 0
+            while index != -1 and tried < cls.EMBED_CANDIDATES:
+                tried += 1
+                if cls.looks_like_dc6(data[index - 12:]):
+                    return index - 12, "DC6 sprite header"
+                index = data.find(terminator, index + 4)
+        return None
+
+    @staticmethod
+    def _wav_at(data, i):
+        size = struct.unpack_from("<I", data, i + 4)[0] if len(data) >= i + 16 else 0
+        if data[i + 8:i + 12] == b"WAVE" and data[i + 12:i + 16] in (b"fmt ", b"JUNK", b"LIST", b"bext", b"fact") \
+                and 4 <= size and i + 8 + size <= len(data) + 4096:
+            return "WAV audio (RIFF/WAVE header)"
+        return None
+
+    @staticmethod
+    def _ogg_at(data, i):
+        if len(data) < i + 27 or data[i + 4] != 0 or data[i + 5] & ~7:
+            return None
+        segments = data[i + 26]
+        end = i + 27 + segments
+        if end > len(data):
+            return None
+        end += sum(data[i + 27:end])
+        if end > len(data):
+            return None
+        page = bytearray(data[i:end])
+        page[22:26] = b"\0\0\0\0"
+        return "Ogg audio (OggS page)" if _ogg_crc(page) == struct.unpack_from("<I", data, i + 22)[0] else None
+
+    @staticmethod
+    def _bink_at(data, i):
+        if len(data) < i + 32:
+            return None
+        versions = BIK_VERSIONS if data[i:i + 3] == b"BIK" else KB2_VERSIONS
+        if data[i + 3] not in versions:
+            return None
+        size, frames, largest, _frames2, width, height = struct.unpack_from("<6I", data, i + 4)
+        if 32 <= size + 8 <= len(data) - i + 4096 and 1 <= frames <= 1_000_000 and 0 < largest <= size \
+                and 1 <= width <= 8192 and 1 <= height <= 8192:
+            return "Bink video header"
+        return None
+
+    @staticmethod
+    def _mpq_at(data, i):
+        if len(data) < i + 32:
+            return None
+        header_size, _archive_size, version, sector_shift = struct.unpack_from("<IIHH", data, i + 4)
+        if header_size in (32, 44, 208) and version <= 3 and sector_shift <= 16:
+            return "MPQ archive header"
         return None
 
     @staticmethod
@@ -390,42 +486,53 @@ class Guard:
                     elif not member.isdir():
                         self.entry(name, b"", depth)
             return
-        out, trailer = bytearray(), b""
-        if data[:2] == b"\x1f\x8b":
-            with gzip.GzipFile(fileobj=io.BytesIO(data)) as stream:  # gzip itself rejects trailing garbage
-                while chunk := stream.read(1024 * 1024):
-                    out += chunk
-                    self.account(label, len(out), len(data), commit=False)
-        else:
-            trailer = self.multistream(label, data, out)
-        self.account(label, len(out), len(data))
+        members, trailer = self.multistream(label, data)
         inner = re.sub(r"\.(gz|bz2|xz)$", "", label.split("!")[-1].split("/")[-1], flags=re.I) or "stream"
-        self.entry(f"{label}!{inner}", bytes(out), depth)
+        for number, member in enumerate(members):  # each member separately, so its own header sits at offset 0
+            self.entry(f"{label}!{inner}" + (f"#member{number + 1}" if number else ""), bytes(member), depth)
         if trailer:  # BZ2File/LZMAFile silently drop bytes after the last stream; they ship too
             self.entry(f"{label}!{'bz2' if data[:2] == b'BZ' else 'xz'}-trailer", trailer, depth)
 
-    def multistream(self, label, data, out):
-        """Inflate concatenated bz2/xz streams into out; return any bytes after the last one."""
-        bz = data[:2] == b"BZ"
-        magic = b"BZh" if bz else b"\xfd7zXZ\0"
-        rest, first = data, True
+    def multistream(self, label, data):
+        """Inflate concatenated gzip members or bz2/xz streams one by one: (outputs, bytes after the last one).
+        gzip only allows zero padding after its last member (like the gzip module); anything else is refused."""
+        kind = "gz" if data[:2] == b"\x1f\x8b" else "bz2" if data[:2] == b"BZ" else "xz"
+        magic = {"gz": b"\x1f\x8b", "bz2": b"BZh", "xz": b"\xfd7zXZ\0"}[kind]
+        members, total, rest, first = [], 0, data, True
         while first or rest.startswith(magic):
             first = False
-            decompressor = bz2.BZ2Decompressor() if bz else lzma.LZMADecompressor(lzma.FORMAT_XZ)
-            position = 0
-            while not decompressor.eof:
-                if decompressor.needs_input:
-                    if position >= len(rest):
-                        raise Uninspectable("compressed stream is truncated")
-                    out += decompressor.decompress(rest[position:position + 65536], 1024 * 1024)
-                    position += 65536
-                else:
-                    out += decompressor.decompress(b"", 1024 * 1024)
-                self.account(label, len(out), len(data), commit=False)
+            out, position = bytearray(), 0
+            if kind == "gz":
+                decompressor = zlib.decompressobj(31)
+                while not decompressor.eof:
+                    if decompressor.unconsumed_tail:
+                        out += decompressor.decompress(decompressor.unconsumed_tail, 1024 * 1024)
+                    elif position < len(rest):
+                        out += decompressor.decompress(rest[position:position + 65536], 1024 * 1024)
+                        position += 65536
+                    else:
+                        raise Uninspectable("gzip member is truncated")
+                    self.account(label, total + len(out), len(data), commit=False)
+            else:
+                decompressor = bz2.BZ2Decompressor() if kind == "bz2" else lzma.LZMADecompressor(lzma.FORMAT_XZ)
+                while not decompressor.eof:
+                    if decompressor.needs_input:
+                        if position >= len(rest):
+                            raise Uninspectable("compressed stream is truncated")
+                        out += decompressor.decompress(rest[position:position + 65536], 1024 * 1024)
+                        position += 65536
+                    else:
+                        out += decompressor.decompress(b"", 1024 * 1024)
+                    self.account(label, total + len(out), len(data), commit=False)
+            members.append(out)
+            total += len(out)
             rest = decompressor.unused_data + rest[position:]
-            if not bz:
-                rest = rest.lstrip(b"\0")  # xz stream padding
-        return rest
+            if kind != "bz2":
+                rest = rest.lstrip(b"\0")  # gzip/xz zero padding
+        self.account(label, total, len(data))
+        if kind == "gz" and rest:
+            raise Uninspectable("bytes after the last gzip member")
+        return members, rest
 
     KNOWN_MAGIC = (b"\x7fELF", b"MZ", b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa", b"\xca\xfe\xba\xbe",
                    b"\x89PNG", b"RSRC", b"ECFG", b"GST2", b"GDST", b"RIFF", b"\xff\xd8\xff", b"GIF8", b"BSJB", b"wOF")

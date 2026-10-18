@@ -599,6 +599,63 @@ class DataGuardTests(unittest.TestCase):
         self.assertEqual([], guard.blocked)
         self.assertEqual(0, hits)
 
+    WAV = b"RIFF\x24\0\0\0WAVEfmt \x10\0\0\0" + b"\x01\0\x01\0\x22\x56\0\0\x44\xac\0\0\x02\0\x10\0data\0\0\0\0"
+
+    @staticmethod
+    def ogg_page(payload=FAKE):
+        page = bytearray(b"OggS\0\x02" + b"\0" * 8 + b"\x01\0\0\0" + b"\0\0\0\0" + b"\0\0\0\0"
+                         + bytes([1, len(payload)]) + payload)
+        struct.pack_into("<I", page, 22, data_guard._ogg_crc(page))
+        return bytes(page)
+
+    def test_wav_after_one_leading_byte_is_blocked(self):
+        self.add("sound.bin", b"x" + self.WAV)
+        found = self.blocked()
+        self.assertTrue(any(item.startswith("sound.bin:") and "WAV audio" in item and "offset 1" in item
+                            for item in found), found)
+
+    def test_wav_inside_a_second_member_is_blocked(self):
+        for name, compress in (("m.bin.gz", lambda b: gzip.compress(b, mtime=0)), ("m.bin.bz2", bz2.compress),
+                               ("m.bin.xz", lzma.compress)):
+            with self.subTest(name=name):
+                path = self.add(name, compress(b"harmless") + compress(self.WAV))
+                found = self.blocked()
+                self.assertTrue(any(item.startswith(f"{name}!m.bin#member2:") and "WAV audio" in item
+                                    for item in found), found)
+                path.write_bytes(compress(b"harmless") + compress(b"second harmless member"))
+                self.assertEqual([], self.blocked())
+                path.unlink()
+
+    def test_gzip_garbage_after_the_last_member_is_still_refused(self):
+        self.add("g.bin.gz", gzip.compress(b"harmless", mtime=0) + b"junk!")
+        found = self.blocked()
+        self.assertTrue(any("g.bin.gz: could not inspect" in item for item in found), found)
+        (self.export / "g.bin.gz").write_bytes(gzip.compress(b"harmless", mtime=0) + b"\0" * 8)  # zero padding is fine
+        self.assertEqual([], self.blocked())
+
+    def test_media_headers_at_other_offsets_are_found_with_structural_checks(self):
+        bink = b"BIKi" + struct.pack("<6I", 4000, 10, 300, 10, 640, 480) + b"\0" * 4000
+        mpq = b"MPQ\x1a" + struct.pack("<IIHH", 32, 4096, 1, 3) + b"\0" * 64
+        cases = {"WAV audio": self.WAV, "Ogg audio": self.ogg_page(), "Bink video": bink, "MPQ archive": mpq,
+                 "DC6 sprite": self.fake_dc6()}
+        for kind, payload in cases.items():
+            with self.subTest(kind=kind):
+                hit = data_guard.Guard.embedded_media(b"prefix bytes " * 3 + b"!" + payload + b"tail")
+                self.assertIsNotNone(hit)
+                self.assertIn(kind, hit[1])
+                self.assertEqual(40, hit[0])
+
+    def test_bare_magic_bytes_in_ordinary_binaries_are_not_media(self):
+        broken_ogg = bytearray(self.ogg_page())
+        broken_ogg[-1] ^= 1  # CRC no longer matches
+        for blob in (b"\x7fELF code RIFF strings WAVE and fmt elsewhere", b"..." + bytes(broken_ogg),
+                     b"xx BIKi" + b"\xff" * 40, b"xMPQ\x1a" + b"\xff" * 40, b"text OggS mention"):
+            with self.subTest(blob=blob[:16]):
+                self.assertIsNone(data_guard.Guard.embedded_media(blob))
+        import random
+        rng = random.Random(1018)
+        self.assertEqual(0, sum(bool(data_guard.Guard.embedded_media(rng.randbytes(20000))) for _ in range(500)))
+
 
 if __name__ == "__main__":
     unittest.main()
