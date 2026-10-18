@@ -7,11 +7,15 @@ it only needs to keep prose out of the engine check and keep code in it.
 import re
 
 _PREFIX = re.compile(r'(\$*)(@?)(\$*)("+)')
+_NEWLINES = re.compile("\r\n?|[\u0085\u2028\u2029]")
 _CHAR = re.compile(r"'(?:[^'\\\n]|\\.)+'")
 
 
 def split(text):
     """Return (code, strings): code with comments/literals blanked, and the literal contents."""
+    # C# also ends lines with a lone CR, U+0085, U+2028 and U+2029; without this, "// x\r<code>" or
+    # "#region /*\u2028<code>" would hide code that compiles.
+    text = _NEWLINES.sub("\n", text)
     code, strings = [], []
     position = _code(text, 0, code, strings, None)
     assert position >= len(text)
