@@ -173,7 +173,7 @@ public static class AssetCache
 				if (!pngPalettes.TryGetValue(n, out var p))
 				{
 					try { p = source.TryRead(ScreenPalettes.DatPath(n), 768, out var pal) ? Palette.Parse(pal) : null; if (p is null) paletteFailures[n] = "missing"; }
-					catch (Exception e) when (e is InvalidDataException or MpqException or IOException) { p = null; paletteFailures[n] = e.Message; }
+					catch (Exception e) when (e is InvalidDataException or MpqException or IOException or UnauthorizedAccessException) { p = null; paletteFailures[n] = e.Message; }
 					pngPalettes[n] = p;
 				}
 				if (p is not null) pngPaletteUse[n] = pngPaletteUse.GetValueOrDefault(n) + 1;
@@ -244,7 +244,7 @@ public static class AssetCache
 							break;
 					}
 				}
-				catch (Exception e) when (e is InvalidDataException or ArgumentException or IOException or IndexOutOfRangeException or OverflowException)
+				catch (Exception e) when (e is InvalidDataException or ArgumentException or IOException or UnauthorizedAccessException or IndexOutOfRangeException or OverflowException)
 				{
 					if (errors.Count < MaxErrors) errors.Add($"{name}: {e.GetType().Name}: {e.Message}");
 				}

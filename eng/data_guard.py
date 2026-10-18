@@ -333,39 +333,66 @@ class Guard:
             return "DC6 sprite header"
         return None
 
-    EMBED_CANDIDATES = 4096  # per magic and entry: bounded work on huge binaries
+    EMBED_CANDIDATES = 4096  # per format and entry: bounded work on huge binaries
+    # C-speed prefilters: each pattern already pins the bytes around the magic, so decoys like b"RIFF" * 5000,
+    # b"OggS" * 256 or megabytes of 0xCD padding never reach the Python structural checks.
+    EMBED_PATTERNS = (
+        (re.compile(rb"RIFF.{4}WAVE", re.S), "WAV"),
+        (re.compile(rb"OggS\x00"), "Ogg"),
+        (re.compile(rb"BIK[bdfghik]|KB2[abdfghij]"), "Bink"),
+        (re.compile(rb"MPQ\x1a(?:\x20|\x2c|\xd0)\x00\x00\x00"), "MPQ"),
+        (re.compile(rb"\x06\x00\x00\x00.{4}\x00\x00\x00\x00(?:\xee{4}|\xcd{4})", re.S), "DC6"),
+    )
 
     @classmethod
     def embedded_media(cls, data):
         """Media headers after a prefix (b"x" + WAV, a later member, a hand-made blob). Each candidate must pass a
-        structural check (WAV chunk ids, Ogg page CRC, Bink size/dimensions, DC6 pointer table, MPQ header fields)
-        so ordinary binaries that merely contain the four magic bytes are not blocked."""
-        checks = ((b"RIFF", cls._wav_at), (b"OggS", cls._ogg_at), (b"BIK", cls._bink_at),
-                  (b"KB2", cls._bink_at), (b"MPQ\x1a", cls._mpq_at))
-        for magic, check in checks:
-            index, tried = data.find(magic, 1), 0
-            limit = cls.EMBED_CANDIDATES if magic != b"OggS" else 256  # the Ogg CRC is computed in Python
-            while index != -1 and tried < limit:
-                tried += 1
-                kind = check(data, index)
+        structural check (WAV fmt/data chunks, Ogg page CRC, Bink size/dimensions, DC6 pointer table, MPQ header fields)
+        so ordinary binaries that merely contain the magic bytes are not blocked. More candidates than the cap fails
+        closed: a payload hidden behind thousands of near-valid decoys is blocked, not skipped."""
+        checks = {"WAV": cls._wav_at, "Ogg": cls._ogg_at, "Bink": cls._bink_at, "MPQ": cls._mpq_at, "DC6": cls._dc6_at}
+        for pattern, name in cls.EMBED_PATTERNS:
+            limit = cls.EMBED_CANDIDATES if name != "Ogg" else 256  # the Ogg CRC is computed in Python
+            for tried, match in enumerate(pattern.finditer(data, 1)):
+                if tried >= limit:
+                    return match.start(), f"more than {limit} {name} header candidates (cannot inspect them all; fail closed)"
+                kind = checks[name](data, match.start())
                 if kind:
-                    return index, kind
-                index = data.find(magic, index + 1)
-        for terminator in DC6_TERMINATORS:  # DC6 has no magic: anchor on the terminator 12 bytes in
-            index, tried = data.find(terminator, 13), 0
-            while index != -1 and tried < cls.EMBED_CANDIDATES:
-                tried += 1
-                if cls.looks_like_dc6(data[index - 12:]):
-                    return index - 12, "DC6 sprite header"
-                index = data.find(terminator, index + 4)
+                    return match.start(), kind
         return None
 
     @staticmethod
+    def _dc6_at(data, i):
+        return "DC6 sprite header" if Guard.looks_like_dc6(data, i) else None
+
+    WAV_FIRST_CHUNKS = (b"fmt ", b"JUNK", b"LIST", b"bext", b"fact")
+
+    @staticmethod
     def _wav_at(data, i):
-        size = struct.unpack_from("<I", data, i + 4)[0] if len(data) >= i + 16 else 0
-        if data[i + 8:i + 12] == b"WAVE" and data[i + 12:i + 16] in (b"fmt ", b"JUNK", b"LIST", b"bext", b"fact") \
-                and 4 <= size and i + 8 + size <= len(data) + 4096:
-            return "WAV audio (RIFF/WAVE header)"
+        """RIFF/WAVE with a plausible fmt chunk (format tag, 1-8 channels, sample rate, block align) and a non-empty data
+        chunk that fits. Header templates in ordinary binaries (ALSA's all-zero fmt, size 36) are not audio."""
+        if len(data) < i + 20 or data[i + 12:i + 16] not in Guard.WAV_FIRST_CHUNKS:
+            return None
+        riff_size = struct.unpack_from("<I", data, i + 4)[0]
+        if riff_size < 4 or i + 8 + riff_size > len(data) + 4096:
+            return None
+        cursor, end, fmt_ok = i + 12, min(len(data), i + 8 + riff_size), False
+        for _ in range(32):
+            if cursor + 8 > end:
+                return None
+            chunk, size = data[cursor:cursor + 4], struct.unpack_from("<I", data, cursor + 4)[0]
+            body = cursor + 8
+            if chunk == b"fmt ":
+                if size < 16 or body + 16 > len(data):
+                    return None
+                tag, channels, rate, byte_rate, align, bits = struct.unpack_from("<HHIIHH", data, body)
+                fmt_ok = tag != 0 and 1 <= channels <= 8 and 1000 <= rate <= 384000 and align > 0 and byte_rate > 0 \
+                    and (tag != 1 or (bits in (8, 16, 24, 32) and align == channels * bits // 8))
+                if not fmt_ok:
+                    return None
+            elif chunk == b"data":
+                return "WAV audio (RIFF/WAVE header)" if fmt_ok and 0 < size and body + size <= len(data) + 4096 else None
+            cursor = body + size + (size & 1)
         return None
 
     @staticmethod
@@ -406,16 +433,17 @@ class Guard:
         return None
 
     @staticmethod
-    def looks_like_dc6(data):
+    def looks_like_dc6(data, start=0):
         # version 6, encoding 0, terminator EEEEEEEE/CDCDCDCD, 1-32 directions x 1-256 frames, and the first frame
         # pointer lands right after the pointer table: five independent constraints, so false positives are negligible.
-        if len(data) < 28 or data[12:16] not in DC6_TERMINATORS:
+        # Reads at an offset without slicing, so candidates in large entries cost nothing to reject.
+        if len(data) < start + 28 or data[start + 12:start + 16] not in DC6_TERMINATORS:
             return False
-        version, _flags, encoding, directions, frames = struct.unpack_from("<3I4xII", data, 0)
+        version, _flags, encoding, directions, frames = struct.unpack_from("<3I4xII", data, start)
         if version != 6 or encoding != 0 or not (1 <= directions <= 32 and 1 <= frames <= 256):
             return False
         table_end = 24 + 4 * directions * frames
-        return len(data) >= table_end + 4 and struct.unpack_from("<I", data, 24)[0] == table_end
+        return len(data) >= start + table_end + 4 and struct.unpack_from("<I", data, start + 24)[0] == table_end
 
     @staticmethod
     def mpq_offset(data):
@@ -469,29 +497,49 @@ class Guard:
             self.blocked.append(f"{label}: could not inspect archive ({error})")
 
     def tar_or_stream(self, label, data, depth):
-        try:
-            archive = tarfile.open(fileobj=io.BytesIO(data), mode="r:*")
-        except tarfile.ReadError:
-            archive = None
-        if archive is not None:
-            with archive:
-                for member in archive.getmembers():
-                    name = f"{label}!{member.name}"
-                    if member.isfile():
-                        self.account(member.name, member.size, len(data))
-                        self.entry(name, archive.extractfile(member).read(), depth)
-                    elif member.issym() or member.islnk():
-                        self.entry(name, b"", depth)
-                        self.blocked.append(f"{name}: link inside archive (-> {member.linkname})")
-                    elif not member.isdir():
-                        self.entry(name, b"", depth)
+        if data[:2] not in (b"\x1f\x8b", b"BZ") and data[:6] != b"\xfd7zXZ\x00":
+            if not self.tar(label, data, depth):  # routed here by the ustar magic but not a usable tar
+                raise Uninspectable("ustar header without readable members")
             return
         members, trailer = self.multistream(label, data)
-        inner = re.sub(r"\.(gz|bz2|xz)$", "", label.split("!")[-1].split("/")[-1], flags=re.I) or "stream"
+        inner = re.sub(r"\.(gz|bz2|xz|tgz|tbz2?|txz)$", "", label.split("!")[-1].split("/")[-1], flags=re.I) or "stream"
         for number, member in enumerate(members):  # each member separately, so its own header sits at offset 0
-            self.entry(f"{label}!{inner}" + (f"#member{number + 1}" if number else ""), bytes(member), depth)
+            name = f"{label}!{inner}" + (f"#member{number + 1}" if number else "")
+            # A decompressed tar (.tar.gz etc.) lists its members under the archive's own label, as before.
+            if not self.tar(label if number == 0 else name, bytes(member), depth):
+                self.entry(name, bytes(member), depth)
         if trailer:  # BZ2File/LZMAFile silently drop bytes after the last stream; they ship too
             self.entry(f"{label}!{'bz2' if data[:2] == b'BZ' else 'xz'}-trailer", trailer, depth)
+
+    def tar(self, label, data, depth):
+        """Scan an uncompressed tar's members and any bytes after its last member. Returns False when data is not a tar
+        with at least one member (tarfile accepts any data starting with a zero block as an empty archive, so
+        b"\\0" * 512 + WAV must be scanned as plain bytes instead)."""
+        if len(data) < 512:
+            return False
+        try:
+            archive = tarfile.open(fileobj=io.BytesIO(data), mode="r:")
+            members = archive.getmembers()
+        except tarfile.TarError:
+            return False
+        if not members:
+            return False
+        with archive:
+            for member in members:
+                name = f"{label}!{member.name}"
+                if member.isfile():
+                    self.account(member.name, member.size, len(data))
+                    self.entry(name, archive.extractfile(member).read(), depth)
+                elif member.issym() or member.islnk():
+                    self.entry(name, b"", depth)
+                    self.blocked.append(f"{name}: link inside archive (-> {member.linkname})")
+                elif not member.isdir():
+                    self.entry(name, b"", depth)
+            end = archive.offset
+        rest = data[end:]
+        if rest.strip(b"\0"):  # end-of-archive zero blocks and record padding are fine; anything else ships too
+            self.entry(f"{label}!tar-trailer", rest, depth)
+        return True
 
     def multistream(self, label, data):
         """Inflate concatenated gzip members or bz2/xz streams one by one: (outputs, bytes after the last one).

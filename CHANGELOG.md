@@ -20,6 +20,12 @@ in a MINOR release but must be listed here.
   (P2-2, partially complete: the lighting MAE/SSIM comparison against original captures moves to P2-2b).
 
 ### Changed
+- Data guard (#125 follow-up): the offset media search fails closed when it hits its candidate cap (C-speed prefilters
+  keep decoys from reaching it), decompressed tars are checked member by member plus any bytes after the end of the
+  archive (an "empty tar" of zero blocks is scanned as plain data), WAV hits need a real fmt/data chunk, and DC6
+  candidates are checked without copying (32 MB of 0xCD: 17.4 s → 0.2 s).
+- Asset cache: permission-denied resources or palettes are recorded in `errors` and the build continues.
+- `eng/verify.py` treats CR, U+0085, U+2028 and U+2029 as line ends like C#.
 - `eng/verify.py`: preprocessor directive lines can no longer open a comment/string (`#region /*`), and `.cs` files in
   nested `bin`/`obj` folders (which the SDK compiles) are checked; only the project's own `bin`/`obj` are skipped.
 - Data guard: WAV/Ogg/Bink/DC6/MPQ headers are also found after a prefix (each candidate structurally checked, e.g.

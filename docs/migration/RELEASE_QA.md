@@ -39,8 +39,8 @@ python eng/release-local.py --tag v0.1.0-rc.1 [--preset Linux --preset Windows] 
    `diff a/SHA256SUMS b/SHA256SUMS`.
 5. **릴리즈 페이로드 게임 데이터 차단**(`eng/data_guard.py`, 저장소 히스토리 검사는 아님): 확장자(.mpq .wav .mp3 .ogg .bik .smk .dc6 .dcc
    .dt1 .ds1 .cof .pl2 .tbl .d2s .pal .pcx .fnt, NFKC 정규화·끝 공백/마침표/~ 무시, Godot 가져오기 이름 포함), `.txt/.dat/.bin`은
-   `data/global|local` 경로이거나 D2 테이블 이름일 때만(라이선스 txt, ICU `icudt*.dat` 오탐 방지), MPQ 헤더(`MPQ\x1A/\x1B`), WAV(`RIFF....WAVE`)·Bink(`BIK`/`KB2`) 헤더(확장자와 무관)(앞에 바이트가 붙은 경우도 찾되, 후보마다 WAV 청크 ID·Ogg 페이지 CRC·Bink 크기/해상도·DC6 포인터 표·MPQ 헤더 필드를 확인해 오탐을 막는다), 끝의 `_`와 키릴/그리스 문자로 위장한 확장자,
-   zip(EOCD 기준, 앞에 바이트가 붙은 SFX 포함)·tar(gz/bz2/xz)·단일 gz/bz2/xz(멀티 멤버는 멤버마다 따로 검사)·PCK(독립 파일과 실행 파일 끝에 붙은 PCK), 원본 SHA-256을
+   `data/global|local` 경로이거나 D2 테이블 이름일 때만(라이선스 txt, ICU `icudt*.dat` 오탐 방지), MPQ 헤더(`MPQ\x1A/\x1B`), WAV(`RIFF....WAVE`)·Bink(`BIK`/`KB2`) 헤더(확장자와 무관)(앞에 바이트가 붙은 경우도 찾되, 후보마다 WAV 청크 ID·Ogg 페이지 CRC·Bink 크기/해상도·DC6 포인터 표·MPQ 헤더 필드를 확인해 오탐을 막는다. WAV는 실제 fmt 필드와 비어 있지 않은 data 청크가 있어야 한다. 정규식 사전 필터를 거친 후보가 형식마다 4096개(Ogg 256개)를 넘으면 막는다(fail closed)), 끝의 `_`와 키릴/그리스 문자로 위장한 확장자,
+   zip(EOCD 기준, 앞에 바이트가 붙은 SFX 포함)·tar(gz/bz2/xz)·단일 gz/bz2/xz(멀티 멤버는 멤버마다 따로 검사, 압축을 푼 tar는 멤버와 tar 끝 뒤의 바이트까지 검사)·PCK(독립 파일과 실행 파일 끝에 붙은 PCK), 원본 SHA-256을
    검사한다. 해석할 수 없는 형식(7z, rar, zstd, cab 등), 암호화된 PCK/zip 항목, 심볼릭 링크, 압축 해제 상한(항목 1GB, 합계 4GB, 비율 200:1)을
    넘는 압축은 차단한다. 원본 해시는 저장소에 두지 않고 `OPEND2_ORIGINAL_SHA256SUMS` 또는 `D2_DATA_PATH`에서 읽으며, **정식 릴리즈에서는 필수**
    (`--rehearsal`/`ci` 빌드는 경고만, 결과는 `PASS (no original hash list)`). 50MB 초과 파일은 경고로 출력하고 manifest에 남긴다.

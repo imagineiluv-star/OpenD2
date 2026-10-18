@@ -13,6 +13,18 @@ internal static class MpqPipelineContracts
 		public bool TryRead(string path, long maxBytes, out byte[] data) => files.TryGetValue(MpqArchive.NormalizePath(path), out data!);
 		public void Dispose() { }
 	}
+	// Throws for chosen paths, like a chmod 000 file behind a directory source.
+	private sealed class DenyingSource(Dictionary<string, byte[]> files, params string[] denied) : IAssetSource
+	{
+		public IReadOnlyList<string> List() => files.Keys.Concat(denied).Order(StringComparer.Ordinal).ToArray();
+		public bool TryRead(string path, long maxBytes, out byte[] data)
+		{
+			path = MpqArchive.NormalizePath(path);
+			if (denied.Contains(path)) throw new UnauthorizedAccessException($"Access to the path '{path}' is denied.");
+			return files.TryGetValue(path, out data!);
+		}
+		public void Dispose() { }
+	}
 	internal static byte[] PaletteBytes() { var p = new byte[768]; for (int i = 0; i < 256; i++) { p[i * 3] = (byte)i; p[i * 3 + 1] = (byte)(255 - i); p[i * 3 + 2] = 7; } return p; }
 
 	public static void Run(string root, Action<string, Action> test)
@@ -93,6 +105,36 @@ internal static class MpqPipelineContracts
 			var result = AssetCache.Build(source, "fingerprint-missing-palette", Path.Combine(root, "asset-cache-missing-palette", "1.0t"));
 			Check(result.PngFiles == 1, $"only the units PNG converts ({result.PngFiles})");
 			Check(result.Errors.Count == 1 && result.Errors[0].Contains("act3") && result.Errors[0].Contains("2 PNG conversion(s) skipped"), string.Join(" | ", result.Errors));
+		});
+
+		test("asset cache records a broken (wrong-size) palette and skips only the PNGs that need it", () =>
+		{
+			var files = new Dictionary<string, byte[]>
+			{
+				["data\\global\\palette\\units\\pal.dat"] = PaletteBytes(),
+				["data\\global\\palette\\act2\\pal.dat"] = PaletteBytes()[..767],
+				["data\\global\\tiles\\act2\\desert\\a.dc6"] = LegacyFormatContracts.Dc6(),
+				["data\\global\\ui\\panel\\sample.dc6"] = LegacyFormatContracts.Dc6(),
+			};
+			using var source = new MemorySource(files);
+			var result = AssetCache.Build(source, "fingerprint-broken-palette", Path.Combine(root, "asset-cache-broken-palette", "1.0t"));
+			Check(result.PngFiles == 1, $"only the units PNG converts ({result.PngFiles})");
+			Check(result.Errors.Any(e => e.Contains("act2\\pal.dat could not be read") && e.Contains("1 PNG conversion(s) skipped")), string.Join(" | ", result.Errors));
+		});
+
+		test("asset cache records permission-denied resources and keeps building", () =>
+		{
+			var files = new Dictionary<string, byte[]>
+			{
+				["data\\global\\palette\\units\\pal.dat"] = PaletteBytes(),
+				["data\\global\\ui\\panel\\sample.dc6"] = LegacyFormatContracts.Dc6(),
+				["data\\global\\excel\\levels.txt"] = Encoding.Latin1.GetBytes("Name\tId\r\nRogue Encampment\t1\r\n"),
+			};
+			using var source = new DenyingSource(files, "data\\global\\ui\\panel\\locked.dc6", "data\\global\\palette\\act1\\pal.dat");
+			var result = AssetCache.Build(source, "fingerprint-denied", Path.Combine(root, "asset-cache-denied", "1.0t"));
+			Check(result.Rebuilt && result.PngFiles == 1 && result.Tables == 1, $"build continued ({result.PngFiles} PNG, {result.Tables} tables)");
+			Check(result.Errors.Any(e => e.Contains("locked.dc6") && e.Contains("UnauthorizedAccessException")), string.Join(" | ", result.Errors));
+			Check(result.Errors.Any(e => e.Contains("act1\\pal.dat") && e.Contains("UnauthorizedAccessException")), string.Join(" | ", result.Errors));
 		});
 
 		test("asset cache converts DC6, palettes and tables, rebuilds only on source change, and is readable by the engine", () =>

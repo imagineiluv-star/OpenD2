@@ -14,7 +14,9 @@ class EngineBoundaryTests(unittest.TestCase):
         'var s = $"""\n  {Godot.Engine.GetFramesDrawn()}\n  """;', 'var s = $$"""{{Godot.OS.GetName()}}""";',
         'var s = $"a {(x ? "b" : $"{Godot.OS.GetName()}")} c";', "\\u0047odot.Node n;",
         'var t = Type.GetType("Godot.Node, GodotSharp");', '#region /*\nGodot.Node n;\n#endregion */',
-        "#region don't\nGodot.Node n;\n#endregion", '#region @"\nGodot.Node n;\n#endregion', 'var t = Type.GetType("global::Godot.Node");',
+        "#region don't\nGodot.Node n;\n#endregion", '#region /*\rGodot.Node n;\r#endregion */', '// x\rGodot.Node n;',
+        '#region /*\u2028Godot.Node n;\u2028#endregion */', '// x\u2029Godot.Node n;', '// x\u0085Godot.Node n;',
+        '// x\r\nGodot.Node n;', '#region @"\nGodot.Node n;\n#endregion', 'var t = Type.GetType("global::Godot.Node");',
     )
     ALLOWED = (
         "// the Godot client calls this", "/* Godot */ int a;", "/// <summary>Godot host</summary>",

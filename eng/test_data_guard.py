@@ -599,7 +599,9 @@ class DataGuardTests(unittest.TestCase):
         self.assertEqual([], guard.blocked)
         self.assertEqual(0, hits)
 
-    WAV = b"RIFF\x24\0\0\0WAVEfmt \x10\0\0\0" + b"\x01\0\x01\0\x22\x56\0\0\x44\xac\0\0\x02\0\x10\0data\0\0\0\0"
+    # Synthetic 16-bit mono PCM header with 16 bytes of silence (not game audio).
+    WAV = (b"RIFF\x34\0\0\0WAVEfmt \x10\0\0\0" + b"\x01\0\x01\0\x22\x56\0\0\x44\xac\0\0\x02\0\x10\0"
+           + b"data\x10\0\0\0" + b"\0" * 16)
 
     @staticmethod
     def ogg_page(payload=FAKE):
@@ -655,6 +657,66 @@ class DataGuardTests(unittest.TestCase):
         import random
         rng = random.Random(1018)
         self.assertEqual(0, sum(bool(data_guard.Guard.embedded_media(rng.randbytes(20000))) for _ in range(500)))
+
+    def test_decoys_before_the_payload_do_not_hide_it(self):
+        page = self.ogg_page()
+        for name, blob in (("riff5000.bin", b"\0" + b"RIFF" * 5000 + self.WAV), ("riff4096.bin", b"\0" + b"RIFF" * 4096 + self.WAV),
+                           ("ogg256.bin", b"\0" + b"OggS" * 256 + page)):
+            with self.subTest(name=name):
+                path = self.add(name, blob)
+                found = self.blocked()
+                self.assertTrue(any(item.startswith(name + ":") and ("WAV audio" in item or "Ogg audio" in item) for item in found), found)
+                path.unlink()
+
+    def test_reaching_the_candidate_cap_fails_closed(self):
+        decoy = b"RIFF\x04\0\0\0WAVEJUNK"  # passes the prefilter, fails the fmt/data check
+        hit = data_guard.Guard.embedded_media(b"\0" + decoy * (data_guard.Guard.EMBED_CANDIDATES + 1) + self.WAV)
+        self.assertIsNotNone(hit)
+        self.assertIn("fail closed", hit[1])
+        ogg_decoy = b"OggS\x00\xff"  # bad header type: prefilter match, structural reject
+        hit = data_guard.Guard.embedded_media(b"\0" + ogg_decoy * 257 + self.ogg_page())
+        self.assertIn("fail closed", hit[1])
+        self.add("decoys.bin", b"\0" + decoy * (data_guard.Guard.EMBED_CANDIDATES + 1))
+        self.assertTrue(any("decoys.bin" in item and "fail closed" in item for item in self.blocked()), self.blocked())
+
+    def test_compressed_data_that_looks_like_an_empty_tar_is_still_scanned(self):
+        for name, compress in (("z.bin.gz", lambda b: gzip.compress(b, mtime=0)), ("z.bin.bz2", bz2.compress),
+                               ("z.bin.xz", lzma.compress)):
+            for prefix in (b"\0" * 512, b"\0" * 1024):
+                with self.subTest(name=name, prefix=len(prefix)):
+                    path = self.add(name, compress(prefix + self.WAV))
+                    found = self.blocked()
+                    self.assertTrue(any(item.startswith(name) and "WAV audio" in item for item in found), found)
+                    path.unlink()
+
+    def test_bytes_after_the_end_of_a_compressed_tar_are_scanned(self):
+        buffer = io.BytesIO()
+        with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as archive:
+            info = tarfile.TarInfo("readme.txt")
+            info.size = len(FAKE)
+            archive.addfile(info, io.BytesIO(FAKE))
+        clean = buffer.getvalue()
+        self.add("pack.tar.gz", gzip.compress(clean, mtime=0))
+        self.assertEqual([], self.blocked())
+        (self.export / "pack.tar.gz").write_bytes(gzip.compress(clean + self.WAV, mtime=0))
+        found = self.blocked()
+        self.assertTrue(any(item.startswith("pack.tar.gz!tar-trailer") and "WAV audio" in item for item in found), found)
+
+    def test_wav_header_templates_in_binaries_are_not_audio(self):
+        # ALSA's built-in WAV header template (libasound): RIFF size 36, fmt fields all zero, empty data chunk.
+        template = b"RIFF\x24\0\0\0WAVEfmt \x10\0\0\0" + b"\0" * 16 + b"data\0\0\0\0"
+        self.add("libasound.so.2", b"\x7fELF" + b"\0" * 100 + template + b"\0" * 64)
+        self.assertEqual([], self.blocked())
+        self.add("libasound.so.2", b"\x7fELF" + b"\0" * 100 + self.WAV + b"\0" * 64)
+        self.assertTrue(any("libasound.so.2" in item and "WAV audio" in item for item in self.blocked()), self.blocked())
+
+    def test_dc6_candidate_checks_do_not_copy_large_entries(self):
+        import time
+        blob = b"x" + b"\xcd" * (32 * 1024 * 1024)
+        started = time.perf_counter()
+        self.assertIsNone(data_guard.Guard.embedded_media(blob))
+        self.assertLess(time.perf_counter() - started, 3.0)  # was ~18 s when every candidate sliced the rest
+        self.assertIsNotNone(data_guard.Guard.embedded_media(b"\xcd" * 4096 + self.fake_dc6() + b"\xcd" * 4096))
 
 
 if __name__ == "__main__":
